@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://careboard-home-care.dspelt.chatgpt.site'),
   title: 'CareBoard — Household care, clearly coordinated',
   description:
     'A simple private chore board for coordinating household care workers, assignments, and completed work.',
@@ -20,11 +21,20 @@ export const metadata: Metadata = {
     title: 'CareBoard — Household care, clearly coordinated',
     description: 'Assign each household chore once and see exactly what is claimed and complete.',
     type: 'website',
+    images: [
+      {
+        url: '/og.png',
+        width: 1680,
+        height: 945,
+        alt: 'CareBoard — Household care, clearly coordinated',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'CareBoard — Household care, clearly coordinated',
     description: 'Assign each household chore once and see exactly what is claimed and complete.',
+    images: ['/og.png'],
   },
 };
 
