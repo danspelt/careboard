@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays,
   Check,
@@ -45,7 +45,7 @@ declare global {
           title?: string;
           description: string;
           inputSchema: Record<string, unknown>;
-          execute: (input: Record<string, unknown>) => unknown | Promise<unknown>;
+          execute: (input: Record<string, unknown>) => unknown;
           annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
         },
         options?: { signal?: AbortSignal },
@@ -112,12 +112,16 @@ export function HouseholdApp({ initialState }: { initialState: HouseholdState })
 
   const currentMember = state.members.find((member) => member.id === currentId) ?? state.members[0];
   const workers = state.members.filter((member) => member.role === 'worker');
-  stateRef.current = state;
-
   useEffect(() => {
     const saved = window.localStorage.getItem('careboard-profile');
-    if (saved && state.members.some((member) => member.id === saved)) setCurrentId(saved);
+    if (saved && state.members.some((member) => member.id === saved)) {
+      queueMicrotask(() => setCurrentId(saved));
+    }
   }, [state.members]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   function chooseProfile(id: string) {
     setCurrentId(id);
@@ -245,7 +249,7 @@ export function HouseholdApp({ initialState }: { initialState: HouseholdState })
   const unassignedCount = state.chores.filter((chore) => chore.status === 'open' && !chore.assignedTo).length;
   const completedCount = state.chores.filter((chore) => chore.status === 'complete').length;
 
-  async function createChore(event: FormEvent<HTMLFormElement>) {
+  async function createChore(event: { preventDefault: () => void; currentTarget: HTMLFormElement }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setBusyId('create');
@@ -268,7 +272,7 @@ export function HouseholdApp({ initialState }: { initialState: HouseholdState })
     }
   }
 
-  async function addWorker(event: FormEvent<HTMLFormElement>) {
+  async function addWorker(event: { preventDefault: () => void; currentTarget: HTMLFormElement }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setBusyId('member');
@@ -313,7 +317,7 @@ export function HouseholdApp({ initialState }: { initialState: HouseholdState })
                       <DialogDescription>Create a profile so assignments and completed work stay clearly attributed.</DialogDescription>
                     </DialogHeader>
                     <label className="mt-6 block text-sm font-semibold" htmlFor="worker-name">Full name</label>
-                    <Input id="worker-name" name="name" required autoFocus placeholder="e.g. Jordan Lee" className="mt-2 h-11 rounded-xl bg-white" />
+                    <Input id="worker-name" name="name" required placeholder="e.g. Jordan Lee" className="mt-2 h-11 rounded-xl bg-white" />
                     <DialogFooter className="mt-6 border-[#e4e7df] bg-[#f7f4ed]">
                       <Button type="submit" disabled={busyId === 'member'} className="h-10 rounded-xl bg-[#287b6f] px-5">
                         {busyId === 'member' ? 'Adding…' : 'Add profile'}
@@ -372,7 +376,7 @@ export function HouseholdApp({ initialState }: { initialState: HouseholdState })
                   <div className="mt-6 grid gap-4">
                     <div>
                       <label className="text-sm font-semibold" htmlFor="chore-title">What needs doing?</label>
-                      <Input id="chore-title" name="title" required autoFocus placeholder="e.g. Mop the kitchen floor" className="mt-2 h-11 rounded-xl bg-white" />
+                      <Input id="chore-title" name="title" required placeholder="e.g. Mop the kitchen floor" className="mt-2 h-11 rounded-xl bg-white" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
