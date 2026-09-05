@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://careboard-home-care.dspelt.chatgpt.site'),
+  metadataBase: new URL('https://care.danspelt.com'),
   title: 'CareBoard — Household care, clearly coordinated',
   description:
     'A simple private chore board for coordinating household care workers, assignments, and completed work.',

@@ -54,21 +54,22 @@ function runMigrations(database: Database.Database) {
       applied_at TEXT NOT NULL
     )
   `);
-  const migrationId = '0000_narrow_madrox';
-  const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
-  if (applied) return;
-
-  const migrationPath = join(process.cwd(), 'drizzle', `${migrationId}.sql`);
-  if (!existsSync(migrationPath)) throw new Error(`Database migration is missing: ${migrationPath}`);
-  const statements = readFileSync(migrationPath, 'utf8')
-    .split('--> statement-breakpoint')
-    .map((statement) => statement.trim())
-    .filter(Boolean);
-  const migrate = database.transaction(() => {
-    for (const statement of statements) database.exec(statement);
-    database.prepare('INSERT INTO _careboard_migrations (id, applied_at) VALUES (?, ?)').run(migrationId, new Date().toISOString());
-  });
-  migrate();
+  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle'];
+  for (const migrationId of migrationIds) {
+    const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
+    if (applied) continue;
+    const migrationPath = join(process.cwd(), 'drizzle', `${migrationId}.sql`);
+    if (!existsSync(migrationPath)) throw new Error(`Database migration is missing: ${migrationPath}`);
+    const statements = readFileSync(migrationPath, 'utf8')
+      .split('--> statement-breakpoint')
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    const migrate = database.transaction(() => {
+      for (const statement of statements) database.exec(statement);
+      database.prepare('INSERT INTO _careboard_migrations (id, applied_at) VALUES (?, ?)').run(migrationId, new Date().toISOString());
+    });
+    migrate();
+  }
   database.pragma('optimize');
 }
 

@@ -1,4 +1,4 @@
-import { index, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   id: text('id').primaryKey(),
@@ -6,6 +6,26 @@ export const members = sqliteTable('members', {
   role: text('role').notNull().default('worker'),
   color: text('color').notNull(),
   createdAt: text('created_at').notNull(),
+});
+
+export const accountLifecycle = sqliteTable(
+  'account_lifecycle',
+  {
+    memberId: text('member_id').primaryKey().references(() => members.id),
+    householdId: text('household_id').notNull().default('default'),
+    status: text('status').notNull().default('active'),
+    activatedAt: text('activated_at'),
+    disabledAt: text('disabled_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [index('idx_account_lifecycle_household_status').on(table.householdId, table.status)],
+);
+
+export const authCredentials = sqliteTable('auth_credentials', {
+  email: text('email').primaryKey(),
+  passwordHash: text('password_hash').notNull(),
+  mustChangePassword: integer('must_change_password', { mode: 'boolean' }).notNull().default(true),
+  updatedAt: text('updated_at').notNull(),
 });
 
 export const chores = sqliteTable(
@@ -21,6 +41,7 @@ export const chores = sqliteTable(
     completedBy: text('completed_by').references(() => members.id),
     createdAt: text('created_at').notNull(),
     completedAt: text('completed_at'),
+    startedAt: text('started_at'),
   },
   (table) => [
     index('idx_chores_status_due_date').on(table.status, table.dueDate),

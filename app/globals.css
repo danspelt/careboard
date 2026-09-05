@@ -87,3 +87,58 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Warm, quiet surfaces keep the work itself in focus. */
+.careboard {
+  background: #f5f6f2;
+}
+.app-header { background: #fffefa; }
+.welcome-banner {
+  position: relative;
+  overflow: hidden;
+  padding: 36px;
+  border: 1px solid #dce6db;
+  border-radius: 24px;
+  background: radial-gradient(ellipse at 85% 0%, #dcebd9 0%, transparent 55%), #edf2e7;
+}
+.welcome-banner > * { position: relative; z-index: 1; }
+.welcome-title { max-width: 680px; line-height: 1.15; text-wrap: balance; }
+.metric-card { position: relative; box-shadow: 0 2px 3px #20312d03; }
+.metric-card > span { position: absolute; right: 18px; top: 20px; }
+.metric-card > div { margin-top: 24px; }
+.metric-gold { background: #fcf8ef; border-color: #e9e2d3; }
+.metric-blue { background: #f2f5fb; border-color: #dfe5ef; }
+.chore-board { box-shadow: 0 4px 20px #20312d04; }
+.team-card { background: linear-gradient(145deg, #214e43, #163a33); }
+.household-progress { display: block; width: 100%; height: 7px; appearance: none; overflow: hidden; border: none; border-radius: 10px; background: #e8eee6; }
+.household-progress::-webkit-progress-bar { background: #e8eee6; border-radius: 10px; }
+.household-progress::-webkit-progress-value { background: #398574; border-radius: 10px; }
+.household-progress::-moz-progress-bar { background: #398574; border-radius: 10px; }
+.activity-timeline li { position: relative; }
+.activity-timeline li:not(:last-child)::after { content: ''; position: absolute; top: 34px; bottom: -16px; left: 13px; width: 1px; background: #e0e6dd; }
+.activity-timeline time { color: #687772; }
+.chore-row h3 { font-weight: 600; overflow-wrap: anywhere; }
+.careboard button, .careboard [role='combobox'] { cursor: pointer; }
+.careboard button:disabled { cursor: default; }
+.careboard button:focus-visible { outline: 2px solid #287b6f; outline-offset: 3px; }
+@media (min-width: 1024px) {
+  .welcome-title { font-size: 42px; }
+}
+@media (max-width: 639px) {
+  .welcome-banner { padding: 25px 22px; border-radius: 20px; }
+  .welcome-banner > button { align-self: flex-start; }
+  .metric-card > span { position: static; }
+  .metric-card > div { margin-top: 14px; }
+  .chore-actions { width: 100%; padding-left: 56px; min-width: 0; }
+  .chore-actions > div { min-width: 0; }
+  .chore-row-layout { gap: 14px; }
+}
+@media (max-width: 379px) {
+  .metric-card { padding: 12px 8px; }
+  .metric-card p:last-child { font-size: 11px; }
+  .app-header > div { gap: 8px; padding-inline: 16px; }
+  .app-header [role='combobox'] { min-width: 120px; }
+}
+body {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
