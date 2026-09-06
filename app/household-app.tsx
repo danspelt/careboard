@@ -1,624 +1,116 @@
 'use client';
+/* oxlint-disable typescript/no-explicit-any, next/no-img-element -- API photo URLs require authenticated, unoptimized requests; compact view prop types are intentionally structural. */
 
 import { logOut } from '@/app/actions/auth';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CalendarDays,
-  Check,
-  CheckCircle2,
-  ChevronRight,
-  ClipboardCheck,
-  Clock3,
-  Home,
-  Plus,
-  Sparkles,
-  UserPlus,
-  Users,
-} from 'lucide-react';
+import { useState } from 'react';
+import { CalendarDays, Check, ClipboardList, Home, MoreHorizontal, Pencil, Plus, Trash2, Upload, User, Users } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 
-declare global {
-  interface Document {
-    modelContext?: {
-      registerTool: (
-        tool: {
-          name: string;
-          title?: string;
-          description: string;
-          inputSchema: Record<string, unknown>;
-          execute: (input: Record<string, unknown>) => unknown;
-          annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
-        },
-        options?: { signal?: AbortSignal },
-      ) => void | Promise<void>;
-    };
-  }
-}
-
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
+type ManagerSection = 'home' | 'tasks' | 'team' | 'more';
+type WorkerSection = 'today' | 'tasks' | 'profile' | 'more';
+type Section = ManagerSection | WorkerSection;
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
+function today() { return new Date().toISOString().slice(0, 10); }
+function dateLabel(value: string | null) { return value ? new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'No due date'; }
+function AvatarFor({ member, className = '' }: { member: Member; className?: string }) {
+  return <Avatar className={className}>{member.profilePhotoId ? <img src={`/api/uploads/${member.profilePhotoId}`} alt="" className="size-full object-cover" /> : <AvatarFallback style={{ backgroundColor: member.color, color: 'white' }}>{initials(member.name)}</AvatarFallback>}</Avatar>;
 }
-
-function dayLabel(dateValue: string | null) {
-  if (!dateValue) return 'No due date';
-  const due = new Date(`${dateValue}T12:00:00`);
-  const today = new Date();
-  const todayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const dueKey = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime();
-  const days = Math.round((dueKey - todayKey) / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
-  if (days === -1) return 'Yesterday';
-  return due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const fieldClass = 'mt-1 min-h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 py-2 text-sm';
+function Field({ label, name, defaultValue, type = 'text', required = false, readOnly = false }: { label: string; name: string; defaultValue?: string | number | null; type?: string; required?: boolean; readOnly?: boolean }) {
+  return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} defaultValue={defaultValue ?? ''} className="mt-1 h-11 rounded-xl bg-white" /></label>;
 }
-
-function timeLabel(value: string) {
-  const date = new Date(value);
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.max(0, Math.round(diff / 60_000));
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 1_440) return `${Math.round(minutes / 60)}h ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-
-function MemberAvatar({ member, className = '' }: { member: Member; className?: string }) {
-  return (
-    <Avatar className={className}>
-      <AvatarFallback style={{ backgroundColor: member.color, color: 'white' }}>
-        {initials(member.name)}
-      </AvatarFallback>
-    </Avatar>
-  );
+function TextArea({ label, name, defaultValue }: { label: string; name: string; defaultValue?: string }) {
+  return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
 }
 
 export function HouseholdApp({ initialState, authenticatedId }: { initialState: HouseholdState; authenticatedId: string }) {
   const [state, setState] = useState(initialState);
-  const currentId = authenticatedId;
-  const [view, setView] = useState<'open' | 'mine' | 'done'>('open');
+  const member = state.members.find((item) => item.id === authenticatedId) ?? state.members[0];
+  const manager = member?.role === 'manager';
+  const [section, setSection] = useState<Section>(manager ? 'home' : 'today');
+  const [task, setTask] = useState<Chore | null>(null);
+  const [profile, setProfile] = useState<Member | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [memberOpen, setMemberOpen] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [resetMember, setResetMember] = useState<Member | null>(null);
   const [notice, setNotice] = useState('');
-  const stateRef = useRef(state);
+  const [busy, setBusy] = useState(false);
+  if (!member) return null;
 
-  const currentMember = state.members.find((member) => member.id === currentId) ?? state.members[0];
-  const workers = state.members.filter((member) => member.role === 'worker');
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
-
-  async function mutate(payload: Record<string, unknown>, success: string) {
-    if (!currentMember) throw new Error('Choose a profile first.');
-    const response = await fetch('/api/household', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...payload, actorId: currentMember.id }),
-    });
-    const result = (await response.json()) as HouseholdState & { error?: string };
-    if (!response.ok) throw new Error(result.error || 'That update could not be saved.');
-    setState(result);
-    stateRef.current = result;
-    setNotice(success);
-    return result;
-  }
-
-  async function runAction(chore: Chore, action: 'claim' | 'start' | 'complete' | 'unclaim', success: string) {
-    setBusyId(chore.id);
+  async function mutate(payload: Record<string, unknown>, message = 'Saved.') {
+    setBusy(true);
     try {
-      await mutate({ action, choreId: chore.id }, success);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'That update could not be saved.');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  useEffect(() => {
-    const context = document.modelContext;
-    if (!context?.registerTool || !currentMember) return;
-    const lifecycle = new AbortController();
-    const invoke = async (payload: Record<string, unknown>) => {
-      const response = await fetch('/api/household', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...payload, actorId: currentMember.id }),
-      });
-      const result = (await response.json()) as HouseholdState & { error?: string };
-      if (!response.ok) throw new Error(result.error || 'Update failed.');
-      setState(result);
-      stateRef.current = result;
+      const response = await fetch('/api/household', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+      const result = await response.json() as HouseholdState & { error?: string };
+      if (!response.ok) throw new Error(result.error || 'The update could not be saved.');
+      setState(result); setNotice(message);
+      if (task) setTask(result.chores.find((item) => item.id === task.id) ?? null);
+      if (profile) setProfile(result.members.find((item) => item.id === profile.id) ?? null);
       return result;
-    };
-
-    const registrations = [
-      context.registerTool(
-        {
-          name: 'list_careboard_chores',
-          title: 'List care chores',
-          description: 'List the current open chores, assignees, and due dates on the care-team board.',
-          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-          annotations: { readOnlyHint: true, untrustedContentHint: false },
-          execute: () => ({
-            chores: stateRef.current.chores
-              .filter((chore) => chore.status === 'open')
-              .map(({ id, title, area, dueDate, assignedTo }) => ({ id, title, area, dueDate, assignedTo })),
-          }),
-        },
-        { signal: lifecycle.signal },
-      ),
-      context.registerTool(
-        {
-          name: 'claim_careboard_chore',
-          title: 'Claim a care chore',
-          description: 'Claim one currently unassigned household chore for the active care-worker profile.',
-          inputSchema: {
-            type: 'object',
-            properties: { choreId: { type: 'string', description: 'The chore ID from list_careboard_chores.' } },
-            required: ['choreId'],
-            additionalProperties: false,
-          },
-          annotations: { readOnlyHint: false, untrustedContentHint: false },
-          execute: async ({ choreId }) => {
-            if (typeof choreId !== 'string' || !choreId) throw new Error('A chore ID is required.');
-            const result = await invoke({ action: 'claim', choreId });
-            return { claimed: choreId, openChores: result.chores.filter((chore) => chore.status === 'open').length };
-          },
-        },
-        { signal: lifecycle.signal },
-      ),
-      context.registerTool(
-        {
-          name: 'complete_careboard_chore',
-          title: 'Complete a care chore',
-          description: 'Mark one assigned or unclaimed household chore complete as the active profile.',
-          inputSchema: {
-            type: 'object',
-            properties: { choreId: { type: 'string', description: 'The chore ID from list_careboard_chores.' } },
-            required: ['choreId'],
-            additionalProperties: false,
-          },
-          annotations: { readOnlyHint: false, untrustedContentHint: false },
-          execute: async ({ choreId }) => {
-            if (typeof choreId !== 'string' || !choreId) throw new Error('A chore ID is required.');
-            const result = await invoke({ action: 'complete', choreId });
-            return { completed: choreId, completedCount: result.chores.filter((chore) => chore.status === 'complete').length };
-          },
-        },
-        { signal: lifecycle.signal },
-      ),
-    ];
-    registrations.forEach((registration) => Promise.resolve(registration).catch(() => undefined));
-    return () => lifecycle.abort();
-  }, [currentMember]);
-
-  const visibleChores = useMemo(() => {
-    if (view === 'done') return state.chores.filter((chore) => chore.status === 'complete');
-    if (view === 'mine') return state.chores.filter((chore) => chore.status !== 'complete' && chore.assignedTo);
-    return state.chores.filter((chore) => chore.status !== 'complete');
-  }, [state.chores, view]);
-
-  const openCount = state.chores.filter((chore) => chore.status !== 'complete').length;
-  const unassignedCount = state.chores.filter((chore) => chore.status === 'open' && !chore.assignedTo).length;
-  const completedCount = state.chores.filter((chore) => chore.status === 'complete').length;
-
-  async function createChore(event: { preventDefault: () => void; currentTarget: HTMLFormElement }) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setBusyId('create');
-    try {
-      await mutate(
-        {
-          action: 'createChore',
-          title: form.get('title'),
-          area: form.get('area'),
-          dueDate: form.get('dueDate'),
-          assigneeId: form.get('assigneeId'),
-        },
-        'Chore added to the board.',
-      );
-      setCreateOpen(false);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The chore could not be added.');
-    } finally {
-      setBusyId(null);
-    }
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'The update could not be saved.'); throw error; }
+    finally { setBusy(false); }
   }
-
-  async function addWorker(event: { preventDefault: () => void; currentTarget: HTMLFormElement }) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    setBusyId('member');
-    try {
-      await mutate({ action: 'addMember', name: form.get('name'), googleEmail: form.get('googleEmail'), temporaryPassword: form.get('temporaryPassword') }, 'Care-worker profile added with a temporary password.');
-      setMemberOpen(false);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The profile could not be added.');
-    } finally {
-      setBusyId(null);
-    }
+  async function submit(event: { preventDefault(): void; currentTarget: HTMLFormElement }, action: string, message: string, close?: () => void) {
+    event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget));
+    try { await mutate({ action, ...values }, message); close?.(); } catch { /* notice is shown */ }
   }
+  async function upload(file: File, target: { choreId?: string; profileMemberId?: string }) {
+    const data = new FormData(); data.set('photo', file); Object.entries(target).forEach(([key, value]) => value && data.set(key, value));
+    setBusy(true);
+    try { const response = await fetch('/api/uploads', { method: 'POST', body: data }); const result = await response.json(); if (!response.ok) throw new Error(result.error); await refresh('Photo uploaded.'); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Upload failed.'); } finally { setBusy(false); }
+  }
+  async function refresh(message = '') { const response = await fetch('/api/household', { cache: 'no-store' }); const next = await response.json() as HouseholdState; setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); if (message) setNotice(message); }
+  async function deletePhoto(id: string) { setBusy(true); try { const response = await fetch(`/api/uploads/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Photo could not be deleted.'); await refresh('Photo deleted.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.'); } finally { setBusy(false); } }
 
-  if (!currentMember) return null;
-  if (currentMember.role === 'worker') return <WorkerDashboard member={currentMember} groups={state.taskGroups ?? []} busyId={busyId} notice={notice} setNotice={setNotice} runAction={runAction} />;
+  const workers = state.members.filter((item) => item.role === 'worker');
+  const open = state.chores.filter((item) => item.status !== 'complete');
+  const dueToday = open.filter((item) => item.dueDate === today());
+  const nav = manager
+    ? [['home', 'Home', Home], ['tasks', 'Tasks', ClipboardList], ['team', 'Team', Users], ['more', 'More', MoreHorizontal]] as const
+    : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
-  return (
-    <div className="careboard min-h-screen text-[#20312d]">
-      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">
-        Skip to chores
-      </a>
-      <header className="app-header border-b border-[#dfe5dc] bg-[#fcfbf7]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-4 sm:px-8 lg:px-10">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-[0_7px_20px_rgba(40,123,111,.22)]">
-              <Home className="size-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-lg font-bold tracking-[-0.035em]">CareBoard</p>
-              <p className="hidden text-xs text-[#6d7e79] sm:block">Household care, clearly coordinated</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <form action={logOut}><button type="submit" className="rounded-lg px-2 py-2 text-sm font-semibold text-[#287b6f] hover:bg-[#e7efea]">Sign out</button></form>
-            {currentMember.role === 'manager' && (
-              <Dialog open={memberOpen} onOpenChange={setMemberOpen}>
-                <DialogTrigger render={<Button variant="outline" className="hidden h-10 rounded-xl border-[#d7dfd7] bg-white px-3 sm:inline-flex" />}>
-                  <UserPlus aria-hidden="true" /> Add worker
-                </DialogTrigger>
-                <DialogContent className="rounded-3xl border-[#dbe1da] bg-[#fffefa] p-6 sm:max-w-md">
-                  <form onSubmit={addWorker}>
-                    <DialogHeader>
-                      <DialogTitle className="text-xl font-bold tracking-tight">Add a care worker</DialogTitle>
-                      <DialogDescription>Create an active worker with an approved email and a temporary password. Google sign-in with the same email remains available.</DialogDescription>
-                    </DialogHeader>
-                    <label className="mt-6 block text-sm font-semibold" htmlFor="worker-name">Full name</label>
-                    <Input id="worker-name" name="name" required placeholder="e.g. Jordan Lee" className="mt-2 h-11 rounded-xl bg-white" />
-                    <label className="mt-4 block text-sm font-semibold" htmlFor="worker-email">Email address</label>
-                    <Input id="worker-email" name="googleEmail" type="email" required placeholder="jordan@example.com" className="mt-2 h-11 rounded-xl bg-white" />
-                    <label className="mt-4 block text-sm font-semibold" htmlFor="worker-password">Temporary password</label>
-                    <Input id="worker-password" name="temporaryPassword" type="password" required minLength={12} maxLength={128} autoComplete="new-password" className="mt-2 h-11 rounded-xl bg-white" />
-                    <p className="mt-2 text-xs leading-5 text-[#64746f]">Use 12–128 characters with uppercase, lowercase, a number, and a symbol. The worker must replace it after password sign-in.</p>
-                    <DialogFooter className="mt-6 border-[#e4e7df] bg-[#f7f4ed]">
-                      <Button type="submit" disabled={busyId === 'member'} className="h-10 rounded-xl bg-[#287b6f] px-5">
-                        {busyId === 'member' ? 'Addingâ€¦' : 'Add profile'}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
-            <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-3 py-2" aria-label="Signed-in household profile">
-              <MemberAvatar member={currentMember} className="size-7" />
-              <span className="max-w-24 truncate text-sm font-semibold">{currentMember.name}{currentMember.role === 'manager' ? ' Â· Owner' : ''}</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main id="main" className="mx-auto grid max-w-[1440px] gap-7 px-5 py-7 sm:px-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-10 lg:py-9">
-          <div className="welcome-banner flex flex-col justify-between gap-5 sm:flex-row sm:items-center lg:col-span-2">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#287b6f]">
-                <Sparkles className="size-4" aria-hidden="true" />
-                {currentMember.role === 'manager' ? 'Owner overview' : 'Care-worker view'}
-              </div>
-              <h1 className="welcome-title text-3xl font-semibold tracking-[-0.045em] sm:text-4xl">
-                {currentMember.role === 'manager' ? 'A little care. A happier home.' : `Welcome, ${currentMember.name}`}
-              </h1>
-              <p className="mt-2 max-w-2xl text-[15px] leading-6 text-[#64746f]">
-                {currentMember.role === 'manager'
-                  ? 'Keep your household moving, together. Every chore has a place, and everyone knows whatâ€™s next.'
-                  : 'Claim an open chore, then check it off when the work is complete.'}
-              </p>
-            </div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger render={<Button className="h-12 rounded-xl bg-[#287b6f] px-5 text-[15px] shadow-[0_8px_22px_rgba(40,123,111,.2)] hover:bg-[#236d63]" />}>
-                <Plus className="size-5" aria-hidden="true" /> Add chore
-              </DialogTrigger>
-              <DialogContent className="rounded-3xl border-[#dbe1da] bg-[#fffefa] p-6 sm:max-w-md">
-                <form onSubmit={createChore}>
-                  <DialogHeader>
-                    <DialogTitle className="text-xl font-bold tracking-tight">Add a household chore</DialogTitle>
-                    <DialogDescription>Make ownership clear now so the work is only done once.</DialogDescription>
-                  </DialogHeader>
-                  <div className="mt-6 grid gap-4">
-                    <div>
-                      <label className="text-sm font-semibold" htmlFor="chore-title">What needs doing?</label>
-                      <Input id="chore-title" name="title" required placeholder="e.g. Mop the kitchen floor" className="mt-2 h-11 rounded-xl bg-white" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-semibold" htmlFor="chore-area">Area</label>
-                        <select id="chore-area" name="area" defaultValue="Kitchen" className="mt-2 h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm outline-none focus:ring-3 focus:ring-[#75a99f]/35">
-                          {areas.map((area) => <option key={area}>{area}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-sm font-semibold" htmlFor="chore-due">Due</label>
-                        <Input id="chore-due" type="date" name="dueDate" className="mt-2 h-11 rounded-xl bg-white" />
-                      </div>
-                    </div>
-                    {currentMember.role === 'manager' && (
-                    <div>
-                      <label className="text-sm font-semibold" htmlFor="chore-assignee">Assign now <span className="font-normal text-[#7a8884]">(optional)</span></label>
-                      <select id="chore-assignee" name="assigneeId" defaultValue="" className="mt-2 h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm outline-none focus:ring-3 focus:ring-[#75a99f]/35">
-                        <option value="">Leave open to claim</option>
-                        {workers.filter((worker) => worker.status !== 'disabled').map((worker) => <option key={worker.id} value={worker.id}>{worker.name} ({worker.status})</option>)}
-                      </select>
-                    </div>
-                    )}
-                  </div>
-                  <DialogFooter className="mt-6 border-[#e4e7df] bg-[#f7f4ed]">
-                    <Button type="submit" disabled={busyId === 'create'} className="h-10 rounded-xl bg-[#287b6f] px-5">
-                      {busyId === 'create' ? 'Addingâ€¦' : 'Add to board'}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <section className="min-w-0">
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
-            <Metric label="Open" value={openCount} icon={<ClipboardCheck />} tone="green" />
-            <Metric label="Unassigned" value={unassignedCount} icon={<Users />} tone="gold" />
-            <Metric label="Completed" value={completedCount} icon={<CheckCircle2 />} tone="blue" />
-          </div>
-
-          <div className="chore-board mt-6 overflow-hidden rounded-2xl border border-[#dfe5dc] bg-[#fffefa]">
-            <div className="flex flex-col gap-4 border-b border-[#e5e9e2] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <div>
-                <h2 className="text-lg font-bold tracking-tight">Chore board</h2>
-                <p className="mt-0.5 text-sm text-[#74827d]">{visibleChores.length} {visibleChores.length === 1 ? 'chore' : 'chores'} Â· {view === 'done' ? 'A little teamwork goes a long way.' : 'Small tasks. A shared effort.'}</p>
-              </div>
-              <div className="flex rounded-xl bg-[#f0f2ec] p-1" role="tablist" aria-label="Chore filters">
-                {([
-                  ['open', 'Open'],
-                  ['mine', currentMember.role === 'manager' ? 'Assigned' : 'My tasks'],
-                  ['done', 'Completed'],
-                ] as const).map(([value, label]) => (
-                  <button key={value} type="button" role="tab" aria-selected={view === value} onClick={() => setView(value)} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${view === value ? 'bg-white text-[#20312d] shadow-sm' : 'text-[#697873] hover:text-[#20312d]'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="divide-y divide-[#e8ebe5]">
-              {visibleChores.length ? (
-                visibleChores.map((chore) => (
-                  <ChoreRow
-                    key={chore.id}
-                    chore={chore}
-                    members={state.members}
-                    currentMember={currentMember}
-                    busy={busyId === chore.id}
-                    onRun={runAction}
-                    onAssign={async (assigneeId) => {
-                      setBusyId(chore.id);
-                      try {
-                        const assignee = state.members.find((member) => member.id === assigneeId);
-                        await mutate({ action: 'assign', choreId: chore.id, assigneeId }, `Assigned to ${assignee?.name ?? 'care worker'}.`);
-                      } catch (error) {
-                        setNotice(error instanceof Error ? error.message : 'The assignment could not be saved.');
-                      } finally {
-                        setBusyId(null);
-                      }
-                    }}
-                  />
-                ))
-              ) : (
-                <div className="px-6 py-14 text-center">
-                  <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#e8f2ed] text-[#287b6f]"><Check className="size-6" /></span>
-                  <h3 className="mt-4 font-bold">All clear here</h3>
-                  <p className="mt-1 text-sm text-[#71807b]">There are no chores in this view right now.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <aside className="space-y-5">
-          <section className="progress-card rounded-2xl border border-[#dfe5dc] bg-white p-5" aria-label="Household progress">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold">Household progress</span>
-              <span className="text-sm font-bold text-[#287b6f]">{state.chores.length ? Math.round(completedCount / state.chores.length * 100) : 0}%</span>
-            </div>
-            <progress className="household-progress mt-4" value={completedCount} max={state.chores.length || 1} aria-label="Completed chores" />
-            <p className="mt-2 text-xs text-[#64746f]">{completedCount} of {state.chores.length} chores complete</p>
-          </section>
-          <section className="team-card rounded-2xl bg-[#183e37] p-6 text-white shadow-[0_16px_40px_rgba(24,62,55,.18)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#a8cdc4]">Care team</p>
-                <h2 className="mt-1 text-xl font-bold tracking-tight">{workers.length} workers</h2>
-              </div>
-              <div className="flex -space-x-2">
-                {workers.map((worker) => <MemberAvatar key={worker.id} member={worker} className="ring-2 ring-[#183e37]" />)}
-              </div>
-            </div>
-            <div className="mt-5 space-y-2.5">
-              {workers.map((worker) => {
-                const active = state.chores.filter((chore) => chore.status === 'open' && chore.assignedTo === worker.id).length;
-                return (
-                  <div key={worker.id} className="flex items-center gap-3 rounded-2xl bg-white/[.07] px-3 py-3">
-                    <MemberAvatar member={worker} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{worker.name}</p>
-                      <p className="text-xs text-[#b6d1cb]">{worker.status} · {active ? `${active} active ${active === 1 ? 'chore' : 'chores'}` : 'No active chores'}</p>
-                    </div>
-                    <Button size="sm" variant="ghost" disabled={busyId === worker.id} onClick={async () => { const password = window.prompt(`Enter a temporary password for ${worker.name}`); if (!password) return; setBusyId(worker.id); try { await mutate({ action: 'resetMemberPassword', memberId: worker.id, temporaryPassword: password }, 'Temporary password updated.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Password reset failed.'); } finally { setBusyId(null); } }} className="text-white hover:bg-white/10">Reset password</Button>
-                    <Button size="sm" variant="ghost" disabled={busyId === worker.id} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Worker reactivated.' : 'Worker disabled.')} className="text-white hover:bg-white/10">{worker.status === 'disabled' ? 'Reactivate' : 'Disable'}</Button>
-                  </div>
-                );
-              })}
-            </div>
-            {currentMember.role === 'manager' && (
-              <Button variant="ghost" onClick={() => setMemberOpen(true)} className="mt-3 h-10 w-full justify-between rounded-xl px-3 text-[#dcebe7] hover:bg-white/10 hover:text-white">
-                Add care worker <ChevronRight />
-              </Button>
-            )}
-          </section>
-
-          <section className="activity-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7d8b86]">Activity</p>
-                <h2 className="mt-1 text-lg font-bold tracking-tight">Recent updates</h2>
-              </div>
-              <Clock3 className="size-5 text-[#8b9994]" aria-hidden="true" />
-            </div>
-            <ol className="activity-timeline mt-5 space-y-5">
-              {state.activity.slice(0, 7).map((item) => {
-                const member = state.members.find((candidate) => candidate.id === item.memberId);
-                if (!member) return null;
-                return (
-                  <li key={item.id} className="flex gap-3">
-                    <MemberAvatar member={member} className="mt-0.5 size-7" />
-                    <div className="min-w-0 flex-1 text-sm leading-5">
-                      <p><span className="font-semibold">{member.name}</span> <span className="text-[#687772]">{item.detail}</span></p>
-                      <time className="text-xs text-[#95a19d]" dateTime={item.createdAt}>{timeLabel(item.createdAt)}</time>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </section>
-        </aside>
-      </main>
-      <output aria-live="polite" aria-atomic="true" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2">
-        {notice && (
-          <button type="button" onClick={() => setNotice('')} className="rounded-xl bg-[#20312d] px-4 py-3 text-sm font-medium text-white shadow-xl">
-            {notice}
-          </button>
-        )}
-      </output>
-    </div>
-  );
+  return <div className="careboard min-h-screen bg-[#f7f6f1] pb-24 text-[#20312d] md:pb-8">
+    <header className="sticky top-0 z-30 border-b border-[#dfe5dc] bg-[#fcfbf7]/95 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-7">
+      <button onClick={() => setSection(manager ? 'home' : 'today')} className="flex min-h-11 items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-[#287b6f] text-white"><Home className="size-5" /></span><span className="text-lg font-bold">CareBoard</span></button>
+      <div className="flex items-center gap-2"><form action={logOut}><button className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[#287b6f]">Sign out</button></form><AvatarFor member={member} className="size-9" /></div>
+    </div></header>
+    <nav className="mx-auto hidden max-w-6xl gap-2 px-7 pt-5 md:flex" aria-label="Main navigation">{nav.map(([id, label, Icon]) => <button key={id} onClick={() => setSection(id)} className={`flex min-h-11 items-center gap-2 rounded-xl px-4 font-semibold ${section === id ? 'bg-[#287b6f] text-white' : 'bg-white text-[#52645f]'}`}><Icon className="size-4" />{label}</button>)}</nav>
+    <main className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
+      {manager ? <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} mutate={mutate} busy={busy} /> : <WorkerView section={section as WorkerSection} state={state} member={member} dueToday={dueToday} setTask={setTask} setProfile={setProfile} />}
+    </main>
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation"><div className="mx-auto grid max-w-md grid-cols-4">{nav.map(([id, label, Icon]) => <button key={id} onClick={() => setSection(id)} aria-current={section === id ? 'page' : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}><Icon className="size-5" />{label}</button>)}</div></nav>
+    <TaskDialog task={task} manager={manager} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+    <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} />
+    <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
+    <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
+    <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
+    {notice && <button onClick={() => setNotice('')} className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-[#20312d] px-4 py-3 text-sm text-white shadow-xl md:bottom-6" aria-live="polite">{notice}</button>}
+  </div>;
 }
 
-function WorkerDashboard({ member, groups, busyId, notice, setNotice, runAction }: { member: Member; groups: NonNullable<HouseholdState['taskGroups']>; busyId: string | null; notice: string; setNotice: (value: string) => void; runAction: (chore: Chore, action: 'claim' | 'start' | 'complete', success: string) => void }) {
-  return (
-    <div className="careboard min-h-screen text-[#20312d]">
-      <header className="app-header border-b border-[#dfe5dc] bg-[#fcfbf7]/95"><div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-2xl bg-[#287b6f] text-white"><Home className="size-5" /></span><div><p className="text-lg font-bold">CareBoard</p><p className="text-xs text-[#6d7e79]">Worker dashboard</p></div></div><div className="flex items-center gap-3"><form action={logOut}><button className="rounded-lg px-2 py-2 text-sm font-semibold text-[#287b6f]">Sign out</button></form><MemberAvatar member={member} className="size-8" /><span className="text-sm font-semibold">{member.name}</span></div></div></header>
-      <main className="mx-auto max-w-5xl px-5 py-8"><div className="welcome-banner"><p className="text-sm font-semibold text-[#287b6f]">Your work</p><h1 className="welcome-title mt-2 text-3xl font-semibold">Welcome, {member.name}</h1><p className="mt-2 text-[#64746f]">Claim available work, start your assigned tasks, and mark them complete when finished.</p></div>
-        <div className="mt-7 grid gap-6 lg:grid-cols-2">{groups.map((group) => <section key={group.id} className="overflow-hidden rounded-2xl border border-[#dfe5dc] bg-[#fffefa]" aria-labelledby={group.id}><div className="border-b border-[#e5e9e2] px-5 py-4"><h2 id={group.id} className="text-lg font-bold">{group.title}</h2><p className="text-sm text-[#74827d]">{group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}</p></div><div className="divide-y divide-[#e8ebe5]">{group.tasks.length ? group.tasks.map((chore) => <article key={chore.id} className="p-5"><div className="flex items-start justify-between gap-4"><div><h3 className="font-bold">{chore.title}</h3><p className="mt-1 text-sm text-[#74827d]">{chore.area} · {dayLabel(chore.dueDate)} · {chore.status === 'in_progress' ? 'In progress' : 'Open'}</p></div>{group.id === 'available-tasks' ? <Button disabled={busyId === chore.id} onClick={() => runAction(chore, 'claim', `${chore.title} claimed.`)} className="bg-[#287b6f]">Claim</Button> : chore.status === 'open' ? <Button disabled={busyId === chore.id} onClick={() => runAction(chore, 'start', `${chore.title} started.`)} className="bg-[#287b6f]">Start</Button> : chore.status === 'in_progress' ? <Button disabled={busyId === chore.id} onClick={() => runAction(chore, 'complete', `${chore.title} completed.`)} className="bg-[#287b6f]">Complete</Button> : <Badge>Complete</Badge>}</div></article>) : <p className="p-8 text-center text-sm text-[#71807b]">No tasks in this group.</p>}</div></section>)}</div>
-      </main><output aria-live="polite" className="fixed bottom-5 left-1/2 -translate-x-1/2">{notice && <button onClick={() => setNotice('')} className="rounded-xl bg-[#20312d] px-4 py-3 text-sm text-white">{notice}</button>}</output>
-    </div>
-  );
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
+function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, mutate, busy }: any) {
+  if (section === 'tasks') return <><Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus />Add task</Button>} /><TaskList tasks={state.chores} members={state.members} onOpen={setTask} /></>;
+  if (section === 'team') return <><Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus />Add worker</Button>} /><div className="grid gap-4 md:grid-cols-2">{workers.map((worker: Member) => <Card key={worker.id}><div className="flex items-start gap-3"><AvatarFor member={worker} className="size-12" /><div className="min-w-0 flex-1"><h2 className="font-bold">{worker.name}</h2><p className="truncate text-sm text-[#687873]">{worker.email} · {worker.status}</p></div></div><p className="mt-4 text-sm"><b>Availability:</b> {worker.availability || 'Not provided'}</p><p className="mt-2 text-sm"><b>Languages:</b> {worker.languages || 'Not provided'}</p><div className="mt-4 flex flex-wrap gap-2"><Button variant="outline" onClick={() => setProfile(worker)}><Pencil />Profile</Button><Button variant="outline" onClick={() => setResetMember(worker)}>Reset password</Button><Button variant="outline" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Worker reactivated.' : 'Worker disabled.')}>{worker.status === 'disabled' ? 'Reactivate' : 'Disable'}</Button></div></Card>)}</div></>;
+  if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
+  return <><Title title="Household overview" text="Everything the care team needs, without exposing private worker details." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus />Add task</Button>} /><div className="grid grid-cols-2 gap-3 md:grid-cols-4"><Metric label="Open" value={state.metrics?.open ?? open.length} /><Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} /><Metric label="Overdue" value={state.metrics?.overdue ?? 0} /><Metric label="Completed" value={state.metrics?.completed ?? 0} /></div><div className="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]"><Card><h2 className="text-lg font-bold">Needs attention</h2><TaskList tasks={open.slice(0, 8)} members={state.members} onOpen={setTask} compact /></Card><Card><h2 className="text-lg font-bold">Reminders</h2><div className="mt-3 space-y-3">{state.reminders.map((item: Chore) => <button key={item.id} onClick={() => setTask(item)} className="block min-h-11 w-full rounded-xl bg-[#f1f5f1] p-3 text-left text-sm"><b>{item.title}</b><span className="block text-[#687873]">{dateLabel(item.dueDate)}</span></button>)}</div></Card></div></>;
 }
+function MoreManager({ state, mutate, busy }: any) { const settings = state.settings; const month = today().slice(0, 7); return <><Title title="More" text="Household settings, monthly reports, and immutable audit history." /><div className="grid gap-6 lg:grid-cols-2"><Card><h2 className="text-lg font-bold">Settings</h2><form className="mt-4 grid gap-4" onSubmit={(e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); mutate({ action: 'updateHouseholdSettings', ...data, retentionDays: 90 }, 'Settings saved.'); }}><Field label="Recurrence horizon (days)" name="recurrenceHorizonDays" type="number" defaultValue={settings?.recurrenceHorizonDays ?? 30} /><Field label="Default reminder lead (days)" name="reminderDefaultLeadDays" type="number" defaultValue={settings?.reminderDefaultLeadDays ?? 1} /><Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly /><Button disabled={busy} className="min-h-11 bg-[#287b6f]">Save settings</Button></form></Card><Card><h2 className="text-lg font-bold">Monthly report</h2><p className="mt-2 text-sm text-[#687873]">Export tasks, assignments, completion details, issues, notes, and team records.</p><div className="mt-4 grid grid-cols-2 gap-3"><Metric label="On time" value={state.metrics?.completedOnTime ?? 0} /><Metric label="Open issues" value={state.chores.filter((t: Chore) => t.issueOpen).length} /></div><a href={`/api/export?from=${month}-01&to=${today()}`} className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white">Download monthly CSV</a></Card></div><Card className="mt-6"><h2 className="text-lg font-bold">Audit history</h2><p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p><div className="mt-4 max-h-[32rem] divide-y overflow-auto">{(state.audit ?? []).map((entry: any) => <div key={entry.id} className="py-3 text-sm"><b>{state.members.find((m: Member) => m.id === entry.actorId)?.name ?? 'Household member'}</b> {entry.detail}<time className="block text-xs text-[#7b8985]">{new Date(entry.createdAt).toLocaleString()}</time></div>)}</div></Card></>; }
+function WorkerView({ section, state, member, dueToday, setTask, setProfile }: any) { if (section === 'profile') return <><Title title="Your profile" text="You control your contact, availability, languages, and profile photo." /><Card><div className="flex items-center gap-4"><AvatarFor member={member} className="size-16" /><div><h2 className="text-xl font-bold">{member.name}</h2><p className="text-sm text-[#687873]">Care worker</p></div></div><div className="mt-5 space-y-2 text-sm"><p><b>Phone:</b> {member.phone || 'Not provided'}</p><p><b>Availability:</b> {member.availability || 'Not provided'}</p><p><b>Languages:</b> {member.languages || 'Not provided'}</p></div><Button onClick={() => setProfile(member)} className="mt-5 min-h-11 bg-[#287b6f]"><Pencil />Edit your profile</Button></Card></>; if (section === 'more') return <><Title title="More" text="Account and privacy." /><Card><h2 className="font-bold">Privacy</h2><p className="mt-2 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other workers’ contact details, activity, reports, settings, and audit records remain private.</p></Card></>; const tasks = section === 'today' ? dueToday : state.chores; return <><Title title={section === 'today' ? `Today, ${member.name}` : 'Tasks'} text={section === 'today' ? 'Focus on work due today and current reminders.' : 'Your assigned work and tasks available to claim.'} /><TaskList tasks={tasks} members={[member]} onOpen={setTask} />{section === 'today' && !tasks.length && <Card><p className="text-center text-[#687873]">Nothing is due today. Check Tasks for available work.</p></Card>}</>; }
+function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-1 text-sm text-[#687873]">{text}</p></div>{action}</div>; }
+function Metric({ label, value }: { label: string; value: number }) { return <Card className="p-4"><p className="text-3xl font-semibold">{value}</p><p className="text-sm text-[#687873]">{label}</p></Card>; }
+function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[]; members: Member[]; onOpen: (task: Chore) => void; compact?: boolean }) { return <div className={compact ? 'mt-3 divide-y' : 'grid gap-3'}>{tasks.map((task) => { const assigned = members.find((m) => m.id === task.assignedTo); return <button key={task.id} onClick={() => onOpen(task)} className={`flex min-h-16 w-full items-center gap-3 text-left ${compact ? 'py-3' : 'rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm'}`}><span className={`grid size-10 shrink-0 place-items-center rounded-xl ${task.status === 'complete' ? 'bg-[#287b6f] text-white' : 'bg-[#e8f1ec] text-[#287b6f]'}`}>{task.status === 'complete' ? <Check /> : <CalendarDays />}</span><span className="min-w-0 flex-1"><span className="block truncate font-bold">{task.title}</span><span className="block text-sm text-[#687873]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span></span><span className="text-right text-xs font-semibold text-[#687873]">{assigned?.name ?? 'Available'}<br />{task.status.replace('_', ' ')}</span></button>; })}</div>; }
 
-function Metric({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone: 'green' | 'gold' | 'blue' }) {
-  const colors = {
-    green: 'bg-[#e5f1eb] text-[#287b6f]',
-    gold: 'bg-[#f7ecd7] text-[#a46c17]',
-    blue: 'bg-[#e8ecf7] text-[#556da9]',
-  };
-  return (
-    <div className={`metric-card metric-${tone} rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-4 sm:p-5`}>
-      <span className={`grid size-9 place-items-center rounded-xl [&>svg]:size-4 ${colors[tone]}`}>{icon}</span>
-      <div className="mt-4">
-        <p className="text-3xl font-semibold leading-none tracking-tight sm:text-4xl">{value}</p>
-        <p className="mt-1 text-xs font-medium text-[#71807b] sm:text-sm">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-function ChoreRow({
-  chore,
-  members,
-  currentMember,
-  busy,
-  onRun,
-  onAssign,
-}: {
-  chore: Chore;
-  members: Member[];
-  currentMember: Member;
-  busy: boolean;
-  onRun: (chore: Chore, action: 'claim' | 'start' | 'complete' | 'unclaim', success: string) => void;
-  onAssign: (assigneeId: string) => void;
-}) {
-  const assigned = members.find((member) => member.id === chore.assignedTo);
-  const completed = members.find((member) => member.id === chore.completedBy);
-  const canComplete = chore.status === 'open' && (currentMember.role === 'manager' || !assigned || assigned.id === currentMember.id);
-  const due = dayLabel(chore.dueDate);
-  const overdue = chore.dueDate ? chore.dueDate < new Date().toISOString().slice(0, 10) && chore.status === 'open' : false;
-
-  return (
-    <article className="chore-row group px-5 py-5 transition hover:bg-[#f5f8f4] sm:px-6">
-      <div className="chore-row-layout flex flex-wrap items-center gap-4">
-        <button
-          type="button"
-          disabled={!canComplete || busy || chore.status === 'complete'}
-          onClick={() => onRun(chore, 'complete', `${chore.title} marked complete.`)}
-          className={`grid size-10 shrink-0 place-items-center rounded-xl border-2 transition focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[#75a99f]/40 ${chore.status === 'complete' ? 'border-[#287b6f] bg-[#287b6f] text-white' : canComplete ? 'border-[#b9c9c3] bg-white text-transparent hover:border-[#287b6f] hover:text-[#287b6f]' : 'cursor-not-allowed border-[#e0e4df] bg-[#f2f3ef] text-transparent'}`}
-          aria-label={chore.status === 'complete' ? `${chore.title} is complete` : `Mark ${chore.title} complete`}
-        >
-          <Check className="size-5" aria-hidden="true" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className={`font-bold tracking-[-0.015em] ${chore.status === 'complete' ? 'text-[#7d8a86] line-through decoration-[#a9b4b0]' : ''}`}>{chore.title}</h3>
-            {chore.status === 'open' && !assigned && <Badge className="bg-[#f7ecd7] text-[#936016]">Open to claim</Badge>}
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#74827d]">
-            <span className="flex items-center gap-1.5"><Home className="size-3.5" aria-hidden="true" />{chore.area}</span>
-            <span className={`flex items-center gap-1.5 ${overdue ? 'font-semibold text-[#bd5b45]' : ''}`}><CalendarDays className="size-3.5" aria-hidden="true" />{due}</span>
-            {chore.status === 'complete' && completed && <span>Done by {completed.name}</span>}
-          </div>
-        </div>
-        <div className="chore-actions flex min-w-[184px] items-center justify-end gap-2 self-stretch sm:self-auto">
-          {chore.status === 'complete' && completed ? (
-            <div className="flex items-center gap-2 rounded-xl bg-[#edf4f0] px-3 py-2 text-sm font-semibold text-[#287b6f]"><MemberAvatar member={completed} className="size-6" />{completed.name}</div>
-          ) : assigned ? (
-            <>
-              <div className="flex items-center gap-2 rounded-xl border border-[#dde4dc] bg-white px-3 py-2 text-sm font-semibold"><MemberAvatar member={assigned} className="size-6" />{assigned.name}</div>
-              {(assigned.id === currentMember.id || currentMember.role === 'manager') && (
-                <Button variant="ghost" size="icon" title="Release assignment" disabled={busy} onClick={() => onRun(chore, 'unclaim', `${chore.title} is open to claim.`)} className="rounded-xl text-[#7c8b86]">Ã—<span className="sr-only">Release {chore.title}</span></Button>
-              )}
-            </>
-          ) : currentMember.role === 'manager' ? (
-            <Select onValueChange={(value) => onAssign(String(value))} disabled={busy}>
-              <SelectTrigger aria-label={`Assign ${chore.title}`} className="h-10 w-full rounded-xl border-[#d7dfd7] bg-white sm:w-[184px]"><SelectValue placeholder="Assign worker" /></SelectTrigger>
-              <SelectContent className="rounded-xl bg-white">
-                {members.filter((member) => member.role === 'worker' && member.status !== 'disabled').map((worker) => (
-                  <SelectItem key={worker.id} value={worker.id}><MemberAvatar member={worker} className="size-6" />{worker.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Button disabled={busy} onClick={() => onRun(chore, 'claim', `${chore.title} claimed.`)} className="h-10 w-full rounded-xl bg-[#287b6f] px-4 sm:w-auto">Claim chore</Button>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
+function TaskDialog({ task, manager, workers, busy, onClose, mutate, upload, deletePhoto }: any) { if (!task) return null; const editable = manager || (task.assignedTo && task.status !== 'complete'); return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-2xl"><DialogHeader><DialogTitle>{task.title}</DialogTitle><DialogDescription>{task.area} · {dateLabel(task.dueDate)} · {task.status.replace('_', ' ')}</DialogDescription></DialogHeader>{manager ? <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'updateTask', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Task updated.'); }}><div className="grid gap-3 sm:grid-cols-2"><Field label="Task title" name="title" defaultValue={task.title} required /><label className="text-sm font-semibold">Area<select name="area" defaultValue={task.area} className={fieldClass}>{areas.map(a => <option key={a}>{a}</option>)}</select></label><Field label="Due date" name="dueDate" type="date" defaultValue={task.dueDate} /><Field label="Due time" name="dueTime" type="time" defaultValue={task.dueTime} /><label className="text-sm font-semibold">Priority<select name="priority" defaultValue={task.priority} className={fieldClass}><option>low</option><option>normal</option><option>high</option><option>urgent</option></select></label><label className="text-sm font-semibold">Assign to<select name="assigneeId" defaultValue={task.assignedTo ?? ''} className={fieldClass}><option value="">Available to claim</option>{workers.filter((w: Member) => w.status === 'active').map((w: Member) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label className="text-sm font-semibold">Repeat<select name="recurrence" defaultValue={task.recurrence ?? ''} className={fieldClass}><option value="">Never</option><option>daily</option><option>weekly</option><option>monthly</option></select></label><Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={task.reminderLeadDays ?? 1} /></div><TextArea label="Instructions" name="instructions" defaultValue={task.instructions} /><Button disabled={busy} className="bg-[#287b6f]">Save task changes</Button></form> : editable ? <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'updateTask', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)), issueOpen: new FormData(e.currentTarget).get('issueOpen') === 'on' }, 'Task update saved.'); }}><TextArea label="Progress notes" name="progressNotes" defaultValue={task.progressNotes} /><TextArea label="Completion notes" name="completionNotes" defaultValue={task.completionNotes} /><TextArea label="Issue or blocker" name="issueReport" defaultValue={task.issueReport} /><label className="flex min-h-11 items-center gap-2 text-sm font-semibold"><input type="checkbox" name="issueOpen" defaultChecked={task.issueOpen} />Issue still open</label><Field label="Expected completion" name="expectedCompletionAt" type="datetime-local" defaultValue={task.expectedCompletionAt} /><Button disabled={busy} className="bg-[#287b6f]">Save update</Button></form> : null}<div className="border-t pt-4"><h3 className="font-bold">Photos</h3><div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">{(task.photos ?? []).map((photo: any) => <figure key={photo.id} className="relative overflow-hidden rounded-xl border bg-white"><a href={`/api/uploads/${photo.id}`} target="_blank" rel="noreferrer"><img src={`/api/uploads/${photo.id}`} alt={photo.originalName} className="aspect-square w-full object-cover" /></a><button onClick={() => deletePhoto(photo.id)} className="absolute right-2 top-2 grid size-10 place-items-center rounded-full bg-white/90 text-red-700" aria-label={`Delete ${photo.originalName}`}><Trash2 className="size-4" /></button></figure>)}</div>{editable && <label className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold"><Upload className="size-4" />Upload photo<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], { choreId: task.id })} /></label>}</div><div className="border-t pt-4"><h3 className="font-bold">Updates</h3>{(task.notes ?? []).map((note: any) => <p key={note.id} className="mt-2 rounded-xl bg-[#f1f5f1] p-3 text-sm"><Badge>{note.kind}</Badge> {note.body}</p>)}{editable && <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'addNote', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Note added.'); e.currentTarget.reset(); }}><select name="kind" className={fieldClass}><option value="progress">Progress</option><option value="issue">Issue</option><option value="completion">Completion</option></select><Input name="body" required placeholder="Add an update" className="min-h-11" /><Button disabled={busy} className="bg-[#287b6f]">Add</Button></form>}</div><DialogFooter><div className="flex w-full flex-wrap gap-2">{task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}{task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}{task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}<Button variant="outline" onClick={onClose}>Close</Button></div></DialogFooter></DialogContent></Dialog>; }
+function ProfileDialog({ profile, manager, busy, onClose, submit, upload }: any) { if (!profile) return null; return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg"><DialogHeader><DialogTitle>{manager ? `Edit ${profile.name}` : 'Edit your profile'}</DialogTitle><DialogDescription>{manager ? 'Manager-only detailed care-worker record.' : 'Only the permitted self-service fields are available.'}</DialogDescription></DialogHeader><div className="flex items-center gap-3"><AvatarFor member={profile} className="size-16" /><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold"><Upload className="size-4" />Photo<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], { profileMemberId: profile.id })} /></label></div><form className="grid gap-4" onSubmit={(e) => submit(e, 'updateProfile', 'Profile saved.', onClose)}><input type="hidden" name="memberId" value={profile.id} />{manager && <><Field label="Name" name="name" defaultValue={profile.name} required /><Field label="Email" name="email" type="email" defaultValue={profile.email} /></>}<Field label="Phone" name="phone" type="tel" defaultValue={profile.phone} /><TextArea label="Availability" name="availability" defaultValue={profile.availability} /><TextArea label="Languages" name="languages" defaultValue={profile.languages} />{manager && <><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}<Button disabled={busy} className="bg-[#287b6f]">Save profile</Button></form></DialogContent></Dialog>; }
+function CreateDialog({ open, workers, busy, onClose, submit }: any) { return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg"><DialogHeader><DialogTitle>Add task</DialogTitle><DialogDescription>Create a clear, assignable household task.</DialogDescription></DialogHeader><form className="grid gap-4" onSubmit={(e) => submit(e, 'createChore', 'Task created.', onClose)}><Field label="Task title" name="title" required /><label className="text-sm font-semibold">Area<select name="area" className={fieldClass}>{areas.map(a => <option key={a}>{a}</option>)}</select></label><div className="grid grid-cols-2 gap-3"><Field label="Due date" name="dueDate" type="date" /><Field label="Due time" name="dueTime" type="time" /></div><label className="text-sm font-semibold">Priority<select name="priority" className={fieldClass}><option>low</option><option selected value="normal">normal</option><option>high</option><option>urgent</option></select></label><TextArea label="Instructions" name="instructions" /><label className="text-sm font-semibold">Repeat<select name="recurrence" className={fieldClass}><option value="">Never</option><option>daily</option><option>weekly</option><option>monthly</option></select></label><label className="text-sm font-semibold">Assign to<select name="assigneeId" className={fieldClass}><option value="">Available to claim</option>{workers.filter((w: Member) => w.status === 'active').map((w: Member) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label><Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={1} /><Button disabled={busy} className="bg-[#287b6f]">Create task</Button></form></DialogContent></Dialog>; }
+function AddWorkerDialog({ open, busy, onClose, submit }: any) { return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md"><DialogHeader><DialogTitle>Add care worker</DialogTitle><DialogDescription>Create a worker account with a temporary password.</DialogDescription></DialogHeader><form className="grid gap-4" onSubmit={(e) => submit(e, 'addMember', 'Worker added.', onClose)}><Field label="Full name" name="name" required /><Field label="Email" name="googleEmail" type="email" required /><Field label="Temporary password" name="temporaryPassword" type="password" required /><p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p><Button disabled={busy} className="bg-[#287b6f]">Add worker</Button></form></DialogContent></Dialog>; }
+function ResetDialog({ member, busy, onClose, submit }: any) { return <Dialog open={Boolean(member)} onOpenChange={(value) => !value && onClose()}><DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md"><DialogHeader><DialogTitle>Reset password</DialogTitle><DialogDescription>Set a temporary password for {member?.name}. They must change it after signing in.</DialogDescription></DialogHeader>{member && <form className="grid gap-4" onSubmit={(e) => submit(e, 'resetMemberPassword', 'Temporary password updated.', onClose)}><input type="hidden" name="memberId" value={member.id} /><Field label="Temporary password" name="temporaryPassword" type="password" required /><Button disabled={busy} className="bg-[#287b6f]">Reset password</Button></form>}</DialogContent></Dialog>; }

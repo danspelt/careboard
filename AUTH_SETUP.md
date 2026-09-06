@@ -10,6 +10,7 @@ CareBoard supports Google OAuth and email/password authentication. It does not s
 - `CAREBOARD_OWNER_MEMBER_ID`: optional existing manager profile ID; defaults to `member-manager`
 - `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`: required only for Google sign-in
 - `DATABASE_PATH`: optional SQLite database path
+- `UPLOAD_PATH`: persistent proof-photo directory; defaults to `/data/uploads`
 - `CAREBOARD_MEMBER_EMAILS`: optional JSON mapping from approved worker emails to existing worker IDs
 
 The manager identity is determined only by `CAREBOARD_OWNER_EMAIL` and its configured manager profile. Worker mappings cannot grant the manager role.
@@ -23,3 +24,7 @@ Managers can set another temporary password, disable a worker, or reactivate one
 Workers receive only their own assigned tasks (including completed history) and unassigned open tasks. They never receive the roster, other workers' tasks, or unrelated activity. Workers may atomically claim an unassigned open task, start only their own assigned open task, and complete only their own in-progress task. Managers retain full task and account control.
 
 Run database migrations before production startup. The local SQLite adapter applies migrations automatically.
+
+## Coolify persistence
+
+Mount a persistent volume at `/data` and set `DATABASE_PATH=/data/careboard.db` and `UPLOAD_PATH=/data/uploads`. Both the SQLite database and authenticated proof photos then survive deployments. The Docker image creates the upload directory with ownership for the non-root application user. Do not expose the upload directory through a static file server; photos are served only by CareBoard's authenticated ownership-checked route.

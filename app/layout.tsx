@@ -1,6 +1,7 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+import { PwaRegister } from '@/app/pwa-register';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -12,11 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+export const viewport: Viewport = { themeColor: '#287b6f' };
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://care.danspelt.com'),
   title: 'CareBoard — Household care, clearly coordinated',
   description:
     'A simple private chore board for coordinating household care workers, assignments, and completed work.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'CareBoard', statusBarStyle: 'default' },
   openGraph: {
     title: 'CareBoard — Household care, clearly coordinated',
     description: 'Assign each household chore once and see exactly what is claimed and complete.',
@@ -49,6 +54,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <PwaRegister />
       </body>
     </html>
   );
