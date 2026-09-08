@@ -1,5 +1,6 @@
+import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, ClipboardCheck, HeartHandshake, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ClipboardCheck, ShieldCheck, Sparkles, Users } from 'lucide-react';
 import { auth } from '@/auth';
 
 const benefits = [
@@ -16,7 +17,7 @@ const benefits = [
   {
     icon: ShieldCheck,
     title: 'Private by design',
-    description: 'Only Google accounts approved by your household manager can see or update the care board.',
+    description: 'Only accounts approved by your household manager can see or update the care board.',
   },
 ];
 
@@ -27,7 +28,7 @@ export default async function Home() {
     <main className="min-h-screen overflow-hidden bg-[#f7f4ed] text-[#20312d]">
       <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
         <Link href="/" className="inline-flex items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]">
-          <span className="grid size-10 place-items-center rounded-2xl bg-[#287b6f] text-white"><HeartHandshake className="size-5" aria-hidden="true" /></span>
+          <Image src="/favicon.svg" alt="" width={40} height={40} />
           <span className="text-xl font-bold tracking-tight">CareBoard</span>
         </Link>
         <Link href={session?.user ? '/dashboard' : '/sign-in'} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[#cbd6c9] bg-[#fffefa] px-5 text-sm font-semibold shadow-sm transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]">
@@ -90,7 +91,7 @@ export default async function Home() {
 
       <section className="px-5 py-20 sm:px-8 lg:px-10">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 rounded-[30px] bg-[#204c45] p-8 text-white sm:p-12 lg:flex-row lg:items-center">
-          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#b9ddd3]">For approved care teams</p><h2 className="mt-3 text-3xl font-semibold tracking-[-.035em]">Your private care board is ready.</h2><p className="mt-3 max-w-xl text-sm leading-6 text-white/70">Sign in with the Google account your household manager approved.</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#b9ddd3]">For approved care teams</p><h2 className="mt-3 text-3xl font-semibold tracking-[-.035em]">Your private care board is ready.</h2><p className="mt-3 max-w-xl text-sm leading-6 text-white/70">Sign in with the account your household manager approved.</p></div>
           <Link href={session?.user ? '/dashboard' : '/sign-in'} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-6 text-sm font-semibold text-[#204c45] transition hover:bg-[#f1f5ef] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">{session?.user ? 'Open dashboard' : 'Secure sign in'} <ArrowRight className="size-4" aria-hidden="true" /></Link>
         </div>
       </section>

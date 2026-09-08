@@ -21,6 +21,9 @@ export const metadata: Metadata = {
   description:
     'A simple private chore board for coordinating household care workers, assignments, and completed work.',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: { url: '/favicon.svg', type: 'image/svg+xml', sizes: 'any' },
+  },
   appleWebApp: { capable: true, title: 'CareBoard', statusBarStyle: 'default' },
   openGraph: {
     title: 'CareBoard — Household care, clearly coordinated',

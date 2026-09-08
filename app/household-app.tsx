@@ -3,7 +3,7 @@
 
 import { logOut } from '@/app/actions/auth';
 import { useState } from 'react';
-import { CalendarDays, Check, ClipboardList, FileDown, Home, LayoutDashboard, MoreHorizontal, Pencil, Plus, Shield, Trash2, Upload, User, Users } from 'lucide-react';
+import { Bath, BedDouble, Bell, CalendarDays, Check, ChevronRight, ClipboardList, FileDown, Home, LayoutDashboard, MoreHorizontal, Pencil, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
+const areaIcons: Record<string, typeof Home> = { Kitchen: Utensils, Bathroom: Bath, Bedroom: BedDouble, 'Living room': Sofa, Laundry: WashingMachine, Outside: Sprout, Other: Home };
 type ManagerSection = 'home' | 'tasks' | 'team' | 'more';
 type WorkerSection = 'today' | 'tasks' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
@@ -74,7 +75,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const open = state.chores.filter((item) => item.status !== 'complete');
   const dueToday = open.filter((item) => item.dueDate === today());
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['team', 'Team', Users], ['more', 'Settings', MoreHorizontal]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
     : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
@@ -86,7 +87,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Mobile header */}
       <header className="fixed left-0 right-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#dfe5dc] bg-[#fcfbf7]/95 px-4 backdrop-blur md:hidden">
         <button onClick={() => setSection(manager ? 'home' : 'today')} className="flex min-h-11 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
-          <span className="grid size-9 place-items-center rounded-xl bg-[#287b6f] text-white"><Home className="size-5" aria-hidden="true" /></span>
+          <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
         </button>
         <div className="flex items-center gap-2">
@@ -98,7 +99,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Desktop sidebar */}
       <aside className="fixed left-0 top-0 hidden h-screen w-64 flex-col overflow-y-auto border-r border-[#dfe5dc] bg-[#fffefa] md:flex" aria-label="Main navigation">
         <div className="flex h-16 items-center gap-3 border-b border-[#dfe5dc] px-5">
-          <span className="grid size-9 place-items-center rounded-xl bg-[#287b6f] text-white"><Home className="size-5" aria-hidden="true" /></span>
+          <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-4">
@@ -131,7 +132,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </aside>
 
       {/* Main content */}
-      <main id="main" className="min-h-screen pt-16 md:pl-64 md:pt-0">
+      <main id="main" tabIndex={-1} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {manager ? (
             <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} mutate={mutate} busy={busy} />
@@ -163,15 +164,12 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
-      {notice && (
-        <button
-          onClick={() => setNotice('')}
-          className="fixed bottom-[5.5rem] right-4 z-50 max-w-sm rounded-xl bg-[#20312d] px-4 py-3 text-left text-sm text-white shadow-xl transition hover:bg-[#2a3f3a] md:bottom-6"
-          aria-live="polite"
-        >
-          {notice}
-        </button>
-      )}
+      <output aria-live="polite" aria-atomic="true" className="dashboard-notice fixed inset-x-4 z-50 ml-auto max-w-sm md:bottom-6 md:left-auto">
+        {notice && <span className="flex items-center gap-3 rounded-2xl bg-[#20312d] p-3 pl-4 text-sm text-white shadow-xl">
+          <span className="min-w-0 flex-1 break-words">{notice}</span>
+          <button onClick={() => setNotice('')} aria-label="Dismiss notification" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-white/10"><X className="size-4" aria-hidden="true" /></button>
+        </span>}
+      </output>
     </div>
   );
 }
@@ -200,6 +198,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
   if (section === 'team') return (
     <>
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add worker</Button>} />
+      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => (
           <Card key={worker.id}>
@@ -247,7 +246,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           {open.length > 8 && <p className="mt-3 text-center text-xs text-[#687873]">Showing 8 of {open.length} open tasks. View Tasks for the full list.</p>}
         </Card>
         <Card>
-          <h2 className="text-lg font-bold">Reminders</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Bell className="size-5 text-[#287b6f]" aria-hidden="true" />Reminders</h2>
           <p className="text-sm text-[#687873]">Tasks coming up within the reminder window</p>
           <div className="mt-3 space-y-3">
             {state.reminders.length ? state.reminders.map((item: Chore) => (
@@ -363,7 +362,7 @@ function WorkerView({ section, state, member, dueToday, setTask, setProfile }: a
   );
 }
 
-function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-1 text-sm text-[#687873]">{text}</p></div>{action}</div>; }
+function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Your household, connected</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>; }
 function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
   const toneStyles = {
     neutral: 'bg-[#fffefa]',
@@ -371,38 +370,40 @@ function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string;
     success: 'bg-[#e8f4ef] border-[#c7e3d9]',
   };
   return (
-    <Card className={`relative flex flex-col justify-between p-4 ${toneStyles[tone]}`}>
-      {Icon && <Icon className="absolute right-4 top-4 size-5 text-[#a8b8b2]" aria-hidden="true" />}
-      <p className="text-3xl font-semibold">{value}</p>
-      <p className="text-sm text-[#687873]">{label}</p>
+    <Card className={`flex min-w-0 flex-col gap-4 p-4 ${toneStyles[tone]}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-[#52645f]">{label}</p>
+        {Icon && <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${tone === 'caution' ? 'bg-[#f4e7cf] text-[#805322]' : 'bg-[#dcece4] text-[#216b61]'}`}><Icon className="size-4" aria-hidden="true" /></span>}
+      </div>
+      <p className="break-words text-4xl font-semibold tracking-tight tabular-nums">{value}</p>
     </Card>
   );
 }
 
 function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[]; members: Member[]; onOpen: (task: Chore) => void; compact?: boolean }) {
-  if (!tasks.length) return <p className="p-5 text-center text-sm text-[#687873]">No tasks to show.</p>;
+  if (!tasks.length) return <div className="flex flex-col items-center px-5 py-10 text-center"><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><ClipboardList className="size-6" aria-hidden="true" /></span><p className="font-semibold">No tasks to show</p><p className="mt-1 max-w-xs text-sm leading-6 text-[#52645f]">Tasks will appear here as work is planned for your household.</p></div>;
   return (
     <div className={compact ? 'divide-y' : 'grid gap-3 p-5'}>
       {tasks.map((task) => {
         const assigned = members.find((m) => m.id === task.assignedTo);
+        const AreaIcon = areaIcons[task.area] ?? Home;
         const priorityOrder: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
         const priorityClass = priorityOrder[task.priority] <= 1 ? 'text-[#9e6b2e]' : 'text-[#687873]';
         return (
           <button
             key={task.id}
             onClick={() => onOpen(task)}
-            className={`flex w-full items-center gap-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${compact ? 'min-h-14 py-3' : 'min-h-16 rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm hover:border-[#b7c9bc]'}`}
+            className={`group flex w-full items-center gap-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${compact ? 'min-h-14 rounded-xl px-2 py-4 hover:bg-[#f1f5f1]' : 'min-h-16 rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm hover:border-[#b7c9bc] hover:bg-[#f8faf7]'}`}
           >
             <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${task.status === 'complete' ? 'bg-[#287b6f] text-white' : 'bg-[#e8f1ec] text-[#287b6f]'}`}>
-              {task.status === 'complete' ? <Check className="size-5" /> : <CalendarDays className="size-5" />}
+              {task.status === 'complete' ? <Check className="size-5" aria-hidden="true" /> : <AreaIcon className="size-5" aria-hidden="true" />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-bold">{task.title}</span>
-              <span className={`block text-sm ${priorityClass}`}>{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span>
+              <span className="block break-words font-semibold">{task.title}</span>
+              <span className="mt-1 block text-xs leading-5 text-[#52645f]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span>
+              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge status={task.status} /><span className="text-xs text-[#52645f]">{assigned?.name ?? 'Available'}</span>{priorityOrder[task.priority] <= 1 && <span className={`text-xs font-semibold capitalize ${priorityClass}`}>{task.priority} priority</span>}</span>
             </span>
-            <span className="hidden shrink-0 text-right text-xs font-semibold text-[#687873] sm:block">
-              {assigned?.name ?? 'Available'}<br />{task.status.replace('_', ' ')}
-            </span>
+            <ChevronRight className="size-4 shrink-0 text-[#687873] transition group-hover:text-[#287b6f]" aria-hidden="true" />
           </button>
         );
       })}

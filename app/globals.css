@@ -142,3 +142,26 @@
 body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
+.dashboard-main {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+  scroll-margin-top: 5rem;
+}
+.dashboard-notice {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+.careboard :is(input, textarea, select):focus-visible,
+.sign-in :is(a, button, input):focus-visible {
+  outline: 2px solid #287b6f;
+  outline-offset: 3px;
+}
+.dashboard-notice button:focus-visible {
+  outline-color: #b9ddd3;
+}
+.sign-in {
+  background: radial-gradient(ellipse at 10% 20%, #e3eee3 0%, transparent 55%), #f5f6f2;
+}
+@media (min-width: 768px) {
+  .dashboard-main { padding-bottom: 2rem; }
+  .dashboard-notice { bottom: 1.5rem; }
+}
