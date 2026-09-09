@@ -75,6 +75,13 @@
   ::selection {
     background: #b9ddd3;
   }
+  svg.lucide {
+    flex-shrink: 0;
+    pointer-events: none;
+  }
+  svg.lucide.size-4 { width: 1rem; height: 1rem; }
+  svg.lucide.size-5 { width: 1.25rem; height: 1.25rem; }
+  svg.lucide.size-6 { width: 1.5rem; height: 1.5rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
-const areaIcons: Record<string, typeof Home> = { Kitchen: Utensils, Bathroom: Bath, Bedroom: BedDouble, 'Living room': Sofa, Laundry: WashingMachine, Outside: Sprout, Other: Home };
+const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 type ManagerSection = 'home' | 'tasks' | 'team' | 'more';
 type WorkerSection = 'today' | 'tasks' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
@@ -386,7 +386,7 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
     <div className={compact ? 'divide-y' : 'grid gap-3 p-5'}>
       {tasks.map((task) => {
         const assigned = members.find((m) => m.id === task.assignedTo);
-        const AreaIcon = areaIcons[task.area] ?? Home;
+        const AreaIcon = areaIcons.get(task.area) ?? Home;
         const priorityOrder: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
         const priorityClass = priorityOrder[task.priority] <= 1 ? 'text-[#9e6b2e]' : 'text-[#687873]';
         return (
