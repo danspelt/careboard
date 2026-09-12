@@ -2,14 +2,15 @@
 /* oxlint-disable typescript/no-explicit-any, next/no-img-element -- API photo URLs require authenticated, unoptimized requests; compact view prop types are intentionally structural. */
 
 import { logOut } from '@/app/actions/auth';
-import { useState } from 'react';
-import { Bath, BedDouble, Bell, CalendarDays, Check, ChevronRight, ClipboardList, FileDown, Home, LayoutDashboard, MoreHorizontal, Pencil, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { createElement, useState } from 'react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
+import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -132,12 +133,12 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </aside>
 
       {/* Main content */}
-      <main id="main" tabIndex={-1} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
+      <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {manager ? (
             <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} mutate={mutate} busy={busy} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} dueToday={dueToday} setTask={setTask} setProfile={setProfile} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} mutate={mutate} busy={busy} />
           )}
         </div>
       </main>
@@ -165,6 +166,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
       <output aria-live="polite" aria-atomic="true" className="dashboard-notice fixed inset-x-4 z-50 ml-auto max-w-sm md:bottom-6 md:left-auto">
+        {busy && <span className="sr-only">Saving your update.</span>}
         {notice && <span className="flex items-center gap-3 rounded-2xl bg-[#20312d] p-3 pl-4 text-sm text-white shadow-xl">
           <span className="min-w-0 flex-1 break-words">{notice}</span>
           <button onClick={() => setNotice('')} aria-label="Dismiss notification" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-white/10"><X className="size-4" aria-hidden="true" /></button>
@@ -313,7 +315,7 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function WorkerView({ section, state, member, dueToday, setTask, setProfile }: any) {
+function WorkerView({ section, state, member, setTask, setProfile, mutate, busy }: any) {
   if (section === 'profile') return (
     <>
       <Title title="Your profile" text="You control your contact, availability, languages, and profile photo." />
@@ -346,21 +348,76 @@ function WorkerView({ section, state, member, dueToday, setTask, setProfile }: a
       </Card>
     </>
   );
-  const tasks = section === 'today' ? dueToday : state.chores;
+  if (section === 'today') return <ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />;
+  const tasks = state.chores;
   return (
     <>
-      <Title title={section === 'today' ? `Today, ${member.name}` : 'Tasks'} text={section === 'today' ? 'Focus on work due today and current reminders.' : 'Your assigned work and tasks available to claim.'} />
+      <Title title="Tasks" text="Your assigned work and tasks available to claim." />
       <Card className="p-0">
         <div className="border-b border-[#dfe5dc] px-5 py-4">
-          <h2 className="font-semibold">{section === 'today' ? `Due today` : 'Your task list'}</h2>
+          <h2 className="font-semibold">Your task list</h2>
           <p className="text-sm text-[#687873]">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</p>
         </div>
         <TaskList tasks={tasks} members={[member]} onOpen={setTask} />
       </Card>
-      {section === 'today' && !tasks.length && <Card className="mt-4"><p className="text-center text-[#687873]">Nothing is due today. Check Tasks for available work.</p></Card>}
     </>
   );
 }
+
+function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
+  const date = today();
+  const handoff = buildShiftHandoff<Chore>(state.chores, member.id, date);
+  const firstName = member.name.split(/\s+/)[0];
+  const outstanding = handoff.assigned.filter((task: Chore) => task.status !== 'complete');
+  const runAction = async (event: React.MouseEvent, task: Chore, action: 'start' | 'complete') => {
+    event.stopPropagation();
+    try { await mutate({ action, choreId: task.id }, action === 'start' ? `${task.title} started.` : `${task.title} completed.`); } catch { /* live notice reports the error */ }
+  };
+  return (
+    <>
+      <Title title={`Shift handoff for ${firstName}`} text="Your assignments, important updates, and next actions in one place." />
+      <section aria-labelledby="shift-summary" className="mb-6 overflow-hidden rounded-3xl bg-[#203f36] p-5 text-white shadow-lg sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#bcd9ca]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 id="shift-summary" className="mt-2 text-2xl font-semibold">{handoff.attention.length ? `${handoff.attention.length} ${handoff.attention.length === 1 ? 'item needs' : 'items need'} attention` : 'You’re ready for the shift'}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-[#d8e7df]">{handoff.attention.length ? 'Prioritized from due dates, task priority, and open issues already recorded by your care team.' : outstanding.length ? 'No urgent or overdue work. Continue with today’s plan.' : 'No assigned work is due today. Available work remains in Tasks.'}</p></div>
+          <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-2xl bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[#bcd9ca]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-[#d8e7df]">completed today</p></div>
+        </div>
+      </section>
+      <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
+        <div className="space-y-6">
+          <Card className="p-0">
+            <div className="flex items-start gap-3 border-b border-[#dfe5dc] px-5 py-4"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#f8e9dc] text-[#98552e]"><AlertTriangle className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Priority briefing</h2><p className="text-sm text-[#687873]">Why these tasks should come first</p></div></div>
+            {handoff.attention.length ? <div className="grid gap-3 p-4">{handoff.attention.map((task: Chore) => <HandoffTask key={task.id} task={task} member={member} reasons={attentionReasons(task, date)} setTask={setTask} busy={busy} runAction={runAction} />)}</div> : <EmptyHandoff icon={CheckCircle2} title="Nothing needs immediate attention" text="Urgent, overdue, and issue-flagged assignments will appear here." />}
+          </Card>
+          <Card className="p-0">
+            <div className="flex items-start gap-3 border-b border-[#dfe5dc] px-5 py-4"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><CalendarDays className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Today’s assignments</h2><p className="text-sm text-[#687873]">{handoff.assigned.length} open {handoff.assigned.length === 1 ? 'task' : 'tasks'} due today</p></div></div>
+            {handoff.assigned.length ? <div className="grid gap-3 p-4">{handoff.assigned.map((task: Chore) => <HandoffTask key={task.id} task={task} member={member} reasons={[]} setTask={setTask} busy={busy} runAction={runAction} />)}</div> : <EmptyHandoff icon={CalendarDays} title="No assigned tasks due today" text="You’re caught up. Check Tasks if you want to claim available work." />}
+          </Card>
+        </div>
+        <aside className="space-y-6" aria-label="Shift updates and progress">
+          <Card>
+            <h2 className="flex items-center gap-2 font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Latest handoff notes</h2><p className="mt-1 text-sm text-[#687873]">Recent updates on your assigned work</p>
+            {handoff.latestNotes.length ? <ol className="mt-4 space-y-3">{handoff.latestNotes.map(({ task, ...note }: any) => <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl border border-[#dfe5dc] bg-white p-3 text-left transition hover:border-[#aac3b3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-2 line-clamp-3 block text-sm leading-5 text-[#52645f]">{note.body}</span><time className="mt-2 block text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></button></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoff notes yet" text="Progress and issue notes from your assigned tasks will collect here." compact />}
+          </Card>
+          <Card>
+            <h2 className="font-bold">Shift snapshot</h2><div className="mt-4 space-y-4">
+              <ProgressRow label="Completed today" value={handoff.completed.length} icon={CheckCircle2} />
+              <ProgressRow label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
+              <ProgressRow label="Still due today" value={outstanding.length} icon={CalendarDays} />
+            </div>
+          </Card>
+        </aside>
+      </div>
+    </>
+  );
+}
+
+function HandoffTask({ task, member, reasons, setTask, busy, runAction }: any) {
+  const AreaIcon = areaIcons.get(task.area) ?? Home;
+  return <article className="rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm"><button onClick={() => setTask(task)} className="w-full text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]" aria-label={`Open ${task.title}`}><span className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]">{createElement(AreaIcon, { className: 'size-5', 'aria-hidden': true })}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-start justify-between gap-2"><span className="font-semibold">{task.title}</span><StatusBadge status={task.status} /></span><span className="mt-1 block text-xs text-[#52645f]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span></span></span>{reasons.length > 0 && <span className="mt-3 flex flex-wrap gap-1.5">{reasons.map((reason: string) => <span key={reason} className="rounded-full bg-[#f8e9dc] px-2.5 py-1 text-xs font-semibold text-[#8b4e2c]">{reason}</span>)}</span>}{(task.issueReport || task.progressNotes || task.instructions) && <span className="mt-3 line-clamp-2 block text-sm leading-5 text-[#52645f]">{task.issueReport || task.progressNotes || task.instructions}</span>}</button><div className="mt-3 flex flex-wrap gap-2 border-t border-[#edf0eb] pt-3">{task.status === 'open' && task.assignedTo === member.id && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'start')}><Play className="size-4" />Start task</Button>}{task.status === 'in_progress' && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'complete')} className="bg-[#287b6f]"><Check className="size-4" />Mark complete</Button>}<Button size="sm" variant="outline" onClick={() => setTask(task)}><MessageSquareText className="size-4" />Add handoff note</Button></div></article>;
+}
+
+function EmptyHandoff({ icon: Icon, title, text, compact = false }: any) { return <div className={`flex flex-col items-center px-5 text-center ${compact ? 'py-7' : 'py-10'}`}><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-6" aria-hidden="true" /></span><p className="font-semibold">{title}</p><p className="mt-1 max-w-sm text-sm leading-6 text-[#52645f]">{text}</p></div>; }
+function ProgressRow({ label, value, icon: Icon }: any) { return <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span><span className="flex-1 text-sm text-[#52645f]">{label}</span><strong className="text-lg tabular-nums">{value}</strong></div>; }
 
 function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Your household, connected</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>; }
 function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
