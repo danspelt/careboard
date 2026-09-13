@@ -12,9 +12,9 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
   const passwordEnabled = authenticationConfigured();
   const googleEnabled = googleAuthenticationConfigured();
   return (
-    <main className="sign-in min-h-screen bg-[#f5f6f2] p-5 text-[#20312d] sm:p-8">
+    <main className="sign-in auth-shell min-h-screen bg-[#f5f6f2] p-5 text-[#20312d] sm:p-8">
       <header className="mx-auto max-w-6xl">
-        <Link href="/" className="inline-flex min-h-11 items-center gap-3 rounded-xl">
+        <Link href="/" className="auth-brand inline-flex min-h-11 items-center gap-3 rounded-xl">
           <Image src="/favicon.svg" alt="" width={44} height={44} />
           <span className="text-xl font-bold tracking-tight">CareBoard</span>
         </Link>
@@ -37,19 +37,19 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
             ))}
           </ul>
         </section>
-        <section aria-labelledby="sign-in-heading" className="w-full rounded-[28px] border border-[#dce5da] bg-[#fffefa] p-6 shadow-[0_20px_60px_rgba(32,49,45,.07)] sm:p-10">
+        <section aria-labelledby="sign-in-heading" className="auth-panel w-full rounded-[28px] border border-[#dce5da] bg-[#fffefa] p-6 shadow-[0_20px_60px_rgba(32,49,45,.07)] sm:p-10">
           <h1 id="sign-in-heading" className="text-3xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-2 text-sm leading-6 text-[#52645f]">Sign in with the account your household manager approved.</p>
           {error && <p role="alert" className="mt-5 rounded-xl border border-[#edcfbd] bg-[#fcf0e9] p-4 text-sm text-[#934c37]">Sign-in could not be completed. Check your details and account status.</p>}
           {!passwordEnabled && <p className="mt-5 rounded-xl bg-[#fcf4e9] p-4 text-sm text-[#805322]">Sign-in is not configured yet. Please contact your household manager.</p>}
           <form action={passwordSignIn} className="mt-7 grid gap-5">
             <label className="grid gap-2 text-sm font-semibold" htmlFor="email">Email address
-              <input id="email" className="min-h-12 w-full rounded-xl border border-[#d7dfd7] bg-white px-4 py-3 font-normal" name="email" type="email" placeholder="you@example.com" required autoComplete="email" autoCapitalize="none" spellCheck={false} />
+              <input id="email" className="auth-control font-normal" name="email" type="email" placeholder="you@example.com" required autoComplete="email" autoCapitalize="none" spellCheck={false} />
             </label>
             <label className="grid gap-2 text-sm font-semibold" htmlFor="password">Password
-              <input id="password" className="min-h-12 w-full rounded-xl border border-[#d7dfd7] bg-white px-4 py-3 font-normal" name="password" type="password" placeholder="Enter your password" required autoComplete="current-password" />
+              <input id="password" className="auth-control font-normal" name="password" type="password" placeholder="Enter your password" required autoComplete="current-password" />
             </label>
-            <button disabled={!passwordEnabled} className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#287b6f] p-3 text-sm font-semibold text-white transition hover:bg-[#216b61] disabled:cursor-not-allowed disabled:opacity-50">Sign in<ArrowRight className="size-4" aria-hidden="true" /></button>
+            <button disabled={!passwordEnabled} className="auth-submit flex items-center justify-center gap-2 p-3 text-sm disabled:cursor-not-allowed disabled:opacity-50">Sign in<ArrowRight className="size-4" aria-hidden="true" /></button>
           </form>
           {googleEnabled && <>
             <div className="my-6 flex items-center gap-3 text-xs text-[#52645f]"><span className="h-px flex-1 bg-[#dce5da]" />or continue with<span className="h-px flex-1 bg-[#dce5da]" /></div>

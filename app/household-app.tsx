@@ -24,9 +24,9 @@ function dateLabel(value: string | null) { return value ? new Date(`${value}T12:
 function AvatarFor({ member, className = '' }: { member: Member; className?: string }) {
   return <Avatar className={className}>{member.profilePhotoId ? <img src={`/api/uploads/${member.profilePhotoId}`} alt="" className="size-full object-cover" /> : <AvatarFallback style={{ backgroundColor: member.color, color: 'white' }}>{initials(member.name)}</AvatarFallback>}</Avatar>;
 }
-const fieldClass = 'mt-1 min-h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 py-2 text-sm';
+const fieldClass = 'field-control mt-1 min-h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 py-2 text-sm';
 function Field({ label, name, defaultValue, type = 'text', required = false, readOnly = false }: { label: string; name: string; defaultValue?: string | number | null; type?: string; required?: boolean; readOnly?: boolean }) {
-  return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} defaultValue={defaultValue ?? ''} className="mt-1 h-11 rounded-xl bg-white" /></label>;
+  return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} defaultValue={defaultValue ?? ''} className="field-control mt-1 h-11 rounded-xl bg-white" /></label>;
 }
 function TextArea({ label, name, defaultValue }: { label: string; name: string; defaultValue?: string }) {
   return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
@@ -86,7 +86,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </a>
 
       {/* Mobile header */}
-      <header className="fixed left-0 right-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#dfe5dc] bg-[#fcfbf7]/95 px-4 backdrop-blur md:hidden">
+      <header className="dashboard-mobile-header fixed left-0 right-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#dfe5dc] bg-[#fcfbf7]/95 px-4 backdrop-blur md:hidden">
         <button onClick={() => setSection(manager ? 'home' : 'today')} className="flex min-h-11 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
           <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
@@ -98,12 +98,12 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="fixed left-0 top-0 hidden h-screen w-64 flex-col overflow-y-auto border-r border-[#dfe5dc] bg-[#fffefa] md:flex" aria-label="Main navigation">
+      <aside className="dashboard-sidebar fixed left-0 top-0 hidden h-screen w-64 flex-col overflow-y-auto border-r border-[#dfe5dc] bg-[#fffefa] md:flex" aria-label="Main navigation">
         <div className="flex h-16 items-center gap-3 border-b border-[#dfe5dc] px-5">
           <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-4">
+        <nav className="dashboard-nav flex flex-1 flex-col gap-1 p-4">
           {nav.map(([id, label, Icon]) => (
             <button
               key={id}
@@ -144,7 +144,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
+      <nav className="dashboard-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
         <div className="mx-auto grid max-w-md grid-cols-4">
           {nav.map(([id, label, Icon]) => (
             <button
@@ -176,7 +176,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   );
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     open: 'bg-[#e8f1ec] text-[#287b6f]',
@@ -184,7 +184,7 @@ function StatusBadge({ status }: { status: string }) {
     complete: 'bg-[#e6f0eb] text-[#216b61]',
     disabled: 'bg-[#f0f0f0] text-[#687873]',
   };
-  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
+  return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
 function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, mutate, busy }: any) {
