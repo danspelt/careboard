@@ -6,6 +6,7 @@ export type AssignableTask = {
 };
 
 export type AssignableWorker = { id: string; status: string };
+export type WorkWindow = { memberId: string; weekday: number };
 
 function dayOffset(date: string, offset: number) {
   const value = new Date(`${date}T12:00:00Z`);
@@ -13,7 +14,23 @@ function dayOffset(date: string, offset: number) {
   return value.toISOString().slice(0, 10);
 }
 
-export function suggestAssignments<T extends AssignableTask>(tasks: T[], workers: AssignableWorker[], startDate: string, days = 7) {
+function weekdayOf(date: string) {
+  return new Date(`${date}T12:00:00Z`).getUTCDay();
+}
+
+// Pool preference: workers on shift that day > workers who declared that day available > workers with no declared availability > everyone.
+function eligiblePool(active: AssignableWorker[], day: string, shifts: WorkWindow[], availability: WorkWindow[]) {
+  const weekday = weekdayOf(day);
+  const onShift = active.filter((worker) => shifts.some((shift) => shift.memberId === worker.id && shift.weekday === weekday));
+  if (onShift.length) return onShift;
+  const declared = active.filter((worker) => availability.some((window) => window.memberId === worker.id));
+  const available = declared.filter((worker) => availability.some((window) => window.memberId === worker.id && window.weekday === weekday));
+  if (available.length) return available;
+  const undeclared = active.filter((worker) => !declared.some((other) => other.id === worker.id));
+  return undeclared.length ? undeclared : active;
+}
+
+export function suggestAssignments<T extends AssignableTask>(tasks: T[], workers: AssignableWorker[], startDate: string, days = 7, constraints: { shifts?: WorkWindow[]; availability?: WorkWindow[] } = {}) {
   const active = workers.filter((worker) => worker.status === 'active');
   if (!active.length) return [];
   const end = dayOffset(startDate, days - 1);
@@ -35,7 +52,8 @@ export function suggestAssignments<T extends AssignableTask>(tasks: T[], workers
   const plan: Array<{ taskId: string; workerId: string; day: string }> = [];
   for (const task of candidates) {
     const day = task.dueDate! < startDate ? startDate : task.dueDate!;
-    const pick = active
+    const pool = eligiblePool(active, day, constraints.shifts ?? [], constraints.availability ?? []);
+    const pick = pool
       .map((worker) => ({ worker, daily: dailyLoad.get(worker.id)?.get(day) ?? 0, total: totalLoad.get(worker.id) ?? 0 }))
       .sort((a, b) => a.daily - b.daily || a.total - b.total || a.worker.id.localeCompare(b.worker.id))[0];
     plan.push({ taskId: task.id, workerId: pick.worker.id, day });

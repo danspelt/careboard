@@ -27,3 +27,24 @@ test('auto-assign returns nothing without active workers or candidates', () => {
   assert.deepEqual(suggestAssignments([task({ id: 't1' })], [{ id: 'off', status: 'disabled' }], '2026-09-13'), []);
   assert.deepEqual(suggestAssignments([task({ id: 't1', assignedTo: 'a' }), task({ id: 't2', dueDate: null })], workers, '2026-09-13'), []);
 });
+
+test('auto-assign prefers care workers on shift for the task day', () => {
+  // 2026-09-14 is a Monday (weekday 1); b is on shift, a is not.
+  const plan = suggestAssignments([task({ id: 't1' }), task({ id: 't2' })], workers, '2026-09-13', 7, {
+    shifts: [{ memberId: 'b', weekday: 1 }],
+  });
+  assert.equal(plan.length, 2);
+  assert.ok(plan.every((item) => item.workerId === 'b'));
+});
+
+test('auto-assign respects declared availability windows', () => {
+  // a declared Tuesday-only availability; b declared nothing. Monday tasks go to b.
+  const availability = [{ memberId: 'a', weekday: 2 }];
+  const plan = suggestAssignments([task({ id: 't1' })], workers, '2026-09-13', 7, { availability });
+  assert.deepEqual(plan, [{ taskId: 't1', workerId: 'b', day: '2026-09-14' }]);
+  // When everyone declared but nobody is available that day, still assign someone.
+  const fallback = suggestAssignments([task({ id: 't1' })], workers, '2026-09-13', 7, {
+    availability: [{ memberId: 'a', weekday: 2 }, { memberId: 'b', weekday: 2 }],
+  });
+  assert.equal(fallback.length, 1);
+});

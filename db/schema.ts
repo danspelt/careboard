@@ -131,6 +131,19 @@ export const shifts = sqliteTable(
   (table) => [index('idx_shifts_member').on(table.memberId, table.weekday)],
 );
 
+export const availabilityWindows = sqliteTable(
+  'availability_windows',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+    weekday: integer('weekday').notNull(),
+    startTime: text('start_time').notNull(),
+    endTime: text('end_time').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_availability_member').on(table.memberId, table.weekday)],
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {

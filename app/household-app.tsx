@@ -52,6 +52,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [addOpen, setAddOpen] = useState(false);
   const [resetMember, setResetMember] = useState<Member | null>(null);
   const [shiftWorker, setShiftWorker] = useState<Member | null>(null);
+  const [availWorker, setAvailWorker] = useState<Member | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
@@ -178,9 +179,9 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {!tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} mutate={mutate} busy={busy} />
+            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} mutate={mutate} busy={busy} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
           )}
         </div>
       </main>
@@ -235,7 +236,8 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
-      {shiftWorker && <ShiftDialog worker={shiftWorker} shifts={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
+      {shiftWorker && <WindowDialog worker={shiftWorker} windows={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} action="setShifts" title={`Weekly shifts for ${shiftWorker.name}`} description={`Set the days and times ${shiftWorker.name.split(' ')[0]} is scheduled each week. This repeats automatically.`} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
+      {availWorker && <WindowDialog worker={availWorker} windows={(state.availability ?? []).filter((shift: any) => shift.memberId === availWorker.id)} action="setAvailability" title={`Weekly availability for ${availWorker.name}`} description={`The days and times ${availWorker.name.split(' ')[0]} is generally available. Auto-assign prefers these windows.`} busy={busy} onClose={() => setAvailWorker(null)} mutate={mutate} />}
       <output aria-live="polite" aria-atomic="true" className="dashboard-notice fixed inset-x-4 z-50 ml-auto max-w-sm md:bottom-6 md:left-auto">
         {busy && <span className="sr-only">Saving your update.</span>}
         {notice && <span className="flex items-center gap-3 rounded-2xl bg-[#20312d] p-3 pl-4 text-sm text-white shadow-xl">
@@ -288,7 +290,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, mutate, busy }: any) {
+function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, mutate, busy }: any) {
   if (section === 'tasks') return (
     <>
       <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
@@ -306,6 +308,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
         {workers.map((worker: Member) => {
           const workerShifts = (state.shifts ?? []).filter((shift: any) => shift.memberId === worker.id);
           const shiftText = workerShifts.length ? workerShifts.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set';
+          const workerAvail = (state.availability ?? []).filter((shift: any) => shift.memberId === worker.id);
+          const availText = workerAvail.length ? workerAvail.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set';
           return (
           <Card key={worker.id}>
             <div className="flex items-start gap-3">
@@ -317,13 +321,14 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
               </div>
             </div>
             <div className="mt-4 grid gap-2 text-sm">
-              <p><span className="text-[#687873]">Availability:</span> {worker.availability || 'Not provided'}</p>
-              <p><span className="text-[#687873]">Languages:</span> {worker.languages || 'Not provided'}</p>
+              <p><span className="text-[#687873]">Availability:</span> {availText}</p>
               <p><span className="text-[#687873]">Weekly shifts:</span> {shiftText}</p>
+              <p><span className="text-[#687873]">Languages:</span> {worker.languages || 'Not provided'}</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setProfile(worker)}><Pencil className="size-4" />Profile</Button>
               <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
+              <Button variant="outline" size="sm" onClick={() => setAvailWorker(worker)}><CalendarDays className="size-4" />Availability</Button>
               <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
                 {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
@@ -499,7 +504,7 @@ function MoreManager({ state, mutate, busy }: any) {
 
 function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
-  const plan = personal ? [] : suggestAssignments<Chore>(state.chores, workers, today());
+  const plan = personal ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 7, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
   const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
   const [assigning, setAssigning] = useState(false);
   async function autoAssign() {
@@ -589,7 +594,7 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
                 <div key={worker.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3">
                   <div className="flex items-center gap-3">
                     <AvatarFor member={worker} className="size-9" />
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{worker.name}</p><p className="truncate text-xs text-[#687873]">{worker.availability || 'Availability not set'}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{worker.name}</p><p className="truncate text-xs text-[#687873]">{(() => { const windows = (state.availability ?? []).filter((item: any) => item.memberId === worker.id); return windows.length ? windows.map((item: any) => `${weekdayNames[item.weekday]} ${formatShift(item)}`).join(' · ') : 'Availability not set'; })()}</p></div>
                     <span className="rounded-full bg-[#e8f1ec] px-2.5 py-1 text-xs font-bold tabular-nums text-[#287b6f]">{load.total} task{load.total === 1 ? '' : 's'}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-7 gap-1" aria-label={`Daily load for ${worker.name}`}>
@@ -615,7 +620,7 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
   );
 }
 
-function WorkerView({ section, state, member, setTask, setProfile, mutate, busy }: any) {
+function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, busy }: any) {
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
@@ -630,10 +635,14 @@ function WorkerView({ section, state, member, setTask, setProfile, mutate, busy 
         </div>
         <div className="mt-5 grid gap-2 text-sm">
           <p><span className="text-[#687873]">Phone:</span> {member.phone || 'Not provided'}</p>
-          <p><span className="text-[#687873]">Availability:</span> {member.availability || 'Not provided'}</p>
+          <p><span className="text-[#687873]">Availability:</span> {(state.availability ?? []).length ? (state.availability ?? []).map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set'}</p>
+          <p><span className="text-[#687873]">Availability notes:</span> {member.availability || 'Not provided'}</p>
           <p><span className="text-[#687873]">Languages:</span> {member.languages || 'Not provided'}</p>
         </div>
-        <Button onClick={() => setProfile(member)} className="mt-5 min-h-11 bg-[#287b6f]"><Pencil className="size-4" />Edit your profile</Button>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button onClick={() => setProfile(member)} className="min-h-11 bg-[#287b6f]"><Pencil className="size-4" />Edit your profile</Button>
+          <Button variant="outline" onClick={() => setAvailWorker(member)} className="min-h-11"><CalendarDays className="size-4" />Edit availability</Button>
+        </div>
       </Card>
     </>
   );
@@ -875,7 +884,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload }: any)
           <input type="hidden" name="memberId" value={profile.id} />
           {manager && <><Field label="Name" name="name" defaultValue={profile.name} required /><Field label="Email" name="email" type="email" defaultValue={profile.email} /></>}
           <Field label="Phone" name="phone" type="tel" defaultValue={profile.phone} />
-          <TextArea label="Availability" name="availability" defaultValue={profile.availability} />
+          <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
           {manager && <><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
           <Button disabled={busy} className="bg-[#287b6f]">Save profile</Button>
@@ -949,17 +958,18 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
   );
 }
 
-function ShiftDialog({ worker, shifts, busy, onClose, mutate }: any) {
+function WindowDialog({ worker, windows, action, title, description, busy, onClose, mutate }: any) {
   const [rows, setRows] = useState(() => weekdayFull.map((_, weekday) => {
-    const shift = shifts.find((item: any) => item.weekday === weekday);
-    return { weekday, on: Boolean(shift), startTime: shift?.startTime ?? '09:00', endTime: shift?.endTime ?? '17:00' };
+    const win = windows.find((item: any) => item.weekday === weekday);
+    return { weekday, on: Boolean(win), startTime: win?.startTime ?? '09:00', endTime: win?.endTime ?? '17:00' };
   }));
   function update(weekday: number, patch: Record<string, unknown>) {
     setRows((current) => current.map((row) => (row.weekday === weekday ? { ...row, ...patch } : row)));
   }
   async function save() {
+    const key = action === 'setShifts' ? 'shifts' : 'windows';
     try {
-      await mutate({ action: 'setShifts', memberId: worker.id, shifts: JSON.stringify(rows.filter((row) => row.on).map(({ weekday, startTime, endTime }) => ({ weekday, startTime, endTime }))) }, `Shifts saved for ${worker.name}.`);
+      await mutate({ action, memberId: worker.id, [key]: JSON.stringify(rows.filter((row) => row.on).map(({ weekday, startTime, endTime }) => ({ weekday, startTime, endTime }))) }, `Saved for ${worker.name}.`);
       onClose();
     } catch { /* notice is shown */ }
   }
@@ -967,8 +977,8 @@ function ShiftDialog({ worker, shifts, busy, onClose, mutate }: any) {
     <Dialog open onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Weekly shifts for {worker.name}</DialogTitle>
-          <DialogDescription>Set the days and times {worker.name.split(' ')[0]} is scheduled each week. This repeats automatically.</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">
           {rows.map((row) => (
