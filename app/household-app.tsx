@@ -328,6 +328,10 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
+  const proofPhotos = state.chores
+    .flatMap((task: Chore) => (task.photos ?? []).map((photo: any) => ({ ...photo, task })))
+    .sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 8);
   return (
     <>
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
@@ -356,6 +360,24 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Worker notes will appear here as the team shares progress." compact />}</Card>
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
       </div>
+      {proofPhotos.length > 0 && (
+        <Card className="mt-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Upload className="size-5 text-[#287b6f]" aria-hidden="true" />Latest proof photos</h2>
+          <p className="text-sm text-[#687873]">Recent uploads from the care team — open one to review the task</p>
+          <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+            {proofPhotos.map((photo: any) => {
+              const uploader = state.members.find((item: Member) => item.id === photo.uploadedBy)?.name ?? 'Team member';
+              return (
+                <button key={photo.id} onClick={() => setTask(photo.task)} className="w-28 shrink-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+                  <img src={`/api/uploads/${photo.id}`} alt={photo.originalName} className="aspect-square w-full rounded-xl border border-[#dfe5dc] object-cover" />
+                  <span className="mt-1.5 block truncate text-xs font-semibold">{photo.task.title}</span>
+                  <span className="block truncate text-[11px] text-[#687873]">{uploader} · {new Date(photo.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </>
   );
 }
