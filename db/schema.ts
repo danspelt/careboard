@@ -118,6 +118,19 @@ export const activity = sqliteTable(
   (table) => [index('idx_activity_created_at').on(table.createdAt)],
 );
 
+export const shifts = sqliteTable(
+  'shifts',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+    weekday: integer('weekday').notNull(),
+    startTime: text('start_time').notNull(),
+    endTime: text('end_time').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_shifts_member').on(table.memberId, table.weekday)],
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {

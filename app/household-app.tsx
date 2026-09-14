@@ -3,7 +3,7 @@
 
 import { logOut } from '@/app/actions/auth';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,9 +17,12 @@ import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
+import { formatShift, shiftsForDay } from '@/lib/shifts';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
+const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'more';
 type WorkerSection = 'today' | 'tasks' | 'schedule' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
@@ -48,6 +51,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [createOpen, setCreateOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [resetMember, setResetMember] = useState<Member | null>(null);
+  const [shiftWorker, setShiftWorker] = useState<Member | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
@@ -174,7 +178,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {!tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} mutate={mutate} busy={busy} />
+            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} mutate={mutate} busy={busy} />
           ) : (
             <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} mutate={mutate} busy={busy} />
           )}
@@ -231,6 +235,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
+      {shiftWorker && <ShiftDialog worker={shiftWorker} shifts={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
       <output aria-live="polite" aria-atomic="true" className="dashboard-notice fixed inset-x-4 z-50 ml-auto max-w-sm md:bottom-6 md:left-auto">
         {busy && <span className="sr-only">Saving your update.</span>}
         {notice && <span className="flex items-center gap-3 rounded-2xl bg-[#20312d] p-3 pl-4 text-sm text-white shadow-xl">
@@ -283,7 +288,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, mutate, busy }: any) {
+function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, mutate, busy }: any) {
   if (section === 'tasks') return (
     <>
       <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
@@ -298,7 +303,10 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
       {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
-        {workers.map((worker: Member) => (
+        {workers.map((worker: Member) => {
+          const workerShifts = (state.shifts ?? []).filter((shift: any) => shift.memberId === worker.id);
+          const shiftText = workerShifts.length ? workerShifts.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set';
+          return (
           <Card key={worker.id}>
             <div className="flex items-start gap-3">
               <AvatarFor member={worker} className="size-12" />
@@ -311,16 +319,19 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
             <div className="mt-4 grid gap-2 text-sm">
               <p><span className="text-[#687873]">Availability:</span> {worker.availability || 'Not provided'}</p>
               <p><span className="text-[#687873]">Languages:</span> {worker.languages || 'Not provided'}</p>
+              <p><span className="text-[#687873]">Weekly shifts:</span> {shiftText}</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setProfile(worker)}><Pencil className="size-4" />Profile</Button>
+              <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
               <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
                 {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
               </Button>
             </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </>
   );
@@ -532,12 +543,22 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
         {schedule.days.map((day) => {
           const isToday = day.date === today();
+          const dayShifts = shiftsForDay(state.shifts ?? [], day.date).filter((shift) => memberFor(shift.memberId));
           return (
             <section key={day.date} aria-label={`Schedule for ${day.date}`} className={`flex min-h-32 flex-col rounded-2xl border p-3 ${isToday ? 'border-[#287b6f] bg-[#eef4ef]' : 'border-[#dfe5dc] bg-[#fffefa]'}`}>
               <header className="mb-2 flex items-center justify-between gap-2">
                 <div><p className={`text-xs font-bold uppercase tracking-wide ${isToday ? 'text-[#287b6f]' : 'text-[#687873]'}`}>{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</p><p className="text-sm font-semibold">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p></div>
                 {isToday && <span className="rounded-full bg-[#287b6f] px-2 py-0.5 text-[10px] font-bold uppercase text-white">Today</span>}
               </header>
+              {dayShifts.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {dayShifts.slice(0, 2).map((shift) => {
+                    const person = memberFor(shift.memberId);
+                    return <p key={shift.id} className="flex items-center gap-1.5 text-[11px] font-semibold text-[#4d6b5e]"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: person.color }} aria-hidden="true" />{personal ? 'Your shift' : person.name.split(' ')[0]} · {formatShift(shift)}</p>;
+                  })}
+                  {dayShifts.length > 2 && <p className="text-[11px] font-semibold text-[#4d6b5e]">+{dayShifts.length - 2} more on shift</p>}
+                </div>
+              )}
               <div className="flex flex-1 flex-col gap-1.5">
                 {day.tasks.map((task) => scheduled(task, true))}
                 {day.tasks.length === 0 && <p className="rounded-xl border border-dashed border-[#d7dfd7] p-3 text-center text-xs text-[#8a978f]">No work due</p>}
@@ -923,6 +944,51 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
             <Button disabled={busy} className="bg-[#287b6f]">Reset password</Button>
           </form>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ShiftDialog({ worker, shifts, busy, onClose, mutate }: any) {
+  const [rows, setRows] = useState(() => weekdayFull.map((_, weekday) => {
+    const shift = shifts.find((item: any) => item.weekday === weekday);
+    return { weekday, on: Boolean(shift), startTime: shift?.startTime ?? '09:00', endTime: shift?.endTime ?? '17:00' };
+  }));
+  function update(weekday: number, patch: Record<string, unknown>) {
+    setRows((current) => current.map((row) => (row.weekday === weekday ? { ...row, ...patch } : row)));
+  }
+  async function save() {
+    try {
+      await mutate({ action: 'setShifts', memberId: worker.id, shifts: JSON.stringify(rows.filter((row) => row.on).map(({ weekday, startTime, endTime }) => ({ weekday, startTime, endTime }))) }, `Shifts saved for ${worker.name}.`);
+      onClose();
+    } catch { /* notice is shown */ }
+  }
+  return (
+    <Dialog open onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Weekly shifts for {worker.name}</DialogTitle>
+          <DialogDescription>Set the days and times {worker.name.split(' ')[0]} is scheduled each week. This repeats automatically.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          {rows.map((row) => (
+            <div key={row.weekday} className={`flex items-center gap-3 rounded-xl border p-2.5 ${row.on ? 'border-[#bcd4c9] bg-[#f4f8f3]' : 'border-[#e2e8e1]'}`}>
+              <label className="flex min-h-11 w-24 shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={row.on} onChange={(e) => update(row.weekday, { on: e.target.checked })} className="size-4 accent-[#287b6f]" />
+                {weekdayFull[row.weekday].slice(0, 3)}
+              </label>
+              <div className="flex flex-1 items-center gap-2">
+                <Input type="time" aria-label={`${weekdayFull[row.weekday]} start time`} value={row.startTime} disabled={!row.on} onChange={(e) => update(row.weekday, { startTime: e.target.value })} className="min-h-11 flex-1" />
+                <span className="text-xs font-semibold text-[#687873]">to</span>
+                <Input type="time" aria-label={`${weekdayFull[row.weekday]} end time`} value={row.endTime} disabled={!row.on} onChange={(e) => update(row.weekday, { endTime: e.target.value })} className="min-h-11 flex-1" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={busy} onClick={save} className="bg-[#287b6f]">Save shifts</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

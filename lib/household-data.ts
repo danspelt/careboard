@@ -54,6 +54,7 @@ export type Chore = {
   photos?: ProofPhoto[];
   notes?: TaskNote[];
 };
+export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
 export type AuditEntry = { id: string; choreId: string | null; actorId: string; action: string; detail: string; createdAt: string };
 export type TaskGroup = { id: 'my-tasks' | 'available-tasks'; title: 'My Tasks' | 'Available Tasks'; tasks: Chore[] };
@@ -75,6 +76,7 @@ export type HouseholdState = {
   metrics?: ReturnType<typeof metrics>;
   reminders: Chore[];
   announcements?: ActivityItem[];
+  shifts?: Shift[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -125,7 +127,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
-  const [members, chores, activity] = await Promise.all([
+  const [members, chores, activity, shifts] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -151,6 +153,7 @@ async function rawState() {
       )
       .all<Chore>(),
     db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, action, detail, created_at AS createdAt FROM activity ORDER BY created_at DESC LIMIT 60`).all<ActivityItem>(),
+    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -161,7 +164,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -185,7 +188,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id) };
 }
 
 async function generateRecurringTasks() {
@@ -290,6 +293,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'resetMemberPassword',
     'updateHouseholdSettings',
     'announce',
+    'setShifts',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -430,6 +434,26 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       activity(null, actorId, 'created_worker', `created care worker ${name}`, now),
     ]);
     await setCredential(email, passwordHash, true);
+  } else if (action === 'setShifts') {
+    const memberId = requiredString(input.memberId, 'Care worker');
+    const worker = await db.prepare("SELECT name FROM members WHERE id=? AND role='worker'").bind(memberId).first<Member>();
+    if (!worker) throw new Error('Choose a valid care worker.');
+    const parsed = typeof input.shifts === 'string' ? JSON.parse(input.shifts) : input.shifts;
+    if (!Array.isArray(parsed) || parsed.length > 14) throw new Error('Invalid shift list.');
+    const timeFormat = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const rows = parsed.map((row) => ({ weekday: Number(row?.weekday), startTime: String(row?.startTime ?? ''), endTime: String(row?.endTime ?? '') }));
+    for (const row of rows) {
+      if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || !timeFormat.test(row.startTime) || !timeFormat.test(row.endTime) || row.startTime >= row.endTime) {
+        throw new Error('Each shift needs a weekday and a valid start/end time.');
+      }
+    }
+    await db.batch([
+      db.prepare('DELETE FROM shifts WHERE member_id=?').bind(memberId),
+      ...rows.map((row) =>
+        db.prepare('INSERT INTO shifts (id, member_id, weekday, start_time, end_time, created_at) VALUES (?,?,?,?,?,?)').bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, now),
+      ),
+      activity(null, actorId, 'updated_shifts', `updated shifts for ${worker.name}`, now),
+    ]);
   } else if (action === 'updateProfile') {
     const memberId = requiredString(input.memberId, 'Profile');
     const target = await db
