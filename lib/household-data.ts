@@ -26,6 +26,7 @@ export type Member = {
   certifications: string;
   languages: string;
   profilePhotoId: string | null;
+  hourlyRate?: number | null;
 };
 export type ProofPhoto = { id: string; choreId?: string; profileMemberId?: string; originalName: string; mimeType: string; byteSize: number; createdAt: string };
 export type TaskNote = { id: string; choreId: string; memberId: string; kind: 'progress' | 'completion' | 'issue'; body: string; createdAt: string };
@@ -65,6 +66,8 @@ export type HouseholdSettings = {
   recurrenceHorizonDays: number;
   reminderDefaultLeadDays: number;
   retentionDays: number;
+  fundedHoursMonthly: number;
+  fundingHourlyRate: number;
   updatedAt: string;
 };
 export type HouseholdState = {
@@ -149,12 +152,14 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT OR IGNORE INTO household_settings (household_id) VALUES ('default')").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
     householdId: 'default',
     recurrenceHorizonDays: 30,
+    fundedHoursMonthly: 0,
+    fundingHourlyRate: 0,
     reminderDefaultLeadDays: 1,
     retentionDays: 90,
     updatedAt: new Date().toISOString(),
@@ -173,7 +178,7 @@ async function rawState() {
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
           m.phone, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
-          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId
+          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate
         FROM members m
         LEFT JOIN account_lifecycle l ON l.member_id=m.id
         LEFT JOIN google_accounts g ON g.member_id=m.id
@@ -228,7 +233,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     const people: Member[] = state.members.map((item) => ({
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
-      certifications: '', languages: '', profilePhotoId: item.profilePhotoId,
+      certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
     }));
     return {
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
@@ -242,7 +247,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     id: viewer.id, name: viewer.name, role: viewer.role, status: viewer.status, color: viewer.color,
     createdAt: viewer.createdAt, phone: viewer.phone, availability: viewer.availability,
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
-    languages: viewer.languages, profilePhotoId: viewer.profilePhotoId,
+    languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
   };
   return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id) };
 }
@@ -327,6 +332,12 @@ function optionalString(value: unknown, maxLength: number): string {
 function optionalNullableString(value: unknown, maxLength: number): string | null {
   const text = typeof value === 'string' ? value.trim() : '';
   return text ? text.slice(0, maxLength) : null;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function parseWindowRows(value: unknown) {
@@ -590,6 +601,9 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const skillsNotes = actor.role === 'manager' ? optionalString(input.skillsNotes, 2000) : undefined;
     const certifications = actor.role === 'manager' ? optionalString(input.certifications, 2000) : undefined;
     const emergencyContact = actor.role === 'manager' ? optionalNullableString(input.emergencyContact, 200) : undefined;
+    const hourlyRate = actor.role === 'manager' && input.hourlyRate !== undefined
+      ? (input.hourlyRate === '' || input.hourlyRate === null ? null : clampNumber(input.hourlyRate, 0, 1000, 0))
+      : undefined;
     const name = actor.role === 'manager' ? (typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 200) : undefined) : undefined;
     const email = actor.role === 'manager' ? normalizeEmail(input.email) : undefined;
     const profilePhotoId = typeof input.profilePhotoId === 'string' && input.profilePhotoId ? input.profilePhotoId : undefined;
@@ -607,6 +621,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (emergencyContact !== undefined) { sets.push('emergency_contact=?'); values.push(emergencyContact); }
     if (name !== undefined) { sets.push('name=?'); values.push(name); }
     if (profilePhotoId !== undefined) { sets.push('profile_photo_id=?'); values.push(profilePhotoId); }
+    if (hourlyRate !== undefined) { sets.push('hourly_rate=?'); values.push(hourlyRate); }
     if (!sets.length) throw new Error('No valid fields to update.');
     values.push(memberId);
     await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
@@ -629,11 +644,13 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const reminderDefaultLeadDays = clampInteger(input.reminderDefaultLeadDays, 0, 90, 1);
     // Proof-photo retention is a fixed privacy policy, not a manager-configurable value.
     const retentionDays = 90;
+    const fundedHoursMonthly = clampNumber(input.fundedHoursMonthly, 0, 10000, 0);
+    const fundingHourlyRate = clampNumber(input.fundingHourlyRate, 0, 1000, 0);
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
   } else if (action === 'deleteUpload') {

@@ -3,7 +3,7 @@
 
 import { logOut } from '@/app/actions/auth';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { formatShift, shiftsForDay } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
+import { fundingSummary } from '@/lib/funding';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -35,8 +36,8 @@ function AvatarFor({ member, className = '' }: { member: Member; className?: str
   return <Avatar className={className}>{member.profilePhotoId ? <img src={`/api/uploads/${member.profilePhotoId}`} alt="" className="size-full object-cover" /> : <AvatarFallback style={{ backgroundColor: member.color, color: 'white' }}>{initials(member.name)}</AvatarFallback>}</Avatar>;
 }
 const fieldClass = 'field-control mt-1 min-h-11 w-full rounded-xl border border-[#d7dfd7] bg-white px-3 py-2 text-sm';
-function Field({ label, name, defaultValue, type = 'text', required = false, readOnly = false }: { label: string; name: string; defaultValue?: string | number | null; type?: string; required?: boolean; readOnly?: boolean }) {
-  return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} defaultValue={defaultValue ?? ''} className="field-control mt-1 h-11 rounded-xl bg-white" /></label>;
+function Field({ label, name, defaultValue, type = 'text', required = false, readOnly = false, step }: { label: string; name: string; defaultValue?: string | number | null; type?: string; required?: boolean; readOnly?: boolean; step?: string }) {
+  return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} step={step} defaultValue={defaultValue ?? ''} className="field-control mt-1 h-11 rounded-xl bg-white" /></label>;
 }
 function TextArea({ label, name, defaultValue }: { label: string; name: string; defaultValue?: string }) {
   return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
@@ -464,6 +465,15 @@ function MoreManager({ state, mutate, busy }: any) {
   const report = buildProgressReport<Chore>(state.chores, reportWorkers, today(), 30);
   const maxWeekly = Math.max(1, ...report.weekly.map((week) => week.completed));
   const maxArea = Math.max(1, ...report.byArea.map((area) => area.count));
+  const funding = fundingSummary({
+    entries: state.timeEntries ?? [],
+    workers: reportWorkers.map((worker: Member) => ({ id: worker.id, hourlyRate: worker.hourlyRate })),
+    fundedHoursMonthly: settings?.fundedHoursMonthly ?? 0,
+    fundingHourlyRate: settings?.fundingHourlyRate ?? 0,
+    month,
+  });
+  const usedPct = funding.fundedMinutes > 0 ? Math.min(100, (funding.usedMinutes / funding.fundedMinutes) * 100) : 0;
+  const overPace = funding.fundedMinutes > 0 && funding.projectedMinutes > funding.fundedMinutes;
   return (
     <>
       <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history." />
@@ -475,6 +485,8 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="Recurrence horizon (days)" name="recurrenceHorizonDays" type="number" defaultValue={settings?.recurrenceHorizonDays ?? 30} />
             <Field label="Default reminder lead (days)" name="reminderDefaultLeadDays" type="number" defaultValue={settings?.reminderDefaultLeadDays ?? 1} />
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
+            <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
+            <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
             <Button disabled={busy} className="min-h-11 bg-[#287b6f]">Save settings</Button>
           </form>
         </Card>
@@ -538,6 +550,45 @@ function MoreManager({ state, mutate, busy }: any) {
             </div>
           </div>
         </div>
+      </Card>
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />CSIL funding — this month</h2>
+        {funding.fundedMinutes > 0 ? (
+          <>
+            <p className="mt-1 text-sm text-[#687873]">Tracked hours against your monthly funded amount{overPace ? ' — current pace projects over the funded hours' : ''}.</p>
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <Metric label="Hours used" value={formatMinutes(funding.usedMinutes)} icon={Clock} />
+              <Metric label="Funded" value={formatMinutes(funding.fundedMinutes)} icon={CircleDollarSign} />
+              <Metric label="Remaining" value={formatMinutes(Math.max(0, funding.remainingMinutes))} icon={Check} tone={funding.remainingMinutes < 0 ? 'caution' : 'success'} />
+              <Metric label="Projected" value={formatMinutes(funding.projectedMinutes)} icon={AlertTriangle} tone={overPace ? 'caution' : 'neutral'} />
+            </div>
+            <progress
+              value={Math.round(usedPct)}
+              max={100}
+              aria-label="Share of funded hours used"
+              className={`mt-4 h-3 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#eef2ec] [&::-webkit-progress-value]:rounded-full ${overPace ? '[&::-moz-progress-bar]:bg-[#b4532a] [&::-webkit-progress-value]:bg-[#b4532a]' : '[&::-moz-progress-bar]:bg-[#287b6f] [&::-webkit-progress-value]:bg-[#287b6f]'}`}
+            />
+            <div className="mt-5 space-y-2">
+              {funding.perWorker.map((row) => {
+                const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
+                if (!worker) return null;
+                return (
+                  <div key={worker.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                    <AvatarFor member={worker} className="size-9" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{worker.name}</p>
+                      <p className="text-xs text-[#687873]">{formatMinutes(row.minutes)} tracked{row.cost !== null ? ` · est. $${row.cost.toFixed(2)}` : ' · no pay rate set'}</p>
+                    </div>
+                    <a href={`/api/timesheets?memberId=${worker.id}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#d7dfd7] px-3 text-xs font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]"><FileDown className="size-4" aria-hidden="true" />Timesheet CSV</a>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-4 text-xs text-[#687873]">Funded value ${funding.fundedValue.toFixed(2)}/month · labor cost so far ${funding.laborCost.toFixed(2)}{settings?.fundingHourlyRate ? '' : ' — set the CSIL rate in Settings for the dollar total'}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm leading-6 text-[#687873]">Set your funded hours per month and the CSIL funding rate in Settings above to track your budget against the hours your care team actually works.</p>
+        )}
       </Card>
       <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Hours tracked — last 7 days</h2>
@@ -906,7 +957,7 @@ function EmptyHandoff({ icon: Icon, title, text, compact = false }: any) { retur
 function ProgressRow({ label, value, icon: Icon }: any) { return <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span><span className="flex-1 text-sm text-[#52645f]">{label}</span><strong className="text-lg tabular-nums">{value}</strong></div>; }
 
 function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Your household, connected</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>; }
-function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
+function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number | string; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
   const toneStyles = {
     neutral: 'bg-[#fffefa]',
     caution: 'bg-[#fcf4e9] border-[#eadbc6]',
@@ -1054,7 +1105,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload }: any)
           <Field label="Phone" name="phone" type="tel" defaultValue={profile.phone} />
           <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
-          {manager && <><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
+          {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
           <Button disabled={busy} className="bg-[#287b6f]">Save profile</Button>
         </form>
       </DialogContent>

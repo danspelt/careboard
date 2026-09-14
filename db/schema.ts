@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const members = sqliteTable('members', {
   id: text('id').primaryKey(),
@@ -13,6 +13,7 @@ export const members = sqliteTable('members', {
   certifications: text('certifications').notNull().default(''),
   languages: text('languages').notNull().default(''),
   profilePhotoId: text('profile_photo_id'),
+  hourlyRate: real('hourly_rate'),
 });
 
 export const accountLifecycle = sqliteTable(
@@ -40,6 +41,8 @@ export const householdSettings = sqliteTable('household_settings', {
   recurrenceHorizonDays: integer('recurrence_horizon_days').notNull().default(30),
   reminderDefaultLeadDays: integer('reminder_default_lead_days').notNull().default(1),
   retentionDays: integer('retention_days').notNull().default(90),
+  fundedHoursMonthly: real('funded_hours_monthly').notNull().default(0),
+  fundingHourlyRate: real('funding_hourly_rate').notNull().default(0),
   updatedAt: text('updated_at').notNull(),
 });
 
