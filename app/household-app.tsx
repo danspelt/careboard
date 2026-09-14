@@ -2,8 +2,8 @@
 /* oxlint-disable typescript/no-explicit-any, next/no-img-element -- API photo URLs require authenticated, unoptimized requests; compact view prop types are intentionally structural. */
 
 import { logOut } from '@/app/actions/auth';
-import { createElement, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { createElement, useEffect, useState } from 'react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
+import { buildNotifications } from '@/lib/notifications';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -46,6 +47,19 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [resetMember, setResetMember] = useState<Member | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
+  const [feedSeen, setFeedSeen] = useState('');
+  useEffect(() => {
+    const reload = async () => {
+      const response = await fetch('/api/household', { cache: 'no-store' });
+      if (response.ok) setState(await response.json() as HouseholdState);
+    };
+    const poll = setInterval(() => { if (document.visibilityState === 'visible') void reload(); }, 30_000);
+    const onFocus = () => void reload();
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(poll); window.removeEventListener('focus', onFocus); };
+  }, []);
   if (!member) return null;
 
   async function mutate(payload: Record<string, unknown>, message = 'Saved.') {
@@ -77,6 +91,16 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const workers = state.members.filter((item) => item.role === 'worker');
   const open = state.chores.filter((item) => item.status !== 'complete');
   const dueToday = open.filter((item) => item.dueDate === today());
+  const notifications = buildNotifications({ viewerId: member.id, manager, activity: state.activity ?? [], tasks: state.chores, members: state.members });
+  const unread = notifications.filter((item) => item.createdAt > seenAt).length;
+  function openFeed() {
+    setFeedSeen(seenAt);
+    setFeedOpen(true);
+    const now = new Date().toISOString();
+    setSeenAt(now);
+    try { localStorage.setItem('careboard-notifications-seen', now); } catch { /* private mode */ }
+  }
+  const bell = <BellButton unread={unread} onClick={openFeed} />;
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
     : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
@@ -94,6 +118,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           <span className="text-lg font-bold">CareBoard</span>
         </button>
         <div className="flex items-center gap-2">
+          {bell}
           <form action={logOut}><button className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[#287b6f]">Sign out</button></form>
           <AvatarFor member={member} className="size-9" />
         </div>
@@ -125,6 +150,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
               <p className="truncate text-sm font-semibold">{member.name}</p>
               <p className="truncate text-xs text-[#687873]">{manager ? 'Manager' : 'Care worker'}</p>
             </div>
+            {bell}
           </div>
           <form action={logOut} className="mt-3">
             <button className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
@@ -163,6 +189,34 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </nav>
 
       <TaskDialog task={task} manager={manager} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+      <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Notifications</DialogTitle>
+            <DialogDescription>{manager ? 'Latest household activity from the care team.' : 'Updates on your tasks and newly available work.'}</DialogDescription>
+          </DialogHeader>
+          {notifications.length ? (
+            <ol className="divide-y divide-[#e5eae4]">
+              {notifications.map((item) => {
+                const linked = item.choreId ? state.chores.find((chore: Chore) => chore.id === item.choreId) : null;
+                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
+                return (
+                  <li key={item.id}>
+                    <button onClick={() => { setFeedOpen(false); if (linked) setTask(linked); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+                      <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${item.createdAt > feedSeen ? 'bg-[#e8f1ec] text-[#287b6f]' : 'bg-[#f1f5f1] text-[#687873]'}`}><Icon className="size-4" aria-hidden="true" /></span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium leading-5">{item.text}</span>
+                        <span className="mt-1 block text-xs text-[#687873]">{item.actor} · {new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                      </span>
+                      {linked && <ChevronRight className="size-4 shrink-0 text-[#687873]" aria-hidden="true" />}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : <EmptyHandoff icon={Bell} title="All caught up" text="New household activity will show up here." compact />}
+        </DialogContent>
+      </Dialog>
       <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} />
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
@@ -178,6 +232,14 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   );
 }
 
+function BellButton({ unread, onClick }: { unread: number; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'} className="relative grid size-11 shrink-0 place-items-center rounded-xl text-[#52645f] transition hover:bg-[#e9efe6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+      <Bell className="size-5" aria-hidden="true" />
+      {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4.5 place-items-center rounded-full bg-[#b4532a] px-1 py-0.5 text-[10px] font-bold leading-none text-white">{unread}</span>}
+    </button>
+  );
+}
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
