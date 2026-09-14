@@ -4,7 +4,7 @@
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, History, Home, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Send, Settings, Shield, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,8 +27,8 @@ const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outs
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'messages' | 'more';
-type WorkerSection = 'today' | 'tasks' | 'schedule' | 'messages' | 'profile' | 'more';
+type ManagerSection = 'home' | 'tasks' | 'client' | 'schedule' | 'team' | 'messages' | 'more';
+type WorkerSection = 'today' | 'tasks' | 'client' | 'schedule' | 'messages' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
@@ -100,6 +100,17 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { const response = await fetch('/api/uploads', { method: 'POST', body: data }); const result = await response.json(); if (!response.ok) throw new Error(result.error); await refresh('Photo uploaded.'); }
     catch (error) { setNotice(error instanceof Error ? error.message : 'Upload failed.'); } finally { setBusy(false); }
   }
+  async function uploadClientNote(file: File, clientMemberId: string) {
+    const data = new FormData(); data.set('photo', file); data.set('clientMemberId', clientMemberId);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/client-notes', { method: 'POST', body: data });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'The client note could not be submitted.');
+      await refresh('Client note submitted for manager review.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Client note upload failed.'); throw error; }
+    finally { setBusy(false); }
+  }
   async function refresh(message = '') { const response = await fetch('/api/household', { cache: 'no-store' }); const next = await response.json() as HouseholdState; setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); if (message) setNotice(message); }
   async function deletePhoto(id: string) { setBusy(true); try { const response = await fetch(`/api/uploads/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Photo could not be deleted.'); await refresh('Photo deleted.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.'); } finally { setBusy(false); } }
 
@@ -122,10 +133,10 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
   }
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Messages', MessageSquareText], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
-      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['messages', 'Messages', MessageSquareText], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
@@ -191,26 +202,27 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} />
           )}
         </div>
       </main>
 
       {/* Mobile bottom nav */}
       <nav className="dashboard-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
-        <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
+        <ul className="mx-auto flex max-w-full snap-x gap-1 overflow-x-auto">
           {nav.map(([id, label, Icon]) => (
+            <li key={id} className="min-w-16 flex-1 snap-center">
             <button
-              key={id}
               onClick={() => setSection(id)}
               aria-current={section === id ? 'page' : undefined}
-              className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
             >
               <Icon className="size-5" aria-hidden="true" />
               {label}
             </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </nav>
 
       <TaskDialog task={task} manager={manager} readOnly={viewer} memberId={member.id} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
@@ -299,6 +311,15 @@ function StatusBadge({ status }: { status: string }) {
     complete: 'bg-[#e6f0eb] text-[#216b61]',
     disabled: 'bg-[#f0f0f0] text-[#687873]',
     invited: 'bg-[#ece9f7] text-[#5b4e94]',
+    pending: 'bg-[#fcf0dc] text-[#80531b]',
+    approved: 'bg-[#e6f0eb] text-[#216b61]',
+    rejected: 'bg-[#f8e4dc] text-[#873d27]',
+    direct_message: 'bg-[#e7eef8] text-[#3f5f92]',
+    manager_message: 'bg-[#ece9f7] text-[#5b4e94]',
+    abuse: 'bg-[#f8e4dc] text-[#873d27]',
+    threat: 'bg-[#f8e4dc] text-[#873d27]',
+    medication: 'bg-[#fcf0dc] text-[#80531b]',
+    emergency: 'bg-[#f8e4dc] text-[#873d27]',
   };
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
@@ -405,7 +426,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     </>
   );
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
-  if (section === 'messages') return <MessagesView state={state} mutate={mutate} busy={busy} />;
+  if (section === 'client') return <ClientRecordView state={state} mutate={mutate} busy={busy} />;
+  if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
@@ -433,7 +455,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
           <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
             <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
-            <Button disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
+            <Button type="submit" disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
           </form>
         </Card>
       </div>
@@ -558,7 +580,7 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
-            <Button disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
+            <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
           </form>
         </Card>
         <Card>
@@ -879,7 +901,7 @@ function ViewerView({ section, state, setTask }: any) {
   );
 }
 
-function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, busy }: any) {
+function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
@@ -965,7 +987,8 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
     </>
     );
   }
-  if (section === 'messages') return <MessagesView state={state} mutate={mutate} busy={busy} />;
+  if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
+  if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
@@ -1002,47 +1025,76 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   );
 }
 
-function MessagesView({ state, mutate, busy }: any) {
+function InboxView({ state, mutate, busy }: any) {
   const me = state.viewer.id;
   const isManager = state.viewer.role === 'manager';
-  const messages: Message[] = state.messages ?? [];
-  const senderFor = (id: string): Member =>
-    state.members.find((item: Member) => item.id === id) ??
-    { id, name: 'Former member', role: 'worker', status: 'disabled', color: '#9aa6a0', createdAt: '', phone: null, availability: '', skillsNotes: '', emergencyContact: null, certifications: '', languages: '', profilePhotoId: null };
+  const inbox = state.inbox ?? [];
+  const people = state.members.filter((item: Member) => item.status === 'active' && item.id !== me && item.role !== 'viewer' && (!isManager || item.role === 'worker'));
+  const memberFor = (id: string) => state.members.find((item: Member) => item.id === id);
+  const alerts = (state.safetyAlerts ?? []).filter((item: any) => !item.safetyReviewedAt);
+  const statusKind = (kind: string) => kind.startsWith('client_note_');
   return (
     <>
-      <Title title="Team messages" text={isManager ? 'The full care team conversation — everything your workers share is visible here.' : 'Talk with the other care workers and your manager. The manager can see everything in this chat.'} />
-      <Card className="p-0">
-        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><MessageSquareText className="size-4 text-[#287b6f]" aria-hidden="true" />Care team chat</h2><p className="text-sm text-[#687873]">{messages.length ? `${messages.length} message${messages.length === 1 ? '' : 's'}` : 'Nothing yet'}</p></div>
-        <div className="max-h-[55vh] overflow-y-auto p-4">
-          {messages.length ? (
-            <ol className="space-y-3">
-              {messages.map((msg) => {
-                const sender = senderFor(msg.memberId);
-                const mine = msg.memberId === me;
-                return (
-                  <li key={msg.id} className="flex gap-3">
-                    <AvatarFor member={sender} className="size-9 shrink-0" />
-                    <div className={`min-w-0 flex-1 rounded-2xl border p-3 ${mine ? 'border-[#bcd4c9] bg-[#eef4ec]' : 'border-[#e2e8e1] bg-white'}`}>
-                      <p className="flex flex-wrap items-baseline justify-between gap-x-2">
-                        <span className="text-sm font-semibold">{sender.name}{mine ? ' (you)' : ''}<span className="ml-2 text-xs font-normal text-[#687873]">{sender.role === 'manager' ? 'Manager' : 'Care worker'}</span></span>
-                        <time className="text-xs text-[#687873]">{new Date(msg.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
-                      </p>
-                      <p className="mt-1 break-words text-sm leading-6">{msg.body}</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : <EmptyHandoff icon={MessageSquareText} title="No messages yet" text="Say hello, share a handover note, or ask the team a question." compact />}
-        </div>
-        <form className="flex gap-2 border-t border-[#dfe5dc] p-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'postMessage', ...Object.fromEntries(new FormData(form)) }, 'Message sent.').then(() => form.reset()).catch(() => {}); }}>
-          <Input name="body" required maxLength={1000} placeholder="Message the care team…" aria-label="Message" className="min-h-11 flex-1" />
-          <Button disabled={busy} aria-label="Send message" className="min-h-11 bg-[#287b6f]"><Send className="size-4" /><span className="hidden sm:inline">Send</span></Button>
-        </form>
+      <Title title="Care team inbox" text={isManager ? 'All direct care-team messages, worker note updates, and advisory safety alerts.' : 'Direct messages and your note updates. The manager can read all team messages.'} />
+      {!isManager && <div role="note" className="mb-5 flex items-start gap-3 rounded-2xl border border-[#d9c99d] bg-[#fff8e8] p-4 text-sm text-[#6f5422]"><Shield className="mt-0.5 size-5 shrink-0" aria-hidden="true" /><p><strong>Monitored team inbox.</strong> Messages are visible to participants and the household manager. Unrelated workers cannot read them.</p></div>}
+      {isManager && alerts.length > 0 && <Card className="mb-6 border-[#e2b69f] bg-[#fff8f4]">
+        <div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#f8dfd1] text-[#8f3f25]"><ShieldAlert className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Advisory safety alerts</h2><p className="mt-1 text-sm leading-6 text-[#6d5a51]">Local automated triage found wording that may need prompt manager review. It does not diagnose or take clinical action.</p></div></div>
+        <ol className="mt-4 space-y-3">{alerts.map((alert: any) => <li key={alert.id} className="rounded-xl border border-[#ead1c4] bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><StatusBadge status={alert.safetyCategory} /><time className="text-xs text-[#687873]">{new Date(alert.createdAt).toLocaleString()}</time></div><p className="mt-2 text-sm font-semibold">{alert.safetyReason}</p><p className="mt-2 break-words rounded-lg bg-[#f7f6f1] p-3 text-sm leading-6">{alert.body}</p><Button type="button" variant="outline" className="mt-3 min-h-11" disabled={busy} onClick={() => mutate({ action: 'acknowledgeSafetyAlert', messageId: alert.id }, 'Safety alert marked reviewed.')}><Check className="size-4" aria-hidden="true" />Mark reviewed</Button></li>)}</ol>
+      </Card>}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,.6fr)]">
+        <Card className="p-0">
+          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><Inbox className="size-5 text-[#287b6f]" aria-hidden="true" />Personal and monitored messages</h2><p className="mt-1 text-sm text-[#687873]">{inbox.length ? `${inbox.length} item${inbox.length === 1 ? '' : 's'}` : 'No inbox items yet'}</p></div>
+          <div className="max-h-[60vh] overflow-y-auto p-4">
+            {inbox.length ? <ol className="space-y-3">{inbox.map((item: any) => {
+              const sender = memberFor(item.createdBy); const recipient = memberFor(item.workerId); const mine = item.createdBy === me;
+              return <li key={item.id} className={`rounded-2xl border p-4 ${statusKind(item.kind) ? 'border-[#cbdccf] bg-[#f2f7f1]' : mine ? 'border-[#bcd4c9] bg-[#eef4ec]' : 'border-[#e2e8e1] bg-white'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{statusKind(item.kind) ? 'Client note update' : `${sender?.name ?? 'Former member'} → ${recipient?.name ?? 'Former member'}`}</p><StatusBadge status={item.kind.replace('client_note_', '')} /></div>
+                <p className="mt-2 break-words text-sm leading-6">{item.body}</p><time className="mt-2 block text-xs text-[#687873]">{new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+              </li>;
+            })}</ol> : <EmptyHandoff icon={Inbox} title="Your inbox is clear" text="Direct messages and client-note review updates will appear here." compact />}
+          </div>
+        </Card>
+        <Card className="h-fit">
+          <h2 className="flex items-center gap-2 font-bold"><Send className="size-5 text-[#287b6f]" aria-hidden="true" />Send a direct message</h2>
+          <p className="mt-1 text-sm leading-6 text-[#687873]">Participants and the manager can read it. Automated triage may flag urgent wording for manager review.</p>
+          <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'sendInboxMessage', ...Object.fromEntries(new FormData(form)) }, 'Inbox message sent.').then(() => form.reset()).catch(() => {}); }}>
+            <label className="block text-sm font-semibold">Recipient<select name="recipientId" required className={fieldClass}><option value="">Choose a team member</option>{people.map((person: Member) => <option key={person.id} value={person.id}>{person.name} · {person.role === 'manager' ? 'Manager' : 'Care worker'}</option>)}</select></label>
+            <TextArea label="Message" name="body" />
+            <Button type="submit" disabled={busy || people.length === 0} className="min-h-11 w-full bg-[#287b6f]"><Send className="size-4" aria-hidden="true" />Send message</Button>
+          </form>
+        </Card>
+      </div>
+      <Card className="mt-6 p-0">
+        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Team-wide chat</h2><p className="mt-1 text-sm text-[#687873]">Visible to the full care team and retained for existing team coordination.</p></div>
+        <div className="max-h-80 overflow-y-auto p-4">{(state.messages ?? []).length ? <ol className="space-y-3">{(state.messages as Message[]).map((msg) => <li key={msg.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{memberFor(msg.memberId)?.name ?? 'Former member'}{msg.memberId === me ? ' (you)' : ''}</span><time className="text-xs text-[#687873]">{new Date(msg.createdAt).toLocaleString()}</time></div><p className="mt-1 break-words text-sm leading-6">{msg.body}</p></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No team-wide messages" text="Use this shared space for information intended for everyone." compact />}</div>
+        <form className="flex gap-2 border-t border-[#dfe5dc] p-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'postMessage', ...Object.fromEntries(new FormData(form)) }, 'Team message sent.').then(() => form.reset()).catch(() => {}); }}><Input name="body" required maxLength={1000} placeholder="Message the full care team…" aria-label="Team-wide message" className="min-h-11 flex-1" /><Button type="submit" disabled={busy} aria-label="Send team-wide message" className="min-h-11 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Send</span></Button></form>
       </Card>
     </>
   );
+}
+
+function ClientRecordView({ state, mutate, uploadClientNote, busy }: any) {
+  const isManager = state.viewer.role === 'manager';
+  const manager = state.members.find((item: Member) => item.role === 'manager');
+  const notes = state.clientNotes ?? [];
+  const queue = state.clientNoteQueue ?? [];
+  const memberFor = (id: string) => state.members.find((item: Member) => item.id === id);
+  return <>
+    <Title title="Client record" text={isManager ? 'Review OCR drafts before explicitly adding them to the official client record.' : 'Capture a hard-copy note for manager review and read approved client notes.'} />
+    {!isManager && <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]"><div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#dfece3] text-[#287b6f]"><ScanLine className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Submit a paper note</h2><p className="mt-1 text-sm leading-6 text-[#52645f]">Take a clear, well-lit photo or choose an image. Text is read locally on the CareBoard server and stays pending until the manager reviews it.</p></div></div>
+      <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end" onSubmit={async (e) => { e.preventDefault(); const form = e.currentTarget; const file = new FormData(form).get('photo'); if (!(file instanceof File) || !file.size || !manager) return; try { await uploadClientNote(file, manager.id); form.reset(); } catch { /* live notice reports error */ } }}>
+        <label htmlFor="client-note-photo" className="block text-sm font-semibold">Photo of note<Input id="client-note-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required className="mt-1 min-h-12 bg-white file:mr-3 file:rounded-lg file:border-0 file:bg-[#e8f1ec] file:px-3 file:py-2 file:font-semibold file:text-[#287b6f]" /></label>
+        <Button type="submit" disabled={busy || !manager} className="min-h-12 bg-[#287b6f]"><Upload className="size-5" aria-hidden="true" />Scan and submit</Button>
+      </form>
+    </Card>}
+    {isManager && <Card className="mb-6 p-0"><div className="flex items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 font-bold"><ClipboardList className="size-5 text-[#287b6f]" aria-hidden="true" />Pending review queue</h2><p className="mt-1 text-sm text-[#687873]">Edit OCR text if needed, then explicitly approve or reject.</p></div><span className="rounded-full bg-[#fcf0dc] px-3 py-1 text-sm font-bold text-[#8a5a1d]">{queue.length}</span></div>
+      {queue.length ? <div className="grid gap-4 p-4">{queue.map((note: any) => <form key={note.id} className="grid gap-4 rounded-2xl border border-[#dfe5dc] bg-white p-4 lg:grid-cols-[12rem_1fr]" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'reviewClientNote', submissionId: note.id, decision: 'approve', ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Client note approved.').catch(() => {}); }}>
+        <a href={note.sourcePhotoId ? `/api/uploads/${note.sourcePhotoId}` : undefined} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-[#dfe5dc] bg-[#f7f6f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">{note.sourcePhotoId ? <img src={`/api/uploads/${note.sourcePhotoId}`} alt="Original submitted client note" className="aspect-[4/3] size-full object-cover transition group-hover:scale-[1.02]" /> : <span className="grid aspect-[4/3] place-items-center text-sm text-[#687873]">Source image expired</span>}</a>
+        <div><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Submitted by {memberFor(note.submittedBy)?.name ?? 'Former worker'}</p><time className="text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString()}</time></div><label className="mt-3 block text-sm font-semibold">Reviewed note text<textarea name="reviewedText" required defaultValue={note.ocrText} rows={7} className={fieldClass} /></label><div className="mt-3 flex flex-wrap gap-2"><Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><CheckCircle2 className="size-4" aria-hidden="true" />Approve to record</Button><Button type="button" variant="outline" disabled={busy} className="min-h-11 border-[#d7a995] text-[#873d27]" onClick={() => mutate({ action: 'reviewClientNote', submissionId: note.id, decision: 'reject' }, 'Client note rejected.')}><XCircle className="size-4" aria-hidden="true" />Reject</Button></div></div>
+      </form>)}</div> : <EmptyHandoff icon={CheckCircle2} title="Review queue is clear" text="New worker submissions will appear here before they can enter the client record." />}
+    </Card>}
+    <Card className="p-0"><div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-bold"><FileText className="size-5 text-[#287b6f]" aria-hidden="true" />Approved notes</h2><p className="mt-1 text-sm text-[#687873]">The official record includes approved content only.</p></div>{notes.length ? <ol className="divide-y divide-[#e5eae4]">{notes.map((note: any) => <li key={note.id} className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{memberFor(note.submittedBy)?.name ?? 'Former worker'}</p><StatusBadge status="approved" /></div><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7">{note.body}</p><p className="mt-3 text-xs text-[#687873]">Approved {note.reviewedAt ? new Date(note.reviewedAt).toLocaleString() : ''}{note.editedDuringReview ? ' · Edited during manager review' : ''}</p></li>)}</ol> : <EmptyHandoff icon={FileText} title="No approved notes yet" text="Pending and rejected submissions never appear in the official client record." />}</Card>
+  </>;
 }
 
 function TimeClock({ member, entries, mutate, busy }: any) {
@@ -1217,7 +1269,7 @@ function TaskDialog({ task, manager, readOnly = false, memberId, workers, busy, 
               <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={task.reminderLeadDays ?? 1} />
             </div>
             <TextArea label="Instructions" name="instructions" defaultValue={task.instructions} />
-            <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save task changes</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save task changes</Button>
           </form>
         ) : editable ? (
           <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'updateTask', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)), issueOpen: new FormData(e.currentTarget).get('issueOpen') === 'on' }, 'Task update saved.'); }}>
@@ -1226,7 +1278,7 @@ function TaskDialog({ task, manager, readOnly = false, memberId, workers, busy, 
             <TextArea label="Issue or blocker" name="issueReport" defaultValue={task.issueReport} />
             <label className="flex min-h-11 items-center gap-2 text-sm font-semibold"><input type="checkbox" name="issueOpen" defaultChecked={task.issueOpen} />Issue still open</label>
             <Field label="Expected completion" name="expectedCompletionAt" type="datetime-local" defaultValue={task.expectedCompletionAt} />
-            <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save update</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save update</Button>
           </form>
         ) : null}
         <div className="border-t pt-4">
@@ -1248,7 +1300,7 @@ function TaskDialog({ task, manager, readOnly = false, memberId, workers, busy, 
             <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'addNote', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Note added.'); e.currentTarget.reset(); }}>
               <select name="kind" className={fieldClass}><option value="progress">Progress</option><option value="issue">Issue</option><option value="completion">Completion</option></select>
               <Input name="body" required placeholder="Add an update" className="min-h-11" />
-              <Button disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Add</Button>
+              <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Add</Button>
             </form>
           )}
         </div>
@@ -1296,7 +1348,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
           <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
           {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
-          <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save profile</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save profile</Button>
         </form>
         {(manager || certs.length > 0) && (
           <div className="border-t border-[#e5eae4] pt-4">
@@ -1323,7 +1375,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
               <form className="mt-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'saveCertification', memberId: profile.id, ...Object.fromEntries(new FormData(form)) }, 'Certification saved.'); form.reset(); }}>
                 <Input name="name" required maxLength={200} placeholder="e.g. First aid, criminal record check" aria-label="Certification name" className="min-h-11 min-w-0 flex-1" />
                 <Input name="expiresOn" type="date" required aria-label="Expiry date" className="min-h-11 w-40" />
-                <Button disabled={busy} aria-label="Add certification" className="bg-[#287b6f]"><Plus className="size-4" /></Button>
+                <Button type="submit" disabled={busy} aria-label="Add certification" className="bg-[#287b6f]"><Plus className="size-4" /></Button>
               </form>
             )}
           </div>
@@ -1345,12 +1397,12 @@ function CreateDialog({ open, workers, busy, onClose, submit }: any) {
           <Field label="Task title" name="title" required />
           <label className="text-sm font-semibold">Area<select name="area" className={fieldClass}>{areas.map(a => <option key={a}>{a}</option>)}</select></label>
           <div className="grid grid-cols-2 gap-3"><Field label="Due date" name="dueDate" type="date" /><Field label="Due time" name="dueTime" type="time" /></div>
-          <label className="text-sm font-semibold">Priority<select name="priority" className={fieldClass}><option>low</option><option selected value="normal">normal</option><option>high</option><option>urgent</option></select></label>
+          <label className="text-sm font-semibold">Priority<select name="priority" defaultValue="normal" className={fieldClass}><option>low</option><option value="normal">normal</option><option>high</option><option>urgent</option></select></label>
           <TextArea label="Instructions" name="instructions" />
           <label className="text-sm font-semibold">Repeat<select name="recurrence" className={fieldClass}><option value="">Never</option><option>daily</option><option>weekly</option><option>monthly</option></select></label>
           <label className="text-sm font-semibold">Assign to<select name="assigneeId" className={fieldClass}><option value="">Available to claim</option>{workers.filter((w: Member) => w.status === 'active').map((w: Member) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
           <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={1} />
-          <Button disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Create task</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Create task</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1398,7 +1450,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
               <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
             </>
           )}
-          <Button disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? <><UserCheck className="size-4" />Create invite link</> : <><Plus className="size-4" />Add care worker</>}</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? <><UserCheck className="size-4" />Create invite link</> : <><Plus className="size-4" />Add care worker</>}</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1439,7 +1491,7 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
           <form className="grid gap-4" onSubmit={(e) => submit(e, 'resetMemberPassword', 'Temporary password updated.', onClose)}>
             <input type="hidden" name="memberId" value={member.id} />
             <Field label="Temporary password" name="temporaryPassword" type="password" required />
-            <Button disabled={busy} className="bg-[#287b6f]"><KeyRound className="size-4" />Reset password</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><KeyRound className="size-4" />Reset password</Button>
           </form>
         )}
       </DialogContent>

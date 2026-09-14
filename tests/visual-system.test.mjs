@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import ts from 'typescript';
 
 const root = new URL('../', import.meta.url);
 const source = (path) => readFileSync(new URL(path, root), 'utf8');
@@ -33,4 +34,32 @@ test('shared buttons keep touch-friendly default and large sizes', () => {
   const button = source('components/ui/button.tsx');
   assert.match(button, /'h-11 gap-2 px-4/);
   assert.match(button, /lg: 'h-12 gap-2 px-5/);
+});
+
+test('every dashboard form action uses explicit submit semantics', () => {
+  const dashboard = source('app/household-app.tsx');
+  const syntax = ts.createSourceFile('household-app.tsx', dashboard, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const missing = [];
+  let submitActions = 0;
+
+  function attribute(element, name) {
+    return element.attributes.properties.find((property) => ts.isJsxAttribute(property) && property.name.text === name);
+  }
+
+  function visit(node, insideForm = false) {
+    const form = insideForm || (ts.isJsxElement(node) && node.openingElement.tagName.getText(syntax) === 'form');
+    if (form && ts.isJsxOpeningElement(node) && node.tagName.getText(syntax) === 'Button' && !attribute(node, 'onClick')) {
+      submitActions += 1;
+      const type = attribute(node, 'type');
+      if (!type || !type.initializer || !ts.isStringLiteral(type.initializer) || type.initializer.text !== 'submit') {
+        missing.push(syntax.getLineAndCharacterOfPosition(node.getStart(syntax)).line + 1);
+      }
+    }
+    ts.forEachChild(node, (child) => visit(child, form));
+  }
+
+  visit(syntax);
+  assert.ok(submitActions > 0, 'expected dashboard form actions to be detected');
+  assert.deepEqual(missing, [], `form action buttons missing type="submit" at lines ${missing.join(', ')}`);
+  assert.doesNotMatch(dashboard, /<option selected/);
 });
