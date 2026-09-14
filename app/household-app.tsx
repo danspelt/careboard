@@ -46,6 +46,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [state, setState] = useState(initialState);
   const member = state.members.find((item) => item.id === authenticatedId) ?? state.members[0];
   const manager = member?.role === 'manager';
+  const viewer = member?.role === 'viewer';
   const [section, setSection] = useState<Section>(manager ? 'home' : 'today');
   const [task, setTask] = useState<Chore | null>(null);
   const [profile, setProfile] = useState<Member | null>(null);
@@ -102,7 +103,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const workers = state.members.filter((item) => item.role === 'worker');
   const open = state.chores.filter((item) => item.status !== 'complete');
   const dueToday = open.filter((item) => item.dueDate === today());
-  const notifications = buildNotifications({ viewerId: member.id, manager, activity: state.activity ?? [], tasks: state.chores, members: state.members, announcements: state.announcements ?? [] });
+  const notifications = buildNotifications({ viewerId: member.id, manager, viewer, activity: state.activity ?? [], tasks: state.chores, members: state.members, announcements: state.announcements ?? [] });
   const unread = notifications.filter((item) => item.createdAt > seenAt).length;
   function openFeed() {
     setFeedSeen(seenAt);
@@ -119,7 +120,9 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   }
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
-    : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+    : viewer
+      ? [['today', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
+      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
@@ -164,7 +167,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
             <AvatarFor member={member} className="size-10" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{member.name}</p>
-              <p className="truncate text-xs text-[#687873]">{manager ? 'Manager' : 'Care worker'}</p>
+              <p className="truncate text-xs text-[#687873]">{manager ? 'Manager' : viewer ? 'Family viewer' : 'Care worker'}</p>
             </div>
             {bell}
           </div>
@@ -179,9 +182,11 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
-          {!tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
+          {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
+          ) : viewer ? (
+            <ViewerView section={section} state={state} setTask={setTask} />
           ) : (
             <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
           )}
@@ -205,7 +210,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </div>
       </nav>
 
-      <TaskDialog task={task} manager={manager} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+      <TaskDialog task={task} manager={manager} readOnly={viewer} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
       <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -343,6 +348,33 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           );
         })}
       </div>
+      {state.members.some((item: Member) => item.role === 'viewer') && (
+        <>
+          <h2 className="mt-8 text-lg font-bold">Family viewers</h2>
+          <p className="mt-1 text-sm text-[#687873]">Read-only access to the care plan and schedule.</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {state.members.filter((item: Member) => item.role === 'viewer').map((viewer: Member) => (
+              <Card key={viewer.id}>
+                <div className="flex items-start gap-3">
+                  <AvatarFor member={viewer} className="size-12" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold">{viewer.name}</h3>
+                    <p className="truncate text-sm text-[#687873]">{viewer.email}</p>
+                    <div className="mt-1"><StatusBadge status={viewer.status} /></div>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {viewer.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: viewer.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
+                  {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}>Reset password</Button>}
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: viewer.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: viewer.id }, viewer.status === 'disabled' ? 'Family viewer reactivated.' : 'Family viewer disabled.')}>
+                    {viewer.status === 'disabled' ? 'Reactivate' : 'Disable'}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
     </>
   );
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
@@ -567,9 +599,9 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen, mutate, busy }: any) {
+function ScheduleView({ state, workers, personal = false, readOnly = false, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
-  const plan = personal ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 7, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
+  const plan = personal || readOnly ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 7, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
   const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
   const [assigning, setAssigning] = useState(false);
   async function autoAssign() {
@@ -598,7 +630,7 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
   };
   return (
     <>
-      <Title title={personal ? 'My week' : 'Weekly schedule'} text={personal ? 'Your assignments and work you can claim for the next seven days.' : 'Seven days of household work — reschedule or reassign any task from its details.'} action={personal ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <Title title={personal ? 'My week' : 'Weekly schedule'} text={personal ? 'Your assignments and work you can claim for the next seven days.' : readOnly ? 'Seven days of household work and who is on shift.' : 'Seven days of household work — reschedule or reassign any task from its details.'} action={personal || readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
@@ -679,6 +711,46 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
           <div className="mt-4 space-y-2">
             {schedule.unscheduled.length ? schedule.unscheduled.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing unscheduled" text="Every open task has a due date." compact />}
           </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function ViewerView({ section, state, setTask }: any) {
+  const workers = state.members.filter((item: Member) => item.role === 'worker' && item.status === 'active');
+  if (section === 'schedule') return <ScheduleView state={state} workers={workers} readOnly setTask={setTask} />;
+  if (section === 'tasks') return (
+    <>
+      <Title title="Household tasks" text="The full care plan — read-only." />
+      <Card className="p-0"><TaskList tasks={state.chores} members={state.members} onOpen={setTask} /></Card>
+    </>
+  );
+  const onShiftToday = shiftsForDay(state.shifts ?? [], today());
+  const dueToday = state.chores.filter((chore: Chore) => chore.status !== 'complete' && chore.dueDate === today());
+  const doneToday = state.chores.filter((chore: Chore) => chore.completedAt?.slice(0, 10) === today());
+  return (
+    <>
+      <AnnouncementBanner items={state.announcements ?? []} />
+      <Title title="Household overview" text="A read-only look at today’s care plan." />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <Metric label="Due today" value={dueToday.length} icon={CalendarDays} />
+        <Metric label="Completed today" value={doneToday.length} icon={Check} tone="success" />
+        <Metric label="On shift today" value={onShiftToday.length} icon={Clock} />
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />On shift today</h2>
+          <div className="mt-4 space-y-2">
+            {onShiftToday.length ? onShiftToday.map((shift: any) => {
+              const person = state.members.find((item: Member) => item.id === shift.memberId);
+              return person ? <div key={shift.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3"><AvatarFor member={person} className="size-9" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">{person.name}</span><span className="text-xs tabular-nums text-[#687873]">{formatShift(shift)}</span></div> : null;
+            }) : <EmptyHandoff icon={Clock} title="No one on shift" text="No care worker is scheduled today." compact />}
+          </div>
+        </Card>
+        <Card className="p-0">
+          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="font-semibold">Due today</h2></div>
+          <TaskList tasks={dueToday} members={state.members} onOpen={setTask} compact />
         </Card>
       </div>
     </>
@@ -882,9 +954,9 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
   );
 }
 
-function TaskDialog({ task, manager, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
+function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
   if (!task) return null;
-  const editable = manager || (task.assignedTo && task.status !== 'complete');
+  const editable = !readOnly && (manager || (task.assignedTo && task.status !== 'complete'));
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-2xl">
@@ -942,9 +1014,9 @@ function TaskDialog({ task, manager, workers, busy, onClose, mutate, upload, del
         </div>
         <DialogFooter>
           <div className="flex w-full flex-wrap gap-2">
-            {task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}
-            {task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}
-            {task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}
+            {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}
+            {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}
+            {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}
             {manager && task.reviewStatus === 'pending' && (
               <>
                 <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]">Approve</Button>
@@ -1045,7 +1117,10 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
             <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Temporary password</button>
           </fieldset>
           {method === 'invite' ? (
-            <p className="text-xs leading-5 text-[#687873]">You’ll get a link to share — text, email, or read it out. It expires in 7 days and the care worker picks their own password.</p>
+            <>
+              <label className="text-sm font-semibold">Role<select name="role" defaultValue="worker" className={fieldClass}><option value="worker">Care worker</option><option value="viewer">Family viewer (read-only)</option></select></label>
+              <p className="text-xs leading-5 text-[#687873]">You’ll get a link to share — text, email, or read it out. It expires in 7 days and they pick their own password.</p>
+            </>
           ) : (
             <>
               <Field label="Temporary password" name="temporaryPassword" type="password" required />

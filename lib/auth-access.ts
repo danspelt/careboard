@@ -15,7 +15,7 @@ export async function authenticatedAccess(): Promise<AuthenticatedAccess | null>
   if (!email || !memberId) return null;
   const account = await accountForEmail(email);
   if (!account) return null;
-  const role = (account.role === 'manager' ? 'manager' : 'worker') as Role;
+  const role = (account.role === 'manager' ? 'manager' : account.role === 'viewer' ? 'viewer' : 'worker') as Role;
   const credentialLogin = (session as typeof session & { loginProvider?: string }).loginProvider === 'credentials';
   return { memberId, email, role, credentialLogin, mustChangePassword: credentialLogin && await credentialMustChange(email) };
 }

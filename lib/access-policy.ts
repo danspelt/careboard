@@ -1,5 +1,5 @@
 export type AccountStatus = 'active' | 'disabled' | 'invited';
-export type Role = 'manager' | 'worker';
+export type Role = 'manager' | 'worker' | 'viewer';
 export type TaskStatus = 'open' | 'in_progress' | 'complete';
 
 export type AccessMember = { id: string; role: Role; status: AccountStatus };
@@ -21,7 +21,7 @@ export function workerCan(action: string, actorId: string, task: AccessTask) {
 }
 
 export function visibleTasks<T extends AccessTask>(member: AccessMember, tasks: T[]) {
-  if (member.role === 'manager') return tasks;
+  if (member.role === 'manager' || member.role === 'viewer') return tasks;
   return tasks.filter((task) => task.assignedTo === member.id || (task.assignedTo === null && task.status === 'open'));
 }
 

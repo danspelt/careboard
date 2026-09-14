@@ -17,7 +17,11 @@ The manager identity is determined only by `CAREBOARD_OWNER_EMAIL` and its confi
 
 ## Worker accounts
 
-The manager creates each worker with a name, approved email, and strong temporary password. The password is hashed with `bcryptjs`; plaintext is never stored. New workers are active immediately. A credentials login with a temporary password is restricted to the protected password-change screen until the worker chooses a permanent password. Google login by the same active approved worker is not restricted by the credential-specific temporary-password state.
+The manager creates each worker with a name, approved email, and either a strong temporary password or an invite link. Invite links (`/accept-invite?token=…`) are single-use, expire in 7 days, and let the worker choose their own password; only the SHA-256 hash of the token is stored. The password is hashed with `bcryptjs`; plaintext is never stored. New workers are active immediately (invited workers activate when they accept). A credentials login with a temporary password is restricted to the protected password-change screen until the worker chooses a permanent password. Google login by the same active approved worker is not restricted by the credential-specific temporary-password state.
+
+## Family viewer accounts
+
+Managers can also invite `viewer` members — read-only family access. Viewers see the full task list, schedule, shifts, announcements, and task photos, but cannot mutate anything, and never receive worker contact details, availability, audit history, settings, or time entries.
 
 Managers can set another temporary password, disable a worker, or reactivate one. Disabled status is checked from the database on every protected request, so an existing JWT cannot retain access. Disabling preserves tasks and activity history.
 

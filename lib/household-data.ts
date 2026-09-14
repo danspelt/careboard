@@ -223,6 +223,19 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
       return chore.dueDate <= addDaysISO(today, lead);
     });
   if (viewer.role === 'manager') return { viewer: { id: viewer.id, role: viewer.role }, ...state, metrics: metrics(state.chores, today), reminders: remindersFor(state.chores) };
+  if (viewer.role === 'viewer') {
+    // Family viewers see the care plan and schedule, but not care workers' private details, audit data, or settings.
+    const people: Member[] = state.members.map((item) => ({
+      id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
+      createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
+      certifications: '', languages: '', profilePhotoId: item.profilePhotoId,
+    }));
+    return {
+      viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
+      reminders: remindersFor(state.chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5),
+      shifts: state.shifts, metrics: metrics(state.chores, today),
+    };
+  }
   const chores = visibleTasks(viewer, state.chores);
   // Strip private fields from the worker's own profile view
   const self: Member = {
@@ -341,6 +354,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     .bind(actorId)
     .first<Member>();
   if (!actor || actor.status !== 'active') throw new Error('Household access denied.');
+  if (actor.role === 'viewer') throw new Error('Family viewers have read-only access.');
   const now = new Date().toISOString();
   const extras: Record<string, unknown> = {};
   const managerOnly = [
@@ -514,7 +528,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
   } else if (action === 'inviteMember') {
     const name = requiredString(input.name, 'Name');
     const email = normalizeEmail(input.googleEmail);
-    if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused care worker email address.');
+    const role = input.role === 'viewer' ? 'viewer' : 'worker';
+    if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused email address.');
     await ensureAccountTable();
     if (await db.prepare('SELECT email FROM google_accounts WHERE email=?').bind(email).first()) throw new Error('This email already has a profile.');
     const id = crypto.randomUUID();
@@ -523,15 +538,15 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     extras.inviteToken = token;
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     await db.batch([
-      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,"worker",?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,?,?)').bind(id, name, role, palette[(count?.count ?? 0) % palette.length], now),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,updated_at) VALUES (?,'default','invited',?)").bind(id, now),
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
-      activity(null, actorId, 'invited_worker', `invited care worker ${name}`, now),
+      activity(null, actorId, 'invited_member', `invited ${role === 'viewer' ? 'family viewer' : 'care worker'} ${name}`, now),
     ]);
   } else if (action === 'reinviteMember') {
-    const memberId = requiredString(input.memberId, 'Care worker');
-    const member = await db.prepare(`SELECT m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`).bind(memberId).first<Member>();
+    const memberId = requiredString(input.memberId, 'Member');
+    const member = await db.prepare(`SELECT m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<Member>();
     if (!member || member.status !== 'invited') throw new Error('Only pending invites can be renewed.');
     const token = newInviteToken();
     extras.inviteToken = token;
@@ -640,8 +655,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     await activity(null, actorId, 'deleted_upload', `deleted upload ${uploadId}`, now).run();
   } else if (['disableMember', 'reactivateMember'].includes(action)) {
     const memberId = requiredString(input.memberId, 'Care worker');
-    const member = await db.prepare("SELECT id FROM members WHERE id=? AND role='worker'").bind(memberId).first();
-    if (!member) throw new Error('Choose a valid care worker.');
+    const member = await db.prepare("SELECT id FROM members WHERE id=? AND role IN ('worker','viewer')").bind(memberId).first();
+    if (!member) throw new Error('Choose a valid member.');
     await setAccountStatus(memberId, action === 'disableMember' ? 'disabled' : 'active');
     await activity(null, actorId, action === 'disableMember' ? 'disabled_worker' : 'reactivated_worker', `${action === 'disableMember' ? 'disabled' : 'reactivated'} care worker`, now).run();
   } else if (action === 'clockIn' || action === 'clockOut') {
@@ -673,8 +688,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const temporaryPassword = input.temporaryPassword;
     const passwordProblem = passwordError(temporaryPassword);
     if (passwordProblem) throw new Error(passwordProblem);
-    const target = await db.prepare(`SELECT g.email FROM google_accounts g JOIN members m ON m.id=g.member_id WHERE m.id=? AND m.role='worker'`).bind(memberId).first<{ email: string }>();
-    if (!target) throw new Error('Choose a valid care worker.');
+    const target = await db.prepare(`SELECT g.email FROM google_accounts g JOIN members m ON m.id=g.member_id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<{ email: string }>();
+    if (!target) throw new Error('Choose a valid member.');
     await setCredential(target.email, await hashPassword(temporaryPassword as string), true);
     await activity(null, actorId, 'reset_password', `reset password for care worker`, now).run();
   } else if (action === 'announce') {

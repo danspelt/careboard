@@ -33,13 +33,14 @@ function memberName(members: Array<{ id: string; name: string }>, id: string | n
 export function buildNotifications(options: {
   viewerId: string;
   manager: boolean;
+  viewer?: boolean;
   activity: NotificationSource[];
   tasks: NotificationTask[];
   members: Array<{ id: string; name: string }>;
   announcements?: NotificationSource[];
   since?: string;
 }) {
-  const { viewerId, manager, activity, tasks, members, announcements = [], since } = options;
+  const { viewerId, manager, viewer = false, activity, tasks, members, announcements = [], since } = options;
   const items: NotificationItem[] = [];
   if (manager) {
     for (const entry of activity) {
@@ -64,7 +65,7 @@ export function buildNotifications(options: {
       });
     }
     for (const task of tasks) {
-      if (task.assignedTo !== viewerId) continue;
+      if (viewer || task.assignedTo !== viewerId) continue;
       for (const note of task.notes ?? []) {
         if (note.memberId === viewerId) continue;
         items.push({
@@ -79,7 +80,7 @@ export function buildNotifications(options: {
     }
     const cutoff = since ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     for (const task of tasks) {
-      if (task.assignedTo !== null || task.status !== 'open' || task.createdBy === viewerId) continue;
+      if (viewer || task.assignedTo !== null || task.status !== 'open' || task.createdBy === viewerId) continue;
       if (!task.createdAt || task.createdAt < cutoff) continue;
       items.push({
         id: `available-${task.id}`,

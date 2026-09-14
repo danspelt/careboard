@@ -28,8 +28,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const isOwner = photo.uploadedBy === access.memberId;
   const isTaskOwner = photo.choreId && photo.assignedTo === access.memberId;
   const isProfileOwner = photo.profileMemberId === access.memberId;
+  // Family viewers can see task photos (part of the care plan) but not profile photos.
+  const isViewerTaskPhoto = access.role === 'viewer' && Boolean(photo.choreId);
 
-  if (!isManager && !isOwner && !isTaskOwner && !isProfileOwner) {
+  if (!isManager && !isOwner && !isTaskOwner && !isProfileOwner && !isViewerTaskPhoto) {
     return new Response(null, { status: 404 });
   }
 

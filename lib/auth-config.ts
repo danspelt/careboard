@@ -49,5 +49,5 @@ export function ownerMemberId(): string {
 export function accountRoleAllowed(email: string, memberId: string, role: string): boolean {
   if (!ownerEmail()) return false;
   if (email.trim().toLowerCase() === ownerEmail()) return memberId === ownerMemberId() && role === 'manager';
-  return memberId !== ownerMemberId() && role === 'worker';
+  return memberId !== ownerMemberId() && (role === 'worker' || role === 'viewer');
 }
