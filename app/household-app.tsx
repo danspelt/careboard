@@ -12,10 +12,11 @@ import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
+import { buildWeekSchedule } from '@/lib/schedule';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
-type ManagerSection = 'home' | 'tasks' | 'team' | 'more';
+type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'more';
 type WorkerSection = 'today' | 'tasks' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
@@ -77,7 +78,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const open = state.chores.filter((item) => item.status !== 'complete');
   const dueToday = open.filter((item) => item.dueDate === today());
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
     : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
@@ -146,7 +147,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
 
       {/* Mobile bottom nav */}
       <nav className="dashboard-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
-        <div className="mx-auto grid max-w-md grid-cols-4">
+        <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
           {nav.map(([id, label, Icon]) => (
             <button
               key={id}
@@ -229,6 +230,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
     </>
   );
+  if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
@@ -307,6 +309,95 @@ function MoreManager({ state, mutate, busy }: any) {
           }) : <p className="p-4 text-center text-sm text-[#687873]">No audit entries yet.</p>}
         </div>
       </Card>
+    </>
+  );
+}
+
+function ScheduleView({ state, workers, setTask, setCreateOpen }: any) {
+  const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
+  const memberFor = (id: string | null) => state.members.find((item: Member) => item.id === id);
+  const scheduled = (task: Chore, dense = false) => {
+    const assignee = memberFor(task.assignedTo);
+    return (
+      <button key={task.id} onClick={() => setTask(task)} className={`flex w-full items-center gap-2 rounded-xl border p-2.5 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${task.status === 'complete' ? 'border-[#e2e8e1] bg-[#f4f7f2] opacity-70' : task.issueOpen ? 'border-[#eccab6] bg-[#fdf3ec] hover:border-[#d9a67e]' : 'border-[#dfe5dc] bg-white hover:border-[#aac3b3]'} ${dense ? 'min-h-11' : 'min-h-12'}`}>
+        <span className="w-12 shrink-0 text-xs font-semibold tabular-nums text-[#52645f]">{task.dueTime ?? '—'}</span>
+        <span className="min-w-0 flex-1">
+          <span className={`block truncate text-xs font-semibold ${task.status === 'complete' ? 'line-through' : ''}`}>{task.title}</span>
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#687873]">
+            {assignee && <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: assignee.color }} aria-hidden="true" />}
+            <span className="truncate">{assignee?.name ?? 'Unassigned'}</span>
+          </span>
+        </span>
+        {task.issueOpen && <AlertTriangle className="size-3.5 shrink-0 text-[#8b4e2c]" aria-label="Open issue" />}
+        {task.status === 'complete' && <Check className="size-3.5 shrink-0 text-[#216b61]" aria-label="Complete" />}
+      </button>
+    );
+  };
+  return (
+    <>
+      <Title title="Weekly schedule" text="Seven days of household work — reschedule or reassign any task from its details." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
+      {schedule.overdue.length > 0 && (
+        <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">{schedule.overdue.map((task) => (
+            <button key={task.id} onClick={() => setTask(task)} className="flex min-h-12 w-full items-center gap-2 rounded-xl border border-[#eccab6] bg-white p-2.5 text-left transition hover:border-[#d9a67e] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{task.title}</span><span className="block text-xs text-[#8b4e2c]">Due {dateLabel(task.dueDate)} · {memberFor(task.assignedTo)?.name ?? 'Unassigned'}</span></span>
+              <ChevronRight className="size-4 shrink-0 text-[#8b4e2c]" aria-hidden="true" />
+            </button>
+          ))}</div>
+        </Card>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-7">
+        {schedule.days.map((day) => {
+          const isToday = day.date === today();
+          return (
+            <section key={day.date} aria-label={`Schedule for ${day.date}`} className={`flex min-h-32 flex-col rounded-2xl border p-3 ${isToday ? 'border-[#287b6f] bg-[#eef4ef]' : 'border-[#dfe5dc] bg-[#fffefa]'}`}>
+              <header className="mb-2 flex items-center justify-between gap-2">
+                <div><p className={`text-xs font-bold uppercase tracking-wide ${isToday ? 'text-[#287b6f]' : 'text-[#687873]'}`}>{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</p><p className="text-sm font-semibold">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p></div>
+                {isToday && <span className="rounded-full bg-[#287b6f] px-2 py-0.5 text-[10px] font-bold uppercase text-white">Today</span>}
+              </header>
+              <div className="flex flex-1 flex-col gap-1.5">
+                {day.tasks.map((task) => scheduled(task, true))}
+                {day.tasks.length === 0 && <p className="rounded-xl border border-dashed border-[#d7dfd7] p-3 text-center text-xs text-[#8a978f]">No work due</p>}
+              </div>
+              {(day.unassigned > 0 || day.issues > 0) && <p className="mt-2 text-[11px] font-semibold text-[#8b4e2c]">{[day.unassigned > 0 ? `${day.unassigned} unassigned` : '', day.issues > 0 ? `${day.issues} issue${day.issues === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')}</p>}
+            </section>
+          );
+        })}
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Worker load this week</h2>
+          <p className="text-sm text-[#687873]">Assigned open tasks per day for each active worker</p>
+          <div className="mt-4 space-y-3">
+            {schedule.workload.length ? schedule.workload.map((load) => {
+              const worker = workers.find((item: Member) => item.id === load.workerId);
+              if (!worker) return null;
+              return (
+                <div key={worker.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3">
+                  <div className="flex items-center gap-3">
+                    <AvatarFor member={worker} className="size-9" />
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{worker.name}</p><p className="truncate text-xs text-[#687873]">{worker.availability || 'Availability not set'}</p></div>
+                    <span className="rounded-full bg-[#e8f1ec] px-2.5 py-1 text-xs font-bold tabular-nums text-[#287b6f]">{load.total} task{load.total === 1 ? '' : 's'}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-7 gap-1" aria-label={`Daily load for ${worker.name}`}>
+                    {load.byDay.map((count: number, index: number) => (
+                      <span key={schedule.days[index].date} className={`rounded-lg py-1.5 text-center text-xs font-semibold tabular-nums ${count > 0 ? 'bg-[#e8f1ec] text-[#216b61]' : 'bg-[#f4f6f2] text-[#9aa6a0]'}`} title={`${schedule.days[index].date}: ${count} task${count === 1 ? '' : 's'}`}>{count}</span>
+                    ))}
+                  </div>
+                </div>
+              );
+            }) : <EmptyHandoff icon={Users} title="No active workers" text="Add a worker to start balancing the weekly load." compact />}
+          </div>
+        </Card>
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Unscheduled work</h2>
+          <p className="text-sm text-[#687873]">Open tasks without a due date — open one to pick a day</p>
+          <div className="mt-4 space-y-2">
+            {schedule.unscheduled.length ? schedule.unscheduled.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing unscheduled" text="Every open task has a due date." compact />}
+          </div>
+        </Card>
+      </div>
     </>
   );
 }
