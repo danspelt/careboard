@@ -35,6 +35,25 @@ test('landing brand is inline SVG and the preview is explicitly illustrative', a
   assert.match(html, /id="privacy"/);
 });
 
+test('landing header has a prominent app icon and three labeled icon navigation links', async () => {
+  const html = await landing();
+  const header = html.match(/<header\b[\s\S]*?<\/header>/)?.[0] ?? '';
+  const nav = header.match(/<nav\b[\s\S]*?<\/nav>/)?.[0] ?? '';
+  assert.ok(/data-slot="brand-icon"[^>]*width="48"[^>]*height="48"/.test(header), 'Header logo must be 48px');
+  const links = [...nav.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attributes, body]) => ({
+    href: attributes.match(/href="([^"]+)"/)?.[1],
+    label: body.replace(/<[^>]*>/g, '').trim(),
+    icon: body.includes('<svg'),
+  }));
+  assert.deepEqual(links, [
+    { href: '#main', label: 'Home', icon: true },
+    { href: '#how-it-works', label: 'How it works', icon: true },
+    { href: '#privacy', label: 'Privacy', icon: true },
+  ]);
+  assert.ok(!/class="[^"]*\bhidden\b/.test(nav), 'Navigation must not disappear on mobile');
+  assert.ok(/class="[^"]*\bsticky\b/.test(header), 'Header must stay visible while scrolling');
+});
+
 test('configured Google SSO has a direct sign-in form and a password alternative', async () => {
   const html = await landing({ googleEnabled: true });
   assert.match(html, /<form\b/);

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, BedDouble, Bell, Check, ClipboardCheck, Clock3, FileCheck2, HeartHandshake, LockKeyhole, LogIn, ShieldCheck, Sprout, Users } from 'lucide-react';
+import { ArrowRight, BedDouble, Bell, Check, ClipboardCheck, Clock3, FileCheck2, HeartHandshake, House, LockKeyhole, LogIn, ShieldCheck, Sprout, Users } from 'lucide-react';
 import { auth } from '@/auth';
 import { googleSignIn } from '@/app/actions/auth';
 import { googleAuthenticationConfigured } from '@/lib/auth-config';
@@ -85,15 +85,24 @@ export default async function Home() {
   return (
     <div className="min-h-screen bg-[#fafbf7] text-[#203c34]">
       <a href="#main" className={`sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-white focus:p-3 ${focusClass}`}>Skip to content</a>
-      <header className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-5 sm:px-8">
-        <Link href="/" aria-label="CareBoard home" className={`inline-flex items-center gap-2.5 rounded-xl ${focusClass}`}><BrandIcon /><span className="text-xl font-bold tracking-tight">CareBoard</span></Link>
-        <nav aria-label="Main navigation" className="flex items-center gap-5 text-sm font-medium">
-          <a href="#how-it-works" className={`hidden rounded-lg text-[#53685f] hover:text-[#246f63] sm:block ${focusClass}`}>How it works</a>
-          <Link href={destination} className={`inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#d3dfd4] bg-white px-3 text-xs font-semibold transition hover:bg-[#edf3e9] sm:px-4 sm:text-sm ${focusClass}`}>{signedIn ? 'Dashboard' : 'Sign in'}<ArrowRight className="size-4" aria-hidden="true" /></Link>
-        </nav>
+      <header className="sticky top-0 z-40 bg-[#fafbf7]/95 px-3 py-3 backdrop-blur-md sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-[22px] border border-[#d4e1d6] bg-white p-2.5 shadow-[0_6px_24px_rgba(32,63,54,.06)] sm:p-3 lg:flex-nowrap">
+          <Link href="/" aria-label="CareBoard home" className={`order-1 inline-flex shrink-0 items-center gap-2 rounded-2xl sm:gap-3 ${focusClass}`}>
+            <span className="rounded-2xl bg-[#edf3e9] p-1"><BrandIcon size={48} /></span>
+            <span><span className="block text-lg font-bold tracking-tight sm:text-xl">CareBoard</span><span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[.12em] text-[#53685f]">Household care</span></span>
+          </Link>
+          <nav aria-label="Main navigation" className="order-3 grid w-full grid-cols-3 gap-1 rounded-2xl border border-[#e4eae0] bg-[#f4f7f0] p-1 lg:order-2 lg:mx-auto lg:w-auto">
+            {[
+              { href: '#main', label: 'Home', icon: House },
+              { href: '#how-it-works', label: 'How it works', icon: ClipboardCheck },
+              { href: '#privacy', label: 'Privacy', icon: ShieldCheck },
+            ].map(({ href, label, icon: Icon }) => <a key={href} href={href} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-2 py-1.5 text-[11px] font-semibold text-[#3e6152] transition hover:bg-white hover:text-[#246f63] sm:flex-row sm:gap-2 sm:px-4 sm:text-sm ${focusClass}`}><Icon className="size-4 text-[#287b6f]" aria-hidden="true" /><span>{label}</span></a>)}
+          </nav>
+          <Link href={destination} className={`order-2 inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#246f63] px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-[#1d5b51] sm:px-4 sm:text-sm lg:order-3 ${focusClass}`}><LogIn className="size-4" aria-hidden="true" />{signedIn ? 'Dashboard' : 'Sign in'}</Link>
+        </div>
       </header>
 
-      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-5 pb-8 sm:px-8">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl scroll-mt-48 px-5 pb-8 sm:px-8 lg:scroll-mt-28">
         <section aria-labelledby="hero-heading" className="grid items-center gap-9 pb-10 pt-7 sm:pt-10 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:pb-12 lg:pt-8">
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-[#eef4e9] px-3 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551]"><span className="size-1.5 rounded-full bg-[#398264]" />Made for families & care teams</p>
@@ -115,7 +124,7 @@ export default async function Home() {
           <ExampleBoard />
         </section>
 
-        <section id="how-it-works" aria-labelledby="steps-heading" className="scroll-mt-6 border-t border-[#e0e7dc] py-8">
+        <section id="how-it-works" aria-labelledby="steps-heading" className="scroll-mt-48 border-t border-[#e0e7dc] py-8 lg:scroll-mt-28">
           <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2"><h2 id="steps-heading" className="text-xl font-semibold tracking-tight">Good care. Less coordination.</h2><p className="text-xs text-[#53685f]">A simple rhythm for every household.</p></div>
           <ol className="grid gap-4 md:grid-cols-3">
             {steps.map(({ icon: Icon, title, text }, index) => <li key={title} className="rounded-2xl border border-[#e0e7dc] bg-white p-5">
@@ -125,7 +134,7 @@ export default async function Home() {
           </ol>
         </section>
 
-        <section id="privacy" aria-labelledby="privacy-heading" className="grid scroll-mt-6 gap-5 rounded-2xl bg-[#203f36] p-5 text-white sm:p-6 md:grid-cols-[1.3fr_1fr] md:gap-8">
+        <section id="privacy" aria-labelledby="privacy-heading" className="grid scroll-mt-48 gap-5 rounded-2xl bg-[#203f36] p-5 text-white sm:p-6 md:grid-cols-[1.3fr_1fr] md:gap-8 lg:scroll-mt-28">
           <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-5" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-sm font-semibold">Your household. Your people.</h2><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Managers coordinate the household. Workers see only their profile, assigned tasks, and available work. Personal details stay private.</p></div></div>
           <div className="border-t border-white/15 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0"><p className="text-sm font-semibold">{googleEnabled ? 'Google single sign-on' : 'A private, approved-account space'}</p><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">{googleEnabled ? 'Use your approved Google account—no separate password to remember. Password sign-in is available too.' : 'Use the account your household manager approved. Need access? Ask your manager to add you to the team.'}</p><Link href={destination} className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg text-xs font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
         </section>

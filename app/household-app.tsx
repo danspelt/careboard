@@ -3,7 +3,7 @@
 
 import { logOut } from '@/app/actions/auth';
 import { createElement, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
+import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -229,36 +230,31 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     </>
   );
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
+  const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
+  const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
   return (
     <>
-      <Title title="Household overview" text="Everything the care team needs, without exposing private worker details." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
+      <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Open" value={state.metrics?.open ?? open.length} icon={ClipboardList} />
+        <Metric label="Active workers" value={command.activeWorkers.length} icon={Users} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
-        <Metric label="Overdue" value={state.metrics?.overdue ?? 0} icon={Shield} tone="caution" />
-        <Metric label="Completed" value={state.metrics?.completed ?? 0} icon={Check} tone="success" />
+        <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
+        <Metric label="Completed today" value={command.completedToday} icon={Check} tone="success" />
       </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
-        <Card>
-          <div className="mb-4 flex items-center justify-between">
-            <div><h2 className="text-lg font-bold">Needs attention</h2><p className="text-sm text-[#687873]">Open tasks sorted by priority and date</p></div>
-            <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)}><Plus className="size-4" />New</Button>
-          </div>
-          <TaskList tasks={open.slice(0, 8)} members={state.members} onOpen={setTask} compact />
-          {open.length > 8 && <p className="mt-3 text-center text-xs text-[#687873]">Showing 8 of {open.length} open tasks. View Tasks for the full list.</p>}
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.85fr)]">
+        <Card className="p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="text-lg font-bold">Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
+          <TaskList tasks={command.attention.slice(0, 8)} members={state.members} onOpen={setTask} />
+          {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
-        <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Bell className="size-5 text-[#287b6f]" aria-hidden="true" />Reminders</h2>
-          <p className="text-sm text-[#687873]">Tasks coming up within the reminder window</p>
-          <div className="mt-3 space-y-3">
-            {state.reminders.length ? state.reminders.map((item: Chore) => (
-              <button key={item.id} onClick={() => setTask(item)} className="block min-h-11 w-full rounded-xl bg-[#f1f5f1] p-3 text-left text-sm transition hover:bg-[#e7ede9]">
-                <b>{item.title}</b>
-                <span className="block text-[#687873]">{dateLabel(item.dueDate)}</span>
-              </button>
-            )) : <p className="rounded-xl bg-[#f7f6f1] p-4 text-center text-sm text-[#687873]">No reminders right now.</p>}
-          </div>
+        <Card className="manager-coverage">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s coverage</h2><p className="text-sm text-[#687873]">Active workers and assigned workload</p>
+          <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active workers" text="Add or reactivate a worker to plan coverage." compact />}</div>
         </Card>
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Worker notes will appear here as the team shares progress." compact />}</Card>
+        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
       </div>
     </>
   );
