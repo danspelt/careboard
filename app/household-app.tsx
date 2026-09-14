@@ -16,6 +16,7 @@ import { buildWeekSchedule } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
+import { suggestAssignments } from '@/lib/auto-assign';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -323,7 +324,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
     </>
   );
-  if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} />;
+  if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
@@ -459,8 +460,16 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function ScheduleView({ state, workers, setTask, setCreateOpen }: any) {
+function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
+  const plan = suggestAssignments<Chore>(state.chores, workers, today());
+  const [assigning, setAssigning] = useState(false);
+  async function autoAssign() {
+    setAssigning(true);
+    try {
+      for (const item of plan) await mutate({ action: 'assign', choreId: item.taskId, assigneeId: item.workerId }, `Auto-assigned ${plan.length} task${plan.length === 1 ? '' : 's'} across the team.`);
+    } finally { setAssigning(false); }
+  }
   const memberFor = (id: string | null) => state.members.find((item: Member) => item.id === id);
   const scheduled = (task: Chore, dense = false) => {
     const assignee = memberFor(task.assignedTo);
@@ -481,7 +490,7 @@ function ScheduleView({ state, workers, setTask, setCreateOpen }: any) {
   };
   return (
     <>
-      <Title title="Weekly schedule" text="Seven days of household work — reschedule or reassign any task from its details." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
+      <Title title="Weekly schedule" text="Seven days of household work — reschedule or reassign any task from its details." action={<div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
