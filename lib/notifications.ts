@@ -36,9 +36,10 @@ export function buildNotifications(options: {
   activity: NotificationSource[];
   tasks: NotificationTask[];
   members: Array<{ id: string; name: string }>;
+  announcements?: NotificationSource[];
   since?: string;
 }) {
-  const { viewerId, manager, activity, tasks, members, since } = options;
+  const { viewerId, manager, activity, tasks, members, announcements = [], since } = options;
   const items: NotificationItem[] = [];
   if (manager) {
     for (const entry of activity) {
@@ -52,6 +53,16 @@ export function buildNotifications(options: {
       });
     }
   } else {
+    for (const entry of announcements) {
+      items.push({
+        id: entry.id,
+        choreId: null,
+        kind: 'announcement',
+        text: entry.detail,
+        actor: 'Household manager',
+        createdAt: entry.createdAt,
+      });
+    }
     for (const task of tasks) {
       if (task.assignedTo !== viewerId) continue;
       for (const note of task.notes ?? []) {

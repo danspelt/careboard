@@ -3,7 +3,7 @@
 
 import { logOut } from '@/app/actions/auth';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDot, ClipboardList, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -95,7 +95,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const workers = state.members.filter((item) => item.role === 'worker');
   const open = state.chores.filter((item) => item.status !== 'complete');
   const dueToday = open.filter((item) => item.dueDate === today());
-  const notifications = buildNotifications({ viewerId: member.id, manager, activity: state.activity ?? [], tasks: state.chores, members: state.members });
+  const notifications = buildNotifications({ viewerId: member.id, manager, activity: state.activity ?? [], tasks: state.chores, members: state.members, announcements: state.announcements ?? [] });
   const unread = notifications.filter((item) => item.createdAt > seenAt).length;
   function openFeed() {
     setFeedSeen(seenAt);
@@ -209,7 +209,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
             <ol className="divide-y divide-[#e5eae4]">
               {notifications.map((item) => {
                 const linked = item.choreId ? state.chores.find((chore: Chore) => chore.id === item.choreId) : null;
-                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
+                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind === 'announcement' ? Megaphone : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
                 return (
                   <li key={item.id}>
                     <button onClick={() => { setFeedOpen(false); if (linked) setTask(linked); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
@@ -346,6 +346,10 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
         <Card className="manager-coverage">
           <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s coverage</h2><p className="text-sm text-[#687873]">Active workers and assigned workload</p>
           <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active workers" text="Add or reactivate a worker to plan coverage." compact />}</div>
+          <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
+            <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
+            <Button disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
+          </form>
         </Card>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -602,7 +606,7 @@ function WorkerView({ section, state, member, setTask, setProfile, mutate, busy 
       </Card>
     </>
   );
-  if (section === 'today') return <ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />;
+  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   return (
     <>
@@ -670,6 +674,22 @@ function HandoffTask({ task, member, reasons, setTask, busy, runAction }: any) {
   return <article className="rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm"><button onClick={() => setTask(task)} className="w-full text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]" aria-label={`Open ${task.title}`}><span className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]">{createElement(AreaIcon, { className: 'size-5', 'aria-hidden': true })}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-start justify-between gap-2"><span className="font-semibold">{task.title}</span><StatusBadge status={task.status} /></span><span className="mt-1 block text-xs text-[#52645f]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span></span></span>{reasons.length > 0 && <span className="mt-3 flex flex-wrap gap-1.5">{reasons.map((reason: string) => <span key={reason} className="rounded-full bg-[#f8e9dc] px-2.5 py-1 text-xs font-semibold text-[#8b4e2c]">{reason}</span>)}</span>}{(task.issueReport || task.progressNotes || task.instructions) && <span className="mt-3 line-clamp-2 block text-sm leading-5 text-[#52645f]">{task.issueReport || task.progressNotes || task.instructions}</span>}</button><div className="mt-3 flex flex-wrap gap-2 border-t border-[#edf0eb] pt-3">{task.status === 'open' && task.assignedTo === member.id && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'start')}><Play className="size-4" />Start task</Button>}{task.status === 'in_progress' && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'complete')} className="bg-[#287b6f]"><Check className="size-4" />Mark complete</Button>}<Button size="sm" variant="outline" onClick={() => setTask(task)}><MessageSquareText className="size-4" />Add handoff note</Button></div></article>;
 }
 
+function AnnouncementBanner({ items }: { items: Array<{ id: string; detail: string; createdAt: string }> }) {
+  if (!items.length) return null;
+  return (
+    <Card className="mb-6 border-[#bcd4c9] bg-[#eef4ec]">
+      <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-[#287b6f]"><Megaphone className="size-4" aria-hidden="true" />From your manager</h2>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item.id} className="rounded-xl bg-white/70 p-3">
+            <p className="text-sm font-medium leading-6">{item.detail}</p>
+            <time className="mt-1 block text-xs text-[#687873]">{new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 function EmptyHandoff({ icon: Icon, title, text, compact = false }: any) { return <div className={`flex flex-col items-center px-5 text-center ${compact ? 'py-7' : 'py-10'}`}><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-6" aria-hidden="true" /></span><p className="font-semibold">{title}</p><p className="mt-1 max-w-sm text-sm leading-6 text-[#52645f]">{text}</p></div>; }
 function ProgressRow({ label, value, icon: Icon }: any) { return <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span><span className="flex-1 text-sm text-[#52645f]">{label}</span><strong className="text-lg tabular-nums">{value}</strong></div>; }
 

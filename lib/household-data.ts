@@ -74,6 +74,7 @@ export type HouseholdState = {
   taskGroups?: TaskGroup[];
   metrics?: ReturnType<typeof metrics>;
   reminders: Chore[];
+  announcements?: ActivityItem[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -184,7 +185,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5) };
 }
 
 async function generateRecurringTasks() {
@@ -288,6 +289,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'reactivateMember',
     'resetMemberPassword',
     'updateHouseholdSettings',
+    'announce',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -527,6 +529,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!target) throw new Error('Choose a valid worker.');
     await setCredential(target.email, await hashPassword(temporaryPassword as string), true);
     await activity(null, actorId, 'reset_password', `reset password for worker`, now).run();
+  } else if (action === 'announce') {
+    const body = requiredString(input.body, 'Announcement');
+    if (body.length > 500) throw new Error('Announcements are limited to 500 characters.');
+    await activity(null, actorId, 'announcement', body, now).run();
   } else throw new Error('Unsupported action.');
   return getHouseholdState(actorId);
 
