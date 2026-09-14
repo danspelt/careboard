@@ -56,6 +56,7 @@ export type Chore = {
   notes?: TaskNote[];
 };
 export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
+export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
 export type AuditEntry = { id: string; choreId: string | null; actorId: string; action: string; detail: string; createdAt: string };
 export type TaskGroup = { id: 'my-tasks' | 'available-tasks'; title: 'My Tasks' | 'Available Tasks'; tasks: Chore[] };
@@ -79,6 +80,7 @@ export type HouseholdState = {
   announcements?: ActivityItem[];
   shifts?: Shift[];
   availability?: Shift[];
+  timeEntries?: TimeEntry[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -166,7 +168,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
-  const [members, chores, activity, shifts, availability] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -194,6 +196,7 @@ async function rawState() {
     db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, action, detail, created_at AS createdAt FROM activity ORDER BY created_at DESC LIMIT 60`).all<ActivityItem>(),
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
+    db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= datetime('now', '-90 days') ORDER BY started_at DESC`).all<TimeEntry>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -204,7 +207,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -228,7 +231,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id) };
 }
 
 async function generateRecurringTasks() {
@@ -355,6 +358,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'reopenTask',
     'inviteMember',
     'reinviteMember',
+    'deleteTimeEntry',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -640,6 +644,30 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!member) throw new Error('Choose a valid care worker.');
     await setAccountStatus(memberId, action === 'disableMember' ? 'disabled' : 'active');
     await activity(null, actorId, action === 'disableMember' ? 'disabled_worker' : 'reactivated_worker', `${action === 'disableMember' ? 'disabled' : 'reactivated'} care worker`, now).run();
+  } else if (action === 'clockIn' || action === 'clockOut') {
+    const memberId = typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
+    if (actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only track your own time.');
+    const target = await db.prepare(`SELECT m.id, m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`).bind(memberId).first<Member>();
+    if (!target || target.status !== 'active') throw new Error('Choose an active care worker.');
+    const open = await db.prepare('SELECT id FROM time_entries WHERE member_id=? AND ended_at IS NULL').bind(memberId).first<{ id: string }>();
+    if (action === 'clockIn') {
+      if (open) throw new Error(`${target.name} is already clocked in.`);
+      await db.batch([
+        db.prepare('INSERT INTO time_entries(id,member_id,started_at,created_at) VALUES (?,?,?,?)').bind(crypto.randomUUID(), memberId, now, now),
+        activity(null, actorId, 'clocked_in', `clocked in ${target.name}`, now),
+      ]);
+    } else {
+      if (!open) throw new Error(`${target.name} is not clocked in.`);
+      await db.batch([
+        db.prepare('UPDATE time_entries SET ended_at=? WHERE id=?').bind(now, open.id),
+        activity(null, actorId, 'clocked_out', `clocked out ${target.name}`, now),
+      ]);
+    }
+  } else if (action === 'deleteTimeEntry') {
+    const entryId = requiredString(input.entryId, 'Time entry');
+    const result = await db.prepare('DELETE FROM time_entries WHERE id=?').bind(entryId).run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('Time entry not found.');
+    await activity(null, actorId, 'deleted_time_entry', 'removed a time entry', now).run();
   } else if (action === 'resetMemberPassword') {
     const memberId = requiredString(input.memberId, 'Care worker');
     const temporaryPassword = input.temporaryPassword;

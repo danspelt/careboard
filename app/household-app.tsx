@@ -18,6 +18,7 @@ import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { formatShift, shiftsForDay } from '@/lib/shifts';
+import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -424,6 +425,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
 }
 
 function MoreManager({ state, mutate, busy }: any) {
+  const [weekStart] = useState(() => new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10));
   const settings = state.settings;
   const month = today().slice(0, 7);
   const reportWorkers = state.members.filter((item: Member) => item.role === 'worker');
@@ -504,6 +506,44 @@ function MoreManager({ state, mutate, busy }: any) {
             </div>
           </div>
         </div>
+      </Card>
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Hours tracked — last 7 days</h2>
+        <p className="mt-1 text-sm text-[#687873]">Care workers clock in and out from their Today view. Open shifts count toward the total live.</p>
+        <div className="mt-4 space-y-2">
+          {weekSummary(state.timeEntries ?? [], reportWorkers.map((worker: Member) => worker.id), weekStart).map((row) => {
+            const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
+            if (!worker) return null;
+            return (
+              <div key={worker.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                <AvatarFor member={worker} className="size-9" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{worker.name}</p>
+                  <p className="text-xs text-[#687873]">{row.clockedIn ? 'On the clock now' : 'Not clocked in'}</p>
+                </div>
+                <span className="rounded-full bg-[#e8f1ec] px-2.5 py-1 text-xs font-bold tabular-nums text-[#287b6f]">{formatMinutes(row.minutes)}</span>
+              </div>
+            );
+          })}
+          {!reportWorkers.length && <EmptyHandoff icon={Clock} title="No care workers" text="Time entries appear once care workers clock in." compact />}
+        </div>
+        {(state.timeEntries ?? []).length > 0 && (
+          <div className="mt-4 border-t border-[#e5eae4] pt-4">
+            <h3 className="text-sm font-bold">Recent entries</h3>
+            <ol className="mt-2 divide-y divide-[#e5eae4]">
+              {(state.timeEntries ?? []).slice(0, 8).map((entry: any) => {
+                const worker = state.members.find((item: Member) => item.id === entry.memberId);
+                return (
+                  <li key={entry.id} className="flex items-center gap-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate font-medium">{worker?.name ?? 'Care worker'}</span>
+                    <span className="text-xs tabular-nums text-[#687873]">{new Date(entry.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} → {entry.endedAt ? new Date(entry.endedAt).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'now'}</span>
+                    <button onClick={() => mutate({ action: 'deleteTimeEntry', entryId: entry.id }, 'Time entry removed.')} aria-label={`Delete time entry for ${worker?.name ?? 'care worker'}`} className="grid size-9 shrink-0 place-items-center rounded-lg text-[#687873] transition hover:bg-[#f1f5f1] hover:text-[#934c37]"><Trash2 className="size-4" aria-hidden="true" /></button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
       </Card>
       <Card className="mt-6">
         <h2 className="text-lg font-bold">Audit history</h2>
@@ -683,7 +723,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
       </Card>
     </>
   );
-  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
+  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   return (
     <>
@@ -696,6 +736,29 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
         <TaskList tasks={tasks} members={[member]} onOpen={setTask} />
       </Card>
     </>
+  );
+}
+
+function TimeClock({ member, entries, mutate, busy }: any) {
+  const [now, setNow] = useState(() => new Date().toISOString());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date().toISOString()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  const open = openEntryFor(entries, member.id);
+  const todayMinutes = minutesInRange(entries, member.id, today(), today(), now);
+  const elapsed = open ? Math.max(0, (new Date(now).getTime() - new Date(open.startedAt).getTime()) / 60000) : 0;
+  return (
+    <Card className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <span className={`grid size-11 shrink-0 place-items-center rounded-2xl ${open ? 'bg-[#287b6f] text-white' : 'bg-[#e8f1ec] text-[#287b6f]'}`}><Clock className="size-5" aria-hidden="true" /></span>
+        <div>
+          <h2 className="font-bold">{open ? 'You’re on the clock' : 'Time clock'}</h2>
+          <p className="text-sm text-[#687873]">{open ? `Clocked in at ${new Date(open.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · ${formatMinutes(elapsed)} so far` : `Tracked today: ${formatMinutes(todayMinutes)}`}</p>
+        </div>
+      </div>
+      <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? 'Clock out' : 'Clock in'}</Button>
+    </Card>
   );
 }
 
