@@ -460,7 +460,7 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function ScheduleView({ state, workers, member, personal = false, setTask, setCreateOpen, mutate, busy }: any) {
+function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
   const plan = personal ? [] : suggestAssignments<Chore>(state.chores, workers, today());
   const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
@@ -569,7 +569,7 @@ function ScheduleView({ state, workers, member, personal = false, setTask, setCr
 }
 
 function WorkerView({ section, state, member, setTask, setProfile, mutate, busy }: any) {
-  if (section === 'schedule') return <ScheduleView state={state} workers={[]} member={member} personal setTask={setTask} />;
+  if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
       <Title title="Your profile" text="You control your contact, availability, languages, and profile photo." />
