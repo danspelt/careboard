@@ -4,13 +4,13 @@
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, History, Home, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, History, Home, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Send, Settings, Shield, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import type { Chore, HouseholdState, Member } from '@/lib/household-data';
+import type { Chore, HouseholdState, Member, Message } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
@@ -27,8 +27,8 @@ const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outs
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'more';
-type WorkerSection = 'today' | 'tasks' | 'schedule' | 'profile' | 'more';
+type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'messages' | 'more';
+type WorkerSection = 'today' | 'tasks' | 'schedule' | 'messages' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
@@ -122,10 +122,10 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
   }
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Messages', MessageSquareText], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
-      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['messages', 'Messages', MessageSquareText], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
@@ -213,7 +213,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </div>
       </nav>
 
-      <TaskDialog task={task} manager={manager} readOnly={viewer} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+      <TaskDialog task={task} manager={manager} readOnly={viewer} memberId={member.id} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
       <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -224,7 +224,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
             <ol className="divide-y divide-[#e5eae4]">
               {notifications.map((item) => {
                 const linked = item.choreId ? state.chores.find((chore: Chore) => chore.id === item.choreId) : null;
-                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind === 'announcement' ? Megaphone : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
+                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind === 'announcement' || item.kind === 'posted_message' ? Megaphone : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
                 return (
                   <li key={item.id}>
                     <button onClick={() => { setFeedOpen(false); if (linked) setTask(linked); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
@@ -405,6 +405,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     </>
   );
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
+  if (section === 'messages') return <MessagesView state={state} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
@@ -947,7 +948,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
             <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
             <h2 className="font-bold">Privacy</h2>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, your own pay rate and hours, tasks assigned to you, and tasks available to claim. Other care workers’ pay, contact details, activity, reports, settings, and audit records remain private.</p>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see your profile, your own pay rate and hours, tasks assigned to you, unfinished work you can take over, tasks available to claim, and the team chat. Other care workers’ pay, contact details, activity, reports, settings, and audit records remain private.</p>
         </Card>
         <Card>
           <div className="flex items-center gap-3">
@@ -964,6 +965,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
     </>
     );
   }
+  if (section === 'messages') return <MessagesView state={state} mutate={mutate} busy={busy} />;
   if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
@@ -995,6 +997,49 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
           </div>
         </div>
         <TaskList tasks={filtered} members={[member]} onOpen={setTask} />
+      </Card>
+    </>
+  );
+}
+
+function MessagesView({ state, mutate, busy }: any) {
+  const me = state.viewer.id;
+  const isManager = state.viewer.role === 'manager';
+  const messages: Message[] = state.messages ?? [];
+  const senderFor = (id: string): Member =>
+    state.members.find((item: Member) => item.id === id) ??
+    { id, name: 'Former member', role: 'worker', status: 'disabled', color: '#9aa6a0', createdAt: '', phone: null, availability: '', skillsNotes: '', emergencyContact: null, certifications: '', languages: '', profilePhotoId: null };
+  return (
+    <>
+      <Title title="Team messages" text={isManager ? 'The full care team conversation — everything your workers share is visible here.' : 'Talk with the other care workers and your manager. The manager can see everything in this chat.'} />
+      <Card className="p-0">
+        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><MessageSquareText className="size-4 text-[#287b6f]" aria-hidden="true" />Care team chat</h2><p className="text-sm text-[#687873]">{messages.length ? `${messages.length} message${messages.length === 1 ? '' : 's'}` : 'Nothing yet'}</p></div>
+        <div className="max-h-[55vh] overflow-y-auto p-4">
+          {messages.length ? (
+            <ol className="space-y-3">
+              {messages.map((msg) => {
+                const sender = senderFor(msg.memberId);
+                const mine = msg.memberId === me;
+                return (
+                  <li key={msg.id} className="flex gap-3">
+                    <AvatarFor member={sender} className="size-9 shrink-0" />
+                    <div className={`min-w-0 flex-1 rounded-2xl border p-3 ${mine ? 'border-[#bcd4c9] bg-[#eef4ec]' : 'border-[#e2e8e1] bg-white'}`}>
+                      <p className="flex flex-wrap items-baseline justify-between gap-x-2">
+                        <span className="text-sm font-semibold">{sender.name}{mine ? ' (you)' : ''}<span className="ml-2 text-xs font-normal text-[#687873]">{sender.role === 'manager' ? 'Manager' : 'Care worker'}</span></span>
+                        <time className="text-xs text-[#687873]">{new Date(msg.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+                      </p>
+                      <p className="mt-1 break-words text-sm leading-6">{msg.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : <EmptyHandoff icon={MessageSquareText} title="No messages yet" text="Say hello, share a handover note, or ask the team a question." compact />}
+        </div>
+        <form className="flex gap-2 border-t border-[#dfe5dc] p-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'postMessage', ...Object.fromEntries(new FormData(form)) }, 'Message sent.').then(() => form.reset()).catch(() => {}); }}>
+          <Input name="body" required maxLength={1000} placeholder="Message the care team…" aria-label="Message" className="min-h-11 flex-1" />
+          <Button disabled={busy} aria-label="Send message" className="min-h-11 bg-[#287b6f]"><Send className="size-4" /><span className="hidden sm:inline">Send</span></Button>
+        </form>
       </Card>
     </>
   );
@@ -1149,9 +1194,9 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
   );
 }
 
-function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
+function TaskDialog({ task, manager, readOnly = false, memberId, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
   if (!task) return null;
-  const editable = !readOnly && (manager || (task.assignedTo && task.status !== 'complete'));
+  const editable = !readOnly && (manager || (task.assignedTo === memberId && task.status !== 'complete'));
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-2xl">
@@ -1210,6 +1255,7 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
         <DialogFooter>
           <div className="flex w-full flex-wrap gap-2">
             {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}><UserCheck className="size-4" />Claim</Button>}
+            {!manager && !readOnly && task.assignedTo && task.assignedTo !== memberId && task.status !== 'complete' && <Button disabled={busy} onClick={() => mutate({ action: 'takeover', choreId: task.id }, 'Task is yours now — start it when you are ready.')} className="bg-[#287b6f]"><UserCheck className="size-4" />Take over</Button>}
             {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}><Play className="size-4" />Start</Button>}
             {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]"><Check className="size-4" />Complete</Button>}
             {manager && task.reviewStatus === 'pending' && (

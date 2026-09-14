@@ -60,6 +60,7 @@ export type Chore = {
 export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
+export type Message = { id: string; memberId: string; body: string; createdAt: string };
 export type AuditEntry = { id: string; choreId: string | null; actorId: string; action: string; detail: string; createdAt: string };
 export type TaskGroup = { id: 'my-tasks' | 'available-tasks'; title: 'My Tasks' | 'Available Tasks'; tasks: Chore[] };
 export type HouseholdSettings = {
@@ -86,6 +87,7 @@ export type HouseholdState = {
   availability?: Shift[];
   timeEntries?: TimeEntry[];
   certifications?: Certification[];
+  messages?: Message[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -175,7 +177,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
-  const [members, chores, activity, shifts, availability, timeEntries, certifications] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -205,6 +207,7 @@ async function rawState() {
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= datetime('now', '-90 days') ORDER BY started_at DESC`).all<TimeEntry>(),
     db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
+    db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -215,7 +218,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -252,7 +255,15 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id) };
+  // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
+  const roster: Member[] = state.members
+    .filter((item) => item.id !== viewer.id && item.role !== 'viewer')
+    .map((item) => ({
+      id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
+      createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
+      certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+    }));
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages };
 }
 
 async function generateRecurringTasks() {
@@ -436,6 +447,25 @@ export async function mutateHousehold(input: Record<string, unknown>) {
         .run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('That task changed before your update. Refresh and try again.');
     await activity(choreId, actorId, action === 'complete' ? 'completed' : action === 'start' ? 'started' : 'claimed', `${action === 'complete' ? 'finished' : action === 'start' ? 'started' : 'claimed'} ${chore.title}`, now).run();
+  } else if (action === 'takeover') {
+    const choreId = requiredString(input.choreId, 'Chore');
+    const chore = await db.prepare('SELECT title, status, assigned_to AS assignedTo FROM chores WHERE id=?').bind(choreId).first<Chore>();
+    if (!chore || chore.status === 'complete') throw new Error('That task is already complete.');
+    if (chore.assignedTo === actorId) throw new Error('That task is already yours.');
+    if (!chore.assignedTo) throw new Error('That task is unassigned — claim it instead.');
+    if (actor.role === 'worker' && !workerCan('takeover', actorId, chore)) throw new Error('You can only take over unfinished tasks.');
+    const previous = await db.prepare('SELECT name FROM members WHERE id=?').bind(chore.assignedTo).first<{ name: string }>();
+    await db.batch([
+      db.prepare("UPDATE chores SET assigned_to=?, status='open', started_at=NULL WHERE id=? AND status!='complete'").bind(actorId, choreId),
+      db.prepare('INSERT INTO task_notes(id,chore_id,member_id,kind,body,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(), choreId, actorId, 'progress', `Took over${previous ? ` from ${previous.name}` : ''}`, now),
+      activity(choreId, actorId, 'took_over', `took over ${chore.title}`, now),
+    ]);
+  } else if (action === 'postMessage') {
+    const body = requiredString(input.body, 'Message').slice(0, 1000);
+    await db.batch([
+      db.prepare('INSERT INTO messages(id,member_id,body,created_at) VALUES(?,?,?,?)').bind(crypto.randomUUID(), actorId, body, now),
+      activity(null, actorId, 'posted_message', body.slice(0, 200), now),
+    ]);
   } else if (action === 'addNote') {
     const choreId = requiredString(input.choreId, 'Task');
     const kind = ['progress', 'completion', 'issue'].includes(String(input.kind)) ? String(input.kind) : '';
