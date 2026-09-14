@@ -4,7 +4,7 @@
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, History, Home, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -141,7 +141,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </button>
         <div className="flex items-center gap-2">
           {bell}
-          <form action={logOut}><button className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[#287b6f]">Sign out</button></form>
+          <form action={logOut}><button className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#287b6f]"><LogOut className="size-4" aria-hidden="true" />Sign out</button></form>
           <AvatarFor member={member} className="size-9" />
         </div>
       </header>
@@ -176,7 +176,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           </div>
           <form action={logOut} className="mt-3">
             <button className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
-              Sign out
+              <LogOut className="size-4" aria-hidden="true" />Sign out
             </button>
           </form>
         </div>
@@ -319,9 +319,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
         <Card className="p-0">
           <div className="border-b border-[#dfe5dc] px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h2 className="font-semibold">All household tasks</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {state.chores.length} total · {open.length} open</p></div>
+              <div><h2 className="flex items-center gap-2 font-semibold"><ClipboardList className="size-4 text-[#287b6f]" aria-hidden="true" />All household tasks</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {state.chores.length} total · {open.length} open</p></div>
               <div className="flex flex-wrap gap-2">
-                <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-52" />
+                <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-full flex-1 sm:w-52 sm:flex-none" />
                 <select value={taskStatus} onChange={(e) => setTaskStatus(e.target.value as any)} aria-label="Filter by status" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
                   <option value="all">All statuses</option>
                   <option value="open">Open</option>
@@ -366,9 +366,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
               <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
               <Button variant="outline" size="sm" onClick={() => setAvailWorker(worker)}><CalendarDays className="size-4" />Availability</Button>
               {worker.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: worker.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
-              {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>}
+              {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}><KeyRound className="size-4" />Reset password</Button>}
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
-                {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
+                {worker.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
               </Button>
             </div>
           </Card>
@@ -377,7 +377,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
       {state.members.some((item: Member) => item.role === 'viewer') && (
         <>
-          <h2 className="mt-8 text-lg font-bold">Family viewers</h2>
+          <h2 className="mt-8 flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Family viewers</h2>
           <p className="mt-1 text-sm text-[#687873]">Read-only access to the care plan and schedule.</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {state.members.filter((item: Member) => item.role === 'viewer').map((viewer: Member) => (
@@ -392,9 +392,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {viewer.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: viewer.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
-                  {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}>Reset password</Button>}
+                  {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}><KeyRound className="size-4" />Reset password</Button>}
                   <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: viewer.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: viewer.id }, viewer.status === 'disabled' ? 'Family viewer reactivated.' : 'Family viewer disabled.')}>
-                    {viewer.status === 'disabled' ? 'Reactivate' : 'Disable'}
+                    {viewer.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
                   </Button>
                 </div>
               </Card>
@@ -423,7 +423,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.85fr)]">
         <Card className="p-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="text-lg font-bold">Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#287b6f]" aria-hidden="true" />Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
           <TaskList tasks={command.attention.slice(0, 8)} members={state.members} onOpen={setTask} />
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
@@ -450,7 +450,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
                     <span className="block text-xs text-[#687873]">{finisher?.name ?? 'Care worker'} · {task.completedAt ? new Date(task.completedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</span>
                   </button>
                   <Button size="sm" disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]"><Check className="size-4" />Approve</Button>
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}><Undo2 className="size-4" />Send back</Button>
                 </div>
               );
             })}
@@ -549,7 +549,7 @@ function MoreManager({ state, mutate, busy }: any) {
       <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history." />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-bold">Settings</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Settings className="size-5 text-[#287b6f]" aria-hidden="true" />Settings</h2>
           <p className="text-sm text-[#687873]">Tune automation without changing privacy policy.</p>
           <form className="mt-4 grid gap-4" onSubmit={(e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); mutate({ action: 'updateHouseholdSettings', ...data, retentionDays: 90 }, 'Settings saved.'); }}>
             <Field label="Recurrence horizon (days)" name="recurrenceHorizonDays" type="number" defaultValue={settings?.recurrenceHorizonDays ?? 30} />
@@ -557,11 +557,11 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
-            <Button disabled={busy} className="min-h-11 bg-[#287b6f]">Save settings</Button>
+            <Button disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
           </form>
         </Card>
         <Card>
-          <h2 className="text-lg font-bold">Monthly export</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Monthly export</h2>
           <p className="mt-2 text-sm text-[#687873]">Download tasks, assignments, completion details, issues, notes, and team records as CSV.</p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Metric label="On time (30d)" value={report.onTime} icon={Check} tone="success" />
@@ -584,12 +584,12 @@ function MoreManager({ state, mutate, busy }: any) {
         </div>
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <div>
-            <h3 className="text-sm font-bold">Completions per week</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><CheckCircle2 className="size-4 text-[#287b6f]" aria-hidden="true" />Completions per week</h3>
             <p className="sr-only">Weekly completions: {report.weekly.map((week) => `${week.start} to ${week.end}, ${week.completed}`).join('; ')}</p>
             <div className="mt-3 grid h-32 grid-cols-5 items-end gap-2" aria-hidden="true">
               {report.weekly.map((week) => <div key={week.start} className="flex h-full min-w-0 flex-col items-center justify-end gap-1.5"><span className="text-xs font-semibold tabular-nums">{week.completed}</span><span className="w-full max-w-12 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (week.completed / maxWeekly) * 88)}px` }} /><span className="text-[10px] text-[#687873]">{new Date(`${week.start}T12:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>)}
             </div>
-            <h3 className="mt-6 text-sm font-bold">By area</h3>
+            <h3 className="mt-6 flex items-center gap-2 text-sm font-bold"><Home className="size-4 text-[#287b6f]" aria-hidden="true" />By area</h3>
             <div className="mt-3 space-y-2">
               {report.byArea.length ? report.byArea.map((area) => (
                 <div key={area.area} className="flex items-center gap-3">
@@ -601,7 +601,7 @@ function MoreManager({ state, mutate, busy }: any) {
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-bold">Per care worker</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><Users className="size-4 text-[#287b6f]" aria-hidden="true" />Per care worker</h3>
             <div className="mt-3 space-y-2">
               {report.perWorker.length ? report.perWorker.map((row) => {
                 const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
@@ -682,7 +682,7 @@ function MoreManager({ state, mutate, busy }: any) {
         </div>
         {(state.timeEntries ?? []).length > 0 && (
           <div className="mt-4 border-t border-[#e5eae4] pt-4">
-            <h3 className="text-sm font-bold">Recent entries</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><Clock className="size-4 text-[#287b6f]" aria-hidden="true" />Recent entries</h3>
             <ol className="mt-2 divide-y divide-[#e5eae4]">
               {(state.timeEntries ?? []).slice(0, 8).map((entry: any) => {
                 const worker = state.members.find((item: Member) => item.id === entry.memberId);
@@ -699,7 +699,7 @@ function MoreManager({ state, mutate, busy }: any) {
         )}
       </Card>
       <Card className="mt-6">
-        <h2 className="text-lg font-bold">Audit history</h2>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />Audit history</h2>
         <p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p>
         <div className="mt-4 max-h-[32rem] divide-y overflow-auto rounded-xl border border-[#dfe5dc]">
           {(state.audit ?? []).length ? (state.audit ?? []).map((entry: any) => {
@@ -870,7 +870,7 @@ function ViewerView({ section, state, setTask }: any) {
           </div>
         </Card>
         <Card className="p-0">
-          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="font-semibold">Due today</h2></div>
+          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays className="size-4 text-[#287b6f]" aria-hidden="true" />Due today</h2></div>
           <TaskList tasks={dueToday} members={state.members} onOpen={setTask} compact />
         </Card>
       </div>
@@ -956,7 +956,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
           </div>
           <p className="mt-3 text-sm leading-6 text-[#687873]">Manage your password and sign out.</p>
           <div className="mt-4 grid gap-2">
-            <Link href="/change-password" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-4 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]"><Pencil className="size-4" />Change password</Link>
+            <Link href="/change-password" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-4 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]"><KeyRound className="size-4" />Change password</Link>
             <form action={logOut}><button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><LogOut className="size-4" />Sign out</button></form>
           </div>
         </Card>
@@ -981,9 +981,9 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
       <Card className="p-0">
         <div className="border-b border-[#dfe5dc] px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="font-semibold">Your task list</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {tasks.length} total</p></div>
+            <div><h2 className="flex items-center gap-2 font-semibold"><ClipboardList className="size-4 text-[#287b6f]" aria-hidden="true" />Your task list</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {tasks.length} total</p></div>
             <div className="flex flex-wrap gap-2">
-              <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-52" />
+              <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-full flex-1 sm:w-52 sm:flex-none" />
               <select value={taskFilter} onChange={(e) => setTaskFilter(e.target.value as any)} aria-label="Filter tasks" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
                 <option value="all">All tasks</option>
                 <option value="mine">Assigned to me</option>
@@ -1018,7 +1018,7 @@ function TimeClock({ member, entries, mutate, busy }: any) {
           <p className="text-sm text-[#687873]">{open ? `Clocked in at ${new Date(open.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · ${formatMinutes(elapsed)} so far` : `Tracked today: ${formatMinutes(todayMinutes)}`}</p>
         </div>
       </div>
-      <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? 'Clock out' : 'Clock in'}</Button>
+      <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? <><Check className="size-4" />Clock out</> : <><Clock className="size-4" />Clock in</>}</Button>
     </Card>
   );
 }
@@ -1064,7 +1064,7 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
             {handoff.latestNotes.length ? <ol className="mt-4 space-y-3">{handoff.latestNotes.map(({ task, ...note }: any) => <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl border border-[#dfe5dc] bg-white p-3 text-left transition hover:border-[#aac3b3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-2 line-clamp-3 block text-sm leading-5 text-[#52645f]">{note.body}</span><time className="mt-2 block text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></button></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoff notes yet" text="Progress and issue notes from your assigned tasks will collect here." compact />}
           </Card>
           <Card>
-            <h2 className="font-bold">Shift snapshot</h2><div className="mt-4 space-y-4">
+            <h2 className="flex items-center gap-2 font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Shift snapshot</h2><div className="mt-4 space-y-4">
               <ProgressRow label="Completed today" value={handoff.completed.length} icon={CheckCircle2} />
               <ProgressRow label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
               <ProgressRow label="Still due today" value={outstanding.length} icon={CalendarDays} />
@@ -1172,7 +1172,7 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
               <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={task.reminderLeadDays ?? 1} />
             </div>
             <TextArea label="Instructions" name="instructions" defaultValue={task.instructions} />
-            <Button disabled={busy} className="bg-[#287b6f]">Save task changes</Button>
+            <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save task changes</Button>
           </form>
         ) : editable ? (
           <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'updateTask', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)), issueOpen: new FormData(e.currentTarget).get('issueOpen') === 'on' }, 'Task update saved.'); }}>
@@ -1181,11 +1181,11 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
             <TextArea label="Issue or blocker" name="issueReport" defaultValue={task.issueReport} />
             <label className="flex min-h-11 items-center gap-2 text-sm font-semibold"><input type="checkbox" name="issueOpen" defaultChecked={task.issueOpen} />Issue still open</label>
             <Field label="Expected completion" name="expectedCompletionAt" type="datetime-local" defaultValue={task.expectedCompletionAt} />
-            <Button disabled={busy} className="bg-[#287b6f]">Save update</Button>
+            <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save update</Button>
           </form>
         ) : null}
         <div className="border-t pt-4">
-          <h3 className="font-bold">Photos</h3>
+          <h3 className="flex items-center gap-2 font-bold"><Camera className="size-5 text-[#287b6f]" aria-hidden="true" />Photos</h3>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {(task.photos ?? []).map((photo: any) => (
               <figure key={photo.id} className="relative overflow-hidden rounded-xl border bg-white">
@@ -1197,30 +1197,30 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
           {editable && <label className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold"><Upload className="size-4" />Upload photo<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], { choreId: task.id })} /></label>}
         </div>
         <div className="border-t pt-4">
-          <h3 className="font-bold">Updates</h3>
+          <h3 className="flex items-center gap-2 font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Updates</h3>
           {(task.notes ?? []).map((note: any) => <p key={note.id} className="mt-2 rounded-xl bg-[#f1f5f1] p-3 text-sm"><Badge>{note.kind}</Badge> {note.body}</p>)}
           {editable && (
             <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'addNote', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Note added.'); e.currentTarget.reset(); }}>
               <select name="kind" className={fieldClass}><option value="progress">Progress</option><option value="issue">Issue</option><option value="completion">Completion</option></select>
               <Input name="body" required placeholder="Add an update" className="min-h-11" />
-              <Button disabled={busy} className="bg-[#287b6f]">Add</Button>
+              <Button disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Add</Button>
             </form>
           )}
         </div>
         <DialogFooter>
           <div className="flex w-full flex-wrap gap-2">
-            {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}
-            {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}
-            {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}
+            {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}><UserCheck className="size-4" />Claim</Button>}
+            {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}><Play className="size-4" />Start</Button>}
+            {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]"><Check className="size-4" />Complete</Button>}
             {manager && task.reviewStatus === 'pending' && (
               <>
-                <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]">Approve</Button>
-                <Button variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+                <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]"><Check className="size-4" />Approve</Button>
+                <Button variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}><Undo2 className="size-4" />Send back</Button>
               </>
             )}
             {!manager && task.reviewStatus === 'pending' && <span className="self-center text-xs font-semibold text-[#9e6b2e]">Awaiting manager review</span>}
             {!manager && task.reviewStatus === 'approved' && <span className="self-center text-xs font-semibold text-[#216b61]">Approved by the manager</span>}
-            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button variant="outline" onClick={onClose}><X className="size-4" />Close</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1250,11 +1250,11 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
           <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
           {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
-          <Button disabled={busy} className="bg-[#287b6f]">Save profile</Button>
+          <Button disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save profile</Button>
         </form>
         {(manager || certs.length > 0) && (
           <div className="border-t border-[#e5eae4] pt-4">
-            <h3 className="text-sm font-semibold">Certification records</h3>
+            <h3 className="flex items-center gap-2 text-sm font-semibold"><Shield className="size-4 text-[#287b6f]" aria-hidden="true" />Certification records</h3>
             {certs.length ? (
               <ul className="mt-2 space-y-2">
                 {certs.map((cert: any) => {
@@ -1304,7 +1304,7 @@ function CreateDialog({ open, workers, busy, onClose, submit }: any) {
           <label className="text-sm font-semibold">Repeat<select name="recurrence" className={fieldClass}><option value="">Never</option><option>daily</option><option>weekly</option><option>monthly</option></select></label>
           <label className="text-sm font-semibold">Assign to<select name="assigneeId" className={fieldClass}><option value="">Available to claim</option>{workers.filter((w: Member) => w.status === 'active').map((w: Member) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
           <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={1} />
-          <Button disabled={busy} className="bg-[#287b6f]">Create task</Button>
+          <Button disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Create task</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1338,8 +1338,8 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
           <Field label="Email" name="googleEmail" type="email" required />
           <fieldset className="grid grid-cols-2 gap-2">
             <legend className="sr-only">Sign-in method</legend>
-            <button type="button" onClick={() => setMethod('invite')} aria-pressed={method === 'invite'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'invite' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Invite link</button>
-            <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Temporary password</button>
+            <button type="button" onClick={() => setMethod('invite')} aria-pressed={method === 'invite'} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${method === 'invite' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}><UserCheck className="size-4" aria-hidden="true" />Invite link</button>
+            <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}><KeyRound className="size-4" aria-hidden="true" />Temporary password</button>
           </fieldset>
           {method === 'invite' ? (
             <>
@@ -1352,7 +1352,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
               <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
             </>
           )}
-          <Button disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? 'Create invite link' : 'Add care worker'}</Button>
+          <Button disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? <><UserCheck className="size-4" />Create invite link</> : <><Plus className="size-4" />Add care worker</>}</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1373,8 +1373,8 @@ function InviteLinkDialog({ url, onClose }: any) {
         </DialogHeader>
         <Input readOnly value={url} aria-label="Invite link" onFocus={(e) => e.target.select()} className="min-h-11 text-xs" />
         <DialogFooter>
-          <Button variant="outline" onClick={copy} className="min-h-11">{copied ? 'Copied' : 'Copy link'}</Button>
-          <Button onClick={onClose} className="bg-[#287b6f]">Done</Button>
+          <Button variant="outline" onClick={copy} className="min-h-11">{copied ? <><Check className="size-4" />Copied</> : <><Copy className="size-4" />Copy link</>}</Button>
+          <Button onClick={onClose} className="bg-[#287b6f]"><Check className="size-4" />Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1393,7 +1393,7 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
           <form className="grid gap-4" onSubmit={(e) => submit(e, 'resetMemberPassword', 'Temporary password updated.', onClose)}>
             <input type="hidden" name="memberId" value={member.id} />
             <Field label="Temporary password" name="temporaryPassword" type="password" required />
-            <Button disabled={busy} className="bg-[#287b6f]">Reset password</Button>
+            <Button disabled={busy} className="bg-[#287b6f]"><KeyRound className="size-4" />Reset password</Button>
           </form>
         )}
       </DialogContent>
@@ -1439,8 +1439,8 @@ function WindowDialog({ worker, windows, action, title, description, busy, onClo
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={busy} onClick={save} className="bg-[#287b6f]">Save shifts</Button>
+          <Button variant="outline" onClick={onClose}><X className="size-4" />Cancel</Button>
+          <Button disabled={busy} onClick={save} className="bg-[#287b6f]"><Check className="size-4" />Save shifts</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
