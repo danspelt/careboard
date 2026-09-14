@@ -1,4 +1,4 @@
-export type AccountStatus = 'active' | 'disabled';
+export type AccountStatus = 'active' | 'disabled' | 'invited';
 export type Role = 'manager' | 'worker';
 export type TaskStatus = 'open' | 'in_progress' | 'complete';
 

@@ -7,8 +7,8 @@ import { authenticationConfigured, googleAuthenticationConfigured } from '@/lib/
 
 export const metadata: Metadata = { title: 'Sign in — CareBoard', description: 'Welcome back to your household care team.' };
 
-export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string; joined?: string }> }) {
+  const { error, joined } = await searchParams;
   const passwordEnabled = authenticationConfigured();
   const googleEnabled = googleAuthenticationConfigured();
   return (
@@ -40,6 +40,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<{
         <section aria-labelledby="sign-in-heading" className="auth-panel w-full rounded-[28px] border border-[#dce5da] bg-[#fffefa] p-6 shadow-[0_20px_60px_rgba(32,49,45,.07)] sm:p-10">
           <h1 id="sign-in-heading" className="text-3xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-2 text-sm leading-6 text-[#52645f]">Sign in with the account your household manager approved.</p>
+          {joined && <output className="mt-5 block rounded-xl border border-[#bcd4c9] bg-[#eef4ef] p-4 text-sm text-[#216b61]">Your account is active — sign in with your new password.</output>}
           {error && <p role="alert" className="mt-5 rounded-xl border border-[#edcfbd] bg-[#fcf0e9] p-4 text-sm text-[#934c37]">Sign-in could not be completed. Check your details and account status.</p>}
           {!passwordEnabled && <p className="mt-5 rounded-xl bg-[#fcf4e9] p-4 text-sm text-[#805322]">Sign-in is not configured yet. Please contact your household manager.</p>}
           <form action={passwordSignIn} className="mt-7 grid gap-5">

@@ -53,6 +53,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [resetMember, setResetMember] = useState<Member | null>(null);
   const [shiftWorker, setShiftWorker] = useState<Member | null>(null);
   const [availWorker, setAvailWorker] = useState<Member | null>(null);
+  const [inviteUrl, setInviteUrl] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
@@ -75,7 +76,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     setBusy(true);
     try {
       const response = await fetch('/api/household', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      const result = await response.json() as HouseholdState & { error?: string };
+      const result = await response.json() as HouseholdState & { error?: string; inviteToken?: string };
       if (!response.ok) throw new Error(result.error || 'The update could not be saved.');
       setState(result); setNotice(message);
       if (task) setTask(result.chores.find((item) => item.id === task.id) ?? null);
@@ -179,7 +180,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {!tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
+            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
           ) : (
             <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
           )}
@@ -234,7 +235,8 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       </Dialog>
       <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} />
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
-      <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} submit={submit} />
+      <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} mutate={mutate} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} />
+      <InviteLinkDialog url={inviteUrl} onClose={() => setInviteUrl('')} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
       {shiftWorker && <WindowDialog worker={shiftWorker} windows={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} action="setShifts" title={`Weekly shifts for ${shiftWorker.name}`} description={`Set the days and times ${shiftWorker.name.split(' ')[0]} is scheduled each week. This repeats automatically.`} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
       {availWorker && <WindowDialog worker={availWorker} windows={(state.availability ?? []).filter((shift: any) => shift.memberId === availWorker.id)} action="setAvailability" title={`Weekly availability for ${availWorker.name}`} description={`The days and times ${availWorker.name.split(' ')[0]} is generally available. Auto-assign prefers these windows.`} busy={busy} onClose={() => setAvailWorker(null)} mutate={mutate} />}
@@ -286,11 +288,12 @@ function StatusBadge({ status }: { status: string }) {
     in_progress: 'bg-[#fcf4e9] text-[#9e6b2e]',
     complete: 'bg-[#e6f0eb] text-[#216b61]',
     disabled: 'bg-[#f0f0f0] text-[#687873]',
+    invited: 'bg-[#ece9f7] text-[#5b4e94]',
   };
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, mutate, busy }: any) {
+function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
   if (section === 'tasks') return (
     <>
       <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
@@ -329,7 +332,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
               <Button variant="outline" size="sm" onClick={() => setProfile(worker)}><Pencil className="size-4" />Profile</Button>
               <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
               <Button variant="outline" size="sm" onClick={() => setAvailWorker(worker)}><CalendarDays className="size-4" />Availability</Button>
-              <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>
+              {worker.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: worker.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
+              {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>}
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
                 {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
               </Button>
@@ -947,21 +951,68 @@ function CreateDialog({ open, workers, busy, onClose, submit }: any) {
   );
 }
 
-function AddWorkerDialog({ open, busy, onClose, submit }: any) {
+function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
+  const [method, setMethod] = useState<'invite' | 'password'>('invite');
+  async function handleSubmit(event: { preventDefault(): void; currentTarget: HTMLFormElement }) {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      if (method === 'invite') {
+        const result = await mutate({ action: 'inviteMember', ...values }, 'Invite link created.');
+        if (result?.inviteToken) onInvited(result.inviteToken);
+      } else {
+        await mutate({ action: 'addMember', ...values }, 'Care worker added.');
+      }
+      onClose();
+    } catch { /* notice is shown */ }
+  }
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add care worker</DialogTitle>
-          <DialogDescription>Create a care worker account with a temporary password.</DialogDescription>
+          <DialogDescription>Invite them with a link so they choose their own password, or set a temporary one yourself.</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={(e) => submit(e, 'addMember', 'Care worker added.', onClose)}>
+        <form className="grid gap-4" onSubmit={handleSubmit}>
           <Field label="Full name" name="name" required />
           <Field label="Email" name="googleEmail" type="email" required />
-          <Field label="Temporary password" name="temporaryPassword" type="password" required />
-          <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
-          <Button disabled={busy} className="bg-[#287b6f]">Add care worker</Button>
+          <fieldset className="grid grid-cols-2 gap-2">
+            <legend className="sr-only">Sign-in method</legend>
+            <button type="button" onClick={() => setMethod('invite')} aria-pressed={method === 'invite'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'invite' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Invite link</button>
+            <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Temporary password</button>
+          </fieldset>
+          {method === 'invite' ? (
+            <p className="text-xs leading-5 text-[#687873]">You’ll get a link to share — text, email, or read it out. It expires in 7 days and the care worker picks their own password.</p>
+          ) : (
+            <>
+              <Field label="Temporary password" name="temporaryPassword" type="password" required />
+              <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
+            </>
+          )}
+          <Button disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? 'Create invite link' : 'Add care worker'}</Button>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function InviteLinkDialog({ url, onClose }: any) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setCopied(true); } catch { /* select the field instead */ }
+  }
+  return (
+    <Dialog open={Boolean(url)} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Invite link ready</DialogTitle>
+          <DialogDescription>Share this link with the care worker — by text, email, or in person. It expires in 7 days.</DialogDescription>
+        </DialogHeader>
+        <Input readOnly value={url} aria-label="Invite link" onFocus={(e) => e.target.select()} className="min-h-11 text-xs" />
+        <DialogFooter>
+          <Button variant="outline" onClick={copy} className="min-h-11">{copied ? 'Copied' : 'Copy link'}</Button>
+          <Button onClick={onClose} className="bg-[#287b6f]">Done</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

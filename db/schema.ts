@@ -144,6 +144,19 @@ export const availabilityWindows = sqliteTable(
   (table) => [index('idx_availability_member').on(table.memberId, table.weekday)],
 );
 
+export const workerInvites = sqliteTable(
+  'worker_invites',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    acceptedAt: text('accepted_at'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_worker_invites_member').on(table.memberId)],
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {

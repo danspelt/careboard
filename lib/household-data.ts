@@ -105,6 +105,43 @@ export async function ensureHouseholdData() {
   await seedIfEmpty();
 }
 
+async function inviteTokenHash(token: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function newInviteToken() {
+  return `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
+}
+
+export async function inviteForToken(token: string) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 200) return null;
+  await ensureAccountTable();
+  const db = getD1();
+  const invite = await db
+    .prepare(
+      `SELECT i.id, i.expires_at AS expiresAt, i.accepted_at AS acceptedAt, m.id AS memberId, m.name, g.email
+      FROM worker_invites i JOIN members m ON m.id=i.member_id JOIN google_accounts g ON g.member_id=m.id
+      WHERE i.token_hash=?`,
+    )
+    .bind(await inviteTokenHash(token))
+    .first<{ id: string; expiresAt: string; acceptedAt: string | null; memberId: string; name: string; email: string }>();
+  if (!invite || invite.acceptedAt || invite.expiresAt <= new Date().toISOString()) return null;
+  return { inviteId: invite.id, memberId: invite.memberId, name: invite.name, email: invite.email };
+}
+
+export async function acceptInvite(token: string, password: string) {
+  const invite = await inviteForToken(token);
+  if (!invite) throw new Error('This invite link is invalid or has expired.');
+  const problem = passwordError(password);
+  if (problem) throw new Error(problem);
+  const now = new Date().toISOString();
+  await setCredential(invite.email, await hashPassword(password), false);
+  await setAccountStatus(invite.memberId, 'active');
+  await getD1().prepare('UPDATE worker_invites SET accepted_at=? WHERE id=?').bind(now, invite.inviteId).run();
+  return invite.name;
+}
+
 export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   const db = getD1();
   await db.prepare("INSERT OR IGNORE INTO household_settings (household_id) VALUES ('default')").run();
@@ -302,6 +339,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     .first<Member>();
   if (!actor || actor.status !== 'active') throw new Error('Household access denied.');
   const now = new Date().toISOString();
+  const extras: Record<string, unknown> = {};
   const managerOnly = [
     'createChore',
     'assign',
@@ -315,6 +353,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'setShifts',
     'approveTask',
     'reopenTask',
+    'inviteMember',
+    'reinviteMember',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -467,6 +507,35 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       activity(null, actorId, 'created_worker', `created care worker ${name}`, now),
     ]);
     await setCredential(email, passwordHash, true);
+  } else if (action === 'inviteMember') {
+    const name = requiredString(input.name, 'Name');
+    const email = normalizeEmail(input.googleEmail);
+    if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused care worker email address.');
+    await ensureAccountTable();
+    if (await db.prepare('SELECT email FROM google_accounts WHERE email=?').bind(email).first()) throw new Error('This email already has a profile.');
+    const id = crypto.randomUUID();
+    const count = await db.prepare('SELECT COUNT(*) AS count FROM members').first<{ count: number }>();
+    const token = newInviteToken();
+    extras.inviteToken = token;
+    const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    await db.batch([
+      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,"worker",?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
+      db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,updated_at) VALUES (?,'default','invited',?)").bind(id, now),
+      db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
+      activity(null, actorId, 'invited_worker', `invited care worker ${name}`, now),
+    ]);
+  } else if (action === 'reinviteMember') {
+    const memberId = requiredString(input.memberId, 'Care worker');
+    const member = await db.prepare(`SELECT m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`).bind(memberId).first<Member>();
+    if (!member || member.status !== 'invited') throw new Error('Only pending invites can be renewed.');
+    const token = newInviteToken();
+    extras.inviteToken = token;
+    const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    await db.batch([
+      db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), memberId, await inviteTokenHash(token), expires, now),
+      activity(null, actorId, 'reinvited_worker', `created a new invite link for ${member.name}`, now),
+    ]);
   } else if (action === 'setShifts' || action === 'setAvailability') {
     const memberId = requiredString(input.memberId, 'Care worker');
     if (action === 'setAvailability' && actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only update your own availability.');
@@ -585,7 +654,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (body.length > 500) throw new Error('Announcements are limited to 500 characters.');
     await activity(null, actorId, 'announcement', body, now).run();
   } else throw new Error('Unsupported action.');
-  return getHouseholdState(actorId);
+  return { ...(await getHouseholdState(actorId)), ...extras };
 
   async function validAssignee(id: string) {
     const worker = await db
