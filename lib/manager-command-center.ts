@@ -6,6 +6,7 @@ export type ManagerTask = {
   assignedTo: string | null;
   issueOpen?: boolean;
   completedAt?: string | null;
+  reviewStatus?: string | null;
   notes?: Array<{ id: string; memberId?: string; kind: string; body: string; createdAt: string }>;
 };
 
@@ -48,6 +49,7 @@ export function buildManagerCommandCenter<T extends ManagerTask>(tasks: T[], wor
     issues,
     recentHandoffs,
     completionTrend,
+    awaitingReview: tasks.filter((task) => task.status === 'complete' && task.reviewStatus === 'pending'),
     unassignedDueToday: open.filter((task) => !task.assignedTo && task.dueDate === date).length,
     completedToday: tasks.filter((task) => task.completedAt?.slice(0, 10) === date).length,
   };

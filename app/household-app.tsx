@@ -372,6 +372,27 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           </form>
         </Card>
       </div>
+      {command.awaitingReview.length > 0 && (
+        <Card className="mt-6 border-[#bcd4c9]">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Awaiting your review</h2>
+          <p className="text-sm text-[#687873]">Work the care team marked complete — approve it or send it back</p>
+          <div className="mt-4 space-y-2">
+            {command.awaitingReview.map((task: Chore) => {
+              const finisher = state.members.find((item: Member) => item.id === task.completedBy);
+              return (
+                <div key={task.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                  <button onClick={() => setTask(task)} className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+                    <span className="block truncate text-sm font-semibold">{task.title}</span>
+                    <span className="block text-xs text-[#687873]">{finisher?.name ?? 'Care worker'} · {task.completedAt ? new Date(task.completedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</span>
+                  </button>
+                  <Button size="sm" disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]"><Check className="size-4" />Approve</Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Care worker notes will appear here as the team shares progress." compact />}</Card>
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
@@ -784,7 +805,7 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
             <span className="min-w-0 flex-1">
               <span className="block break-words font-semibold">{task.title}</span>
               <span className="mt-1 block text-xs leading-5 text-[#52645f]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span>
-              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge status={task.status} /><span className="text-xs text-[#52645f]">{assigned?.name ?? 'Available'}</span>{priorityOrder[task.priority] <= 1 && <span className={`text-xs font-semibold capitalize ${priorityClass}`}>{task.priority} priority</span>}</span>
+              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1"><StatusBadge status={task.status} />{task.reviewStatus === 'pending' && <span className="rounded-full bg-[#fcf4e9] px-2.5 py-0.5 text-xs font-semibold text-[#9e6b2e]">awaiting review</span>}{task.reviewStatus === 'approved' && <span className="rounded-full bg-[#e6f0eb] px-2.5 py-0.5 text-xs font-semibold text-[#216b61]">reviewed</span>}<span className="text-xs text-[#52645f]">{assigned?.name ?? 'Available'}</span>{priorityOrder[task.priority] <= 1 && <span className={`text-xs font-semibold capitalize ${priorityClass}`}>{task.priority} priority</span>}</span>
             </span>
             <ChevronRight className="size-4 shrink-0 text-[#687873] transition group-hover:text-[#287b6f]" aria-hidden="true" />
           </button>
@@ -857,6 +878,14 @@ function TaskDialog({ task, manager, workers, busy, onClose, mutate, upload, del
             {task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}
             {task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}
             {task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}
+            {manager && task.reviewStatus === 'pending' && (
+              <>
+                <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]">Approve</Button>
+                <Button variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+              </>
+            )}
+            {!manager && task.reviewStatus === 'pending' && <span className="self-center text-xs font-semibold text-[#9e6b2e]">Awaiting manager review</span>}
+            {!manager && task.reviewStatus === 'approved' && <span className="self-center text-xs font-semibold text-[#216b61]">Approved by the manager</span>}
             <Button variant="outline" onClick={onClose}>Close</Button>
           </div>
         </DialogFooter>

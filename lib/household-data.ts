@@ -39,6 +39,7 @@ export type Chore = {
   instructions: string;
   recurrence: Recurrence | null;
   status: TaskStatus;
+  reviewStatus: 'pending' | 'approved' | null;
   createdBy: string;
   assignedTo: string | null;
   completedBy: string | null;
@@ -143,7 +144,7 @@ async function rawState() {
     db
       .prepare(
         `SELECT id, title, area, due_date AS dueDate, due_time AS dueTime, priority, instructions, recurrence,
-          status, created_by AS createdBy, assigned_to AS assignedTo, completed_by AS completedBy,
+          status, review_status AS reviewStatus, created_by AS createdBy, assigned_to AS assignedTo, completed_by AS completedBy,
           created_at AS createdAt, started_at AS startedAt, completed_at AS completedAt,
           progress_notes AS progressNotes, completion_notes AS completionNotes, issue_report AS issueReport,
           issue_open AS issueOpen, reminder_lead_days AS reminderLeadDays, expected_completion_at AS expectedCompletionAt
@@ -312,6 +313,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'updateHouseholdSettings',
     'announce',
     'setShifts',
+    'approveTask',
+    'reopenTask',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -353,9 +356,9 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     else
       result = await db
         .prepare(
-          "UPDATE chores SET status='complete', assigned_to=COALESCE(assigned_to,?), completed_by=?, completed_at=? WHERE id=? AND status IN ('open','in_progress') AND (?='manager' OR (status='in_progress' AND assigned_to=?))",
+          "UPDATE chores SET status='complete', assigned_to=COALESCE(assigned_to,?), completed_by=?, completed_at=?, review_status=? WHERE id=? AND status IN ('open','in_progress') AND (?='manager' OR (status='in_progress' AND assigned_to=?))",
         )
-        .bind(actorId, actorId, now, choreId, actor.role, actorId)
+        .bind(actorId, actorId, now, actor.role === 'worker' ? 'pending' : null, choreId, actor.role, actorId)
         .run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('That task changed before your update. Refresh and try again.');
     await activity(choreId, actorId, action === 'complete' ? 'completed' : action === 'start' ? 'started' : 'claimed', `${action === 'complete' ? 'finished' : action === 'start' ? 'started' : 'claimed'} ${chore.title}`, now).run();
@@ -433,6 +436,18 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       .run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('Choose an incomplete task.');
     await activity(choreId, actorId, action === 'assign' ? 'assigned' : 'unclaimed', `${action === 'assign' ? 'assigned' : 'unassigned'} task`, now).run();
+  } else if (action === 'approveTask' || action === 'reopenTask') {
+    const choreId = requiredString(input.choreId, 'Task');
+    const chore = await db.prepare('SELECT title FROM chores WHERE id=?').bind(choreId).first<Chore>();
+    if (!chore) throw new Error('That task no longer exists.');
+    const result = action === 'approveTask'
+      ? await db.prepare("UPDATE chores SET review_status='approved' WHERE id=? AND review_status='pending'").bind(choreId).run()
+      : await db.prepare("UPDATE chores SET status='in_progress', review_status=NULL, completed_at=NULL WHERE id=? AND review_status='pending'").bind(choreId).run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That task is not awaiting review.');
+    await db.batch([
+      db.prepare('INSERT INTO task_notes(id,chore_id,member_id,kind,body,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(), choreId, actorId, action === 'approveTask' ? 'completion' : 'progress', action === 'approveTask' ? 'Approved by the manager' : 'Sent back for rework by the manager', now),
+      activity(choreId, actorId, action === 'approveTask' ? 'approved' : 'reopened', `${action === 'approveTask' ? 'approved' : 'sent back'} ${chore.title}`, now),
+    ]);
   } else if (action === 'addMember') {
     const name = requiredString(input.name, 'Name');
     const email = normalizeEmail(input.googleEmail);
