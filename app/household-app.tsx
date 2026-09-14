@@ -21,7 +21,7 @@ import { suggestAssignments } from '@/lib/auto-assign';
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'more';
-type WorkerSection = 'today' | 'tasks' | 'profile' | 'more';
+type WorkerSection = 'today' | 'tasks' | 'schedule' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
@@ -112,7 +112,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   }
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
-    : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+    : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
@@ -460,9 +460,10 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: any) {
+function ScheduleView({ state, workers, member, personal = false, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
-  const plan = suggestAssignments<Chore>(state.chores, workers, today());
+  const plan = personal ? [] : suggestAssignments<Chore>(state.chores, workers, today());
+  const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
   const [assigning, setAssigning] = useState(false);
   async function autoAssign() {
     setAssigning(true);
@@ -490,7 +491,7 @@ function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: 
   };
   return (
     <>
-      <Title title="Weekly schedule" text="Seven days of household work — reschedule or reassign any task from its details." action={<div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <Title title={personal ? 'My week' : 'Weekly schedule'} text={personal ? 'Your assignments and work you can claim for the next seven days.' : 'Seven days of household work — reschedule or reassign any task from its details.'} action={personal ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
@@ -521,6 +522,15 @@ function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: 
         })}
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        {personal ? (
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Open to claim this week</h2>
+          <p className="text-sm text-[#687873]">Unassigned work due in the next seven days — open one to claim it</p>
+          <div className="mt-4 space-y-2">
+            {claimable.length ? claimable.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing to claim" text="All scheduled work is already assigned." compact />}
+          </div>
+        </Card>
+        ) : (
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Worker load this week</h2>
           <p className="text-sm text-[#687873]">Assigned open tasks per day for each active worker</p>
@@ -545,8 +555,9 @@ function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: 
             }) : <EmptyHandoff icon={Users} title="No active workers" text="Add a worker to start balancing the weekly load." compact />}
           </div>
         </Card>
+        )}
         <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Unscheduled work</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />{personal ? 'Your unscheduled work' : 'Unscheduled work'}</h2>
           <p className="text-sm text-[#687873]">Open tasks without a due date — open one to pick a day</p>
           <div className="mt-4 space-y-2">
             {schedule.unscheduled.length ? schedule.unscheduled.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing unscheduled" text="Every open task has a due date." compact />}
@@ -558,6 +569,7 @@ function ScheduleView({ state, workers, setTask, setCreateOpen, mutate, busy }: 
 }
 
 function WorkerView({ section, state, member, setTask, setProfile, mutate, busy }: any) {
+  if (section === 'schedule') return <ScheduleView state={state} workers={[]} member={member} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
       <Title title="Your profile" text="You control your contact, availability, languages, and profile photo." />
