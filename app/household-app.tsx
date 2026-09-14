@@ -921,16 +921,33 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
       </Card>
     </>
   );
-  if (section === 'more') return (
+  if (section === 'more') {
+    const todayStr = today();
+    const monthMinutes = minutesInRange(state.timeEntries ?? [], member.id, `${todayStr.slice(0, 7)}-01`, todayStr, new Date().toISOString());
+    const estimatedPay = member.hourlyRate != null ? (monthMinutes / 60) * member.hourlyRate : null;
+    return (
     <>
-      <Title title="More" text="Account and privacy." />
-      <div className="grid gap-6 md:grid-cols-2">
+      <Title title="More" text="Account, pay, and privacy." />
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><CircleDollarSign className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Your pay</h2>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="flex items-center justify-between gap-3"><span className="text-[#687873]">Pay rate</span><span className="font-semibold">{member.hourlyRate != null ? `$${member.hourlyRate.toFixed(2)}/hr` : 'Not set by your manager'}</span></p>
+            <p className="flex items-center justify-between gap-3"><span className="text-[#687873]">Hours this month</span><span className="font-semibold">{formatMinutes(monthMinutes)}</span></p>
+            {estimatedPay != null && (
+              <p className="flex items-center justify-between gap-3 border-t border-[#e2e8e1] pt-2"><span className="text-[#687873]">Estimated pay</span><span className="font-semibold">${estimatedPay.toFixed(2)}</span></p>
+            )}
+          </div>
+        </Card>
         <Card>
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
             <h2 className="font-bold">Privacy</h2>
           </div>
-          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other care workers’ contact details, activity, reports, settings, and audit records remain private.</p>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, your own pay rate and hours, tasks assigned to you, and tasks available to claim. Other care workers’ pay, contact details, activity, reports, settings, and audit records remain private.</p>
         </Card>
         <Card>
           <div className="flex items-center gap-3">
@@ -945,7 +962,8 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
         </Card>
       </div>
     </>
-  );
+    );
+  }
   if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
