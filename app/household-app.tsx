@@ -15,6 +15,7 @@ import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
+import { buildOnboarding } from '@/lib/onboarding';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -51,6 +52,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [feedOpen, setFeedOpen] = useState(false);
   const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
+  const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
   useEffect(() => {
     const reload = async () => {
       const response = await fetch('/api/household', { cache: 'no-store' });
@@ -102,6 +104,11 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { localStorage.setItem('careboard-notifications-seen', now); } catch { /* private mode */ }
   }
   const bell = <BellButton unread={unread} onClick={openFeed} />;
+  const onboarding = buildOnboarding({ manager, viewerId: member.id, members: state.members, tasks: state.chores });
+  function dismissTour() {
+    setTourDone(true);
+    try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
+  }
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
     : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
@@ -164,6 +171,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
+          {!tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} mutate={mutate} busy={busy} />
           ) : (
@@ -239,6 +247,28 @@ function BellButton({ unread, onClick }: { unread: number; onClick: () => void }
       <Bell className="size-5" aria-hidden="true" />
       {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4.5 place-items-center rounded-full bg-[#b4532a] px-1 py-0.5 text-[10px] font-bold leading-none text-white">{unread}</span>}
     </button>
+  );
+}
+function OnboardingCard({ steps, onDone }: any) {
+  const done = steps.filter((step: any) => step.done).length;
+  return (
+    <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#e2efe5] text-[#287b6f]"><Sprout className="size-5" aria-hidden="true" /></span>
+          <div><h2 className="text-lg font-bold">Getting started</h2><p className="text-xs font-semibold text-[#4d6b5e]">{done} of {steps.length} done — these check off as you work</p></div>
+        </div>
+        <button onClick={onDone} aria-label="Dismiss getting started guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
+      </div>
+      <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+        {steps.map((step: any) => (
+          <li key={step.id} className={`flex items-start gap-3 rounded-xl border p-3 ${step.done ? 'border-[#cfe0d3] bg-white/60' : 'border-[#dfe5dc] bg-white'}`}>
+            <span className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full ${step.done ? 'bg-[#287b6f] text-white' : 'border-2 border-[#c6d2c8] text-transparent'}`}>{step.done ? <Check className="size-3.5" aria-hidden="true" /> : null}</span>
+            <span className="min-w-0"><span className={`block text-sm font-semibold ${step.done ? 'text-[#687873] line-through' : ''}`}>{step.title}</span><span className="mt-0.5 block text-xs leading-5 text-[#687873]">{step.detail}</span></span>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
