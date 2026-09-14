@@ -295,8 +295,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
   );
   if (section === 'team') return (
     <>
-      <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add worker</Button>} />
-      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add worker</Button></div></Card>}
+      <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
+      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => (
           <Card key={worker.id}>
@@ -315,7 +315,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
             <div className="mt-4 flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => setProfile(worker)}><Pencil className="size-4" />Profile</Button>
               <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>
-              <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Worker reactivated.' : 'Worker disabled.')}>
+              <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
                 {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
               </Button>
             </div>
@@ -334,9 +334,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     .slice(0, 8);
   return (
     <>
-      <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Active workers" value={command.activeWorkers.length} icon={Users} />
+        <Metric label="Active care workers" value={command.activeWorkers.length} icon={Users} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
         <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
         <Metric label="Completed today" value={command.completedToday} icon={Check} tone="success" />
@@ -348,8 +348,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
         <Card className="manager-coverage">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s coverage</h2><p className="text-sm text-[#687873]">Active workers and assigned workload</p>
-          <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active workers" text="Add or reactivate a worker to plan coverage." compact />}</div>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s coverage</h2><p className="text-sm text-[#687873]">Active care workers and assigned workload</p>
+          <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
           <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
             <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
             <Button disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
@@ -357,7 +357,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
         </Card>
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Worker notes will appear here as the team shares progress." compact />}</Card>
+        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Care worker notes will appear here as the team shares progress." compact />}</Card>
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
       </div>
       {proofPhotos.length > 0 && (
@@ -444,7 +444,7 @@ function MoreManager({ state, mutate, busy }: any) {
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-bold">Per worker</h3>
+            <h3 className="text-sm font-bold">Per care worker</h3>
             <div className="mt-3 space-y-2">
               {report.perWorker.length ? report.perWorker.map((row) => {
                 const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
@@ -459,7 +459,7 @@ function MoreManager({ state, mutate, busy }: any) {
                     <span className="h-2.5 w-20 shrink-0 overflow-hidden rounded-full bg-[#eef2ec]" aria-hidden="true"><span className="block h-full rounded-full bg-[#287b6f]" style={{ width: `${Math.min(100, (row.completed / Math.max(1, report.completed)) * 100)}%` }} /></span>
                   </div>
                 );
-              }) : <EmptyHandoff icon={Users} title="No active workers" text="Add workers to see per-person progress." compact />}
+              }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add care workers to see per-person progress." compact />}
             </div>
           </div>
         </div>
@@ -558,8 +558,8 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
         </Card>
         ) : (
         <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Worker load this week</h2>
-          <p className="text-sm text-[#687873]">Assigned open tasks per day for each active worker</p>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Care worker load this week</h2>
+          <p className="text-sm text-[#687873]">Assigned open tasks per day for each active care worker</p>
           <div className="mt-4 space-y-3">
             {schedule.workload.length ? schedule.workload.map((load) => {
               const worker = workers.find((item: Member) => item.id === load.workerId);
@@ -578,7 +578,7 @@ function ScheduleView({ state, workers, personal = false, setTask, setCreateOpen
                   </div>
                 </div>
               );
-            }) : <EmptyHandoff icon={Users} title="No active workers" text="Add a worker to start balancing the weekly load." compact />}
+            }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add a care worker to start balancing the weekly load." compact />}
           </div>
         </Card>
         )}
@@ -624,7 +624,7 @@ function WorkerView({ section, state, member, setTask, setProfile, mutate, busy 
           <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
           <h2 className="font-bold">Privacy</h2>
         </div>
-        <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other workers’ contact details, activity, reports, settings, and audit records remain private.</p>
+        <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other care workers’ contact details, activity, reports, settings, and audit records remain private.</p>
       </Card>
     </>
   );
@@ -894,14 +894,14 @@ function AddWorkerDialog({ open, busy, onClose, submit }: any) {
       <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add care worker</DialogTitle>
-          <DialogDescription>Create a worker account with a temporary password.</DialogDescription>
+          <DialogDescription>Create a care worker account with a temporary password.</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={(e) => submit(e, 'addMember', 'Worker added.', onClose)}>
+        <form className="grid gap-4" onSubmit={(e) => submit(e, 'addMember', 'Care worker added.', onClose)}>
           <Field label="Full name" name="name" required />
           <Field label="Email" name="googleEmail" type="email" required />
           <Field label="Temporary password" name="temporaryPassword" type="password" required />
           <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
-          <Button disabled={busy} className="bg-[#287b6f]">Add worker</Button>
+          <Button disabled={busy} className="bg-[#287b6f]">Add care worker</Button>
         </form>
       </DialogContent>
     </Dialog>

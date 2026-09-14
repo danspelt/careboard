@@ -415,7 +415,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const name = requiredString(input.name, 'Name');
     const email = normalizeEmail(input.googleEmail);
     const temporaryPassword = input.temporaryPassword;
-    if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused worker email address.');
+    if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused care worker email address.');
     const passwordProblem = passwordError(temporaryPassword);
     if (passwordProblem) throw new Error(passwordProblem);
     await ensureAccountTable();
@@ -427,7 +427,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,"worker",?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,activated_at,updated_at) VALUES (?,'default','active',?,?)").bind(id, now, now),
-      activity(null, actorId, 'created_worker', `created worker ${name}`, now),
+      activity(null, actorId, 'created_worker', `created care worker ${name}`, now),
     ]);
     await setCredential(email, passwordHash, true);
   } else if (action === 'updateProfile') {
@@ -515,20 +515,20 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     await db.prepare('UPDATE members SET profile_photo_id=NULL WHERE profile_photo_id=?').bind(uploadId).run();
     await activity(null, actorId, 'deleted_upload', `deleted upload ${uploadId}`, now).run();
   } else if (['disableMember', 'reactivateMember'].includes(action)) {
-    const memberId = requiredString(input.memberId, 'Worker');
+    const memberId = requiredString(input.memberId, 'Care worker');
     const member = await db.prepare("SELECT id FROM members WHERE id=? AND role='worker'").bind(memberId).first();
-    if (!member) throw new Error('Choose a valid worker.');
+    if (!member) throw new Error('Choose a valid care worker.');
     await setAccountStatus(memberId, action === 'disableMember' ? 'disabled' : 'active');
-    await activity(null, actorId, action === 'disableMember' ? 'disabled_worker' : 'reactivated_worker', `${action === 'disableMember' ? 'disabled' : 'reactivated'} worker`, now).run();
+    await activity(null, actorId, action === 'disableMember' ? 'disabled_worker' : 'reactivated_worker', `${action === 'disableMember' ? 'disabled' : 'reactivated'} care worker`, now).run();
   } else if (action === 'resetMemberPassword') {
-    const memberId = requiredString(input.memberId, 'Worker');
+    const memberId = requiredString(input.memberId, 'Care worker');
     const temporaryPassword = input.temporaryPassword;
     const passwordProblem = passwordError(temporaryPassword);
     if (passwordProblem) throw new Error(passwordProblem);
     const target = await db.prepare(`SELECT g.email FROM google_accounts g JOIN members m ON m.id=g.member_id WHERE m.id=? AND m.role='worker'`).bind(memberId).first<{ email: string }>();
-    if (!target) throw new Error('Choose a valid worker.');
+    if (!target) throw new Error('Choose a valid care worker.');
     await setCredential(target.email, await hashPassword(temporaryPassword as string), true);
-    await activity(null, actorId, 'reset_password', `reset password for worker`, now).run();
+    await activity(null, actorId, 'reset_password', `reset password for care worker`, now).run();
   } else if (action === 'announce') {
     const body = requiredString(input.body, 'Announcement');
     if (body.length > 500) throw new Error('Announcements are limited to 500 characters.');
@@ -541,7 +541,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       .prepare(`SELECT m.id, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`)
       .bind(id)
       .first<{ id: string; status: AccountStatus }>();
-    if (!worker || !canAssignTo(worker.status)) throw new Error('Tasks can only be assigned to active workers.');
+    if (!worker || !canAssignTo(worker.status)) throw new Error('Tasks can only be assigned to active care workers.');
   }
   function activity(choreId: string | null, memberId: string, event: string, detail: string, createdAt: string) {
     return db.prepare('INSERT INTO activity(id,chore_id,member_id,action,detail,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(), choreId, memberId, event, detail, createdAt);

@@ -8,7 +8,7 @@ const focusClass = 'focus-visible:outline-2 focus-visible:outline-offset-4 focus
 const primaryClass = `inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#246f63] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_0_#194e46] transition hover:bg-[#1d5b51] active:translate-y-px sm:w-auto ${focusClass}`;
 const steps = [
   { icon: ClipboardCheck, title: 'Make a plan', text: 'Assign household tasks, set recurring schedules, and keep due dates and reminders in one place.' },
-  { icon: HeartHandshake, title: 'Share the care', text: 'Workers see their assignments and available work. Add progress notes, flag issues, and share photos.' },
+  { icon: HeartHandshake, title: 'Share the care', text: 'Care workers see their assignments and available work. Add progress notes, flag issues, and share photos.' },
   { icon: FileCheck2, title: 'Know what’s done', text: 'Managers review completed work, coordinate the team, and export monthly reports. Less chasing, more clarity.' },
 ];
 
@@ -107,7 +107,7 @@ export default async function Home() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-[#eef4e9] px-3 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551]"><span className="size-1.5 rounded-full bg-[#398264]" />Made for families & care teams</p>
             <h1 id="hero-heading" className="mt-5 max-w-lg text-[2.6rem] font-semibold leading-[1.08] tracking-[-.045em] sm:text-5xl lg:text-[3.6rem]">A little less juggling.<br /><span className="text-[#287b6f]">A lot more care.</span></h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-[#53685f]">Your private household care board. Organize tasks, coordinate trusted workers, and see what’s done—all in one calm, shared space.</p>
+            <p className="mt-5 max-w-md text-base leading-7 text-[#53685f]">Your private household care board. Organize tasks, coordinate trusted care workers, and see what’s done—all in one calm, shared space.</p>
             <div className="mt-7 flex flex-col items-start gap-4">
               {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : googleEnabled ? <form action={googleSignIn} className="w-full sm:w-auto"><button type="submit" className={primaryClass}><LogIn className="size-4" aria-hidden="true" />Continue with Google<ArrowRight className="size-4" aria-hidden="true" /></button></form> : <Link href="/sign-in" className={primaryClass}>Sign in to your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#53685f]">
@@ -135,7 +135,7 @@ export default async function Home() {
         </section>
 
         <section id="privacy" aria-labelledby="privacy-heading" className="grid scroll-mt-48 gap-5 rounded-2xl bg-[#203f36] p-5 text-white sm:p-6 md:grid-cols-[1.3fr_1fr] md:gap-8 lg:scroll-mt-28">
-          <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-5" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-sm font-semibold">Your household. Your people.</h2><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Managers coordinate the household. Workers see only their profile, assigned tasks, and available work. Personal details stay private.</p></div></div>
+          <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-5" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-sm font-semibold">Your household. Your people.</h2><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Managers coordinate the household. Care workers see only their profile, assigned tasks, and available work. Personal details stay private.</p></div></div>
           <div className="border-t border-white/15 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0"><p className="text-sm font-semibold">{googleEnabled ? 'Google single sign-on' : 'A private, approved-account space'}</p><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">{googleEnabled ? 'Use your approved Google account—no separate password to remember. Password sign-in is available too.' : 'Use the account your household manager approved. Need access? Ask your manager to add you to the team.'}</p><Link href={destination} className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg text-xs font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
         </section>
       </main>

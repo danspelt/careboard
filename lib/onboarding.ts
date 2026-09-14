@@ -18,7 +18,7 @@ export function buildOnboarding(options: {
     return [
       { id: 'add-worker', title: 'Add a care worker', detail: 'Build the team that shares household work.', done: members.some((member) => member.role === 'worker') },
       { id: 'create-task', title: 'Create a household task', detail: 'Give the team its first piece of work.', done: tasks.length > 0 },
-      { id: 'assign-task', title: 'Assign a task', detail: 'Point work at a specific worker or leave it open to claim.', done: tasks.some((task) => task.assignedTo !== null) },
+      { id: 'assign-task', title: 'Assign a task', detail: 'Point work at a specific care worker or leave it open to claim.', done: tasks.some((task) => task.assignedTo !== null) },
       { id: 'first-note', title: 'Share a handoff note', detail: 'Notes keep everyone oriented between shifts.', done: tasks.some((task) => (task.notes ?? []).length > 0) },
       { id: 'first-complete', title: 'Complete a task', detail: 'The completion pulse starts counting once work is done.', done: tasks.some((task) => task.status === 'complete') },
     ];
