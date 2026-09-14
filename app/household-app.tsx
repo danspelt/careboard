@@ -278,6 +278,7 @@ function OnboardingCard({ steps, onDone }: any) {
         </div>
         <button onClick={onDone} aria-label="Dismiss getting started guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
       </div>
+      <progress value={done} max={steps.length} aria-label={`${done} of ${steps.length} onboarding steps complete`} className="mt-3 h-2 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dfe5dc] [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:bg-[#287b6f] [&::-webkit-progress-value]:bg-[#287b6f]" />
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">
         {steps.map((step: any) => (
           <li key={step.id} className={`flex items-start gap-3 rounded-xl border p-3 ${step.done ? 'border-[#cfe0d3] bg-white/60' : 'border-[#dfe5dc] bg-white'}`}>
@@ -302,19 +303,42 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
-  if (section === 'tasks') return (
-    <>
-      <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
-      <Card className="p-0">
-        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="font-semibold">All household tasks</h2><p className="text-sm text-[#687873]">{state.chores.length} total · {open.length} open</p></div>
-        <TaskList tasks={state.chores} members={state.members} onOpen={setTask} />
-      </Card>
-    </>
-  );
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
+  if (section === 'tasks') {
+    const query = taskQuery.trim().toLowerCase();
+    const filtered = state.chores.filter((task: Chore) => {
+      if (taskStatus !== 'all' && task.status !== taskStatus) return false;
+      if (query && !task.title.toLowerCase().includes(query) && !(task.instructions ?? '').toLowerCase().includes(query)) return false;
+      return true;
+    });
+    return (
+      <>
+        <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
+        <Card className="p-0">
+          <div className="border-b border-[#dfe5dc] px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><h2 className="font-semibold">All household tasks</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {state.chores.length} total · {open.length} open</p></div>
+              <div className="flex flex-wrap gap-2">
+                <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-52" />
+                <select value={taskStatus} onChange={(e) => setTaskStatus(e.target.value as any)} aria-label="Filter by status" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <TaskList tasks={filtered} members={state.members} onOpen={setTask} />
+        </Card>
+      </>
+    );
+  }
   if (section === 'team') return (
     <>
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
-      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
+      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><ul className="mt-4 space-y-2 text-sm text-[#687873]"><li>Invite by email — they set their own password</li><li>Set weekly shifts and availability</li><li>Track certifications and contact details</li></ul><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => {
           const workerShifts = (state.shifts ?? []).filter((shift: any) => shift.memberId === worker.id);
@@ -479,6 +503,25 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           </div>
         </Card>
       )}
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Recent activity</h2>
+        <p className="text-sm text-[#687873]">Latest household actions across tasks, team, and settings</p>
+        <ol className="mt-4 divide-y divide-[#e5eae4]">
+          {(state.activity ?? []).length ? (state.activity ?? []).slice(0, 8).map((item: any) => {
+            const actor = state.members.find((m: Member) => m.id === item.memberId)?.name ?? 'Household';
+            const Icon = item.action === 'announcement' ? Megaphone : item.action === 'completed' ? CheckCircle2 : item.action === 'assigned' ? UserCheck : item.action === 'created' ? Plus : item.action === 'updated' ? Pencil : item.action === 'disabled' ? Shield : item.action === 'reactivated' ? UserCheck : ClipboardList;
+            return (
+              <li key={item.id} className="flex items-center gap-3 py-2">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#f1f5f1] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{item.action.replace(/_/g, ' ')}{item.detail ? ` — ${item.detail}` : ''}</span>
+                  <span className="block text-xs text-[#687873]">{actor} · {new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                </span>
+              </li>
+            );
+          }) : <li><EmptyHandoff icon={Clock} title="No activity yet" text="Household actions will appear here as your team works." compact /></li>}
+        </ol>
+      </Card>
     </>
   );
 }
