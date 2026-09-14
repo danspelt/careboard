@@ -172,6 +172,18 @@ export const timeEntries = sqliteTable(
   (table) => [index('idx_time_entries_member').on(table.memberId, table.startedAt)],
 );
 
+export const certificationRecords = sqliteTable(
+  'certification_records',
+  {
+    id: text('id').primaryKey(),
+    memberId: text('member_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    expiresOn: text('expires_on').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_certification_records_member').on(table.memberId)],
+);
+
 export const auditLog = sqliteTable(
   'audit_log',
   {

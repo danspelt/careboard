@@ -20,6 +20,7 @@ import { suggestAssignments } from '@/lib/auto-assign';
 import { formatShift, shiftsForDay } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
 import { fundingSummary } from '@/lib/funding';
+import { certDaysLeft, certStatus, certificationAlerts } from '@/lib/certifications';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -240,7 +241,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           ) : <EmptyHandoff icon={Bell} title="All caught up" text="New household activity will show up here." compact />}
         </DialogContent>
       </Dialog>
-      <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} />
+      <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} certs={(state.certifications ?? []).filter((cert: any) => cert.memberId === profile?.id)} mutate={mutate} />
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} mutate={mutate} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} />
       <InviteLinkDialog url={inviteUrl} onClose={() => setInviteUrl('')} />
@@ -431,6 +432,31 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           </div>
         </Card>
       )}
+      {(() => {
+        const certAlerts = certificationAlerts(state.certifications ?? [], state.members, today());
+        return certAlerts.length > 0 && (
+          <Card className="mt-6 border-[#eadbc6]">
+            <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#b4532a]" aria-hidden="true" />Certification alerts</h2>
+            <p className="text-sm text-[#687873]">Care worker certifications that are expired or expiring within 30 days — open a profile to update them</p>
+            <div className="mt-4 space-y-2">
+              {certAlerts.map((alert) => {
+                const worker = state.members.find((item: Member) => item.id === alert.certification.memberId);
+                if (!worker) return null;
+                return (
+                  <button key={alert.certification.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]">
+                    <AvatarFor member={worker} className="size-10" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{worker.name} — {alert.certification.name}</span>
+                      <span className="block text-xs text-[#687873]">{alert.status === 'expired' ? `Expired ${Math.abs(alert.daysLeft)} day${Math.abs(alert.daysLeft) === 1 ? '' : 's'} ago` : `Expires in ${alert.daysLeft} day${alert.daysLeft === 1 ? '' : 's'}`} ({alert.certification.expiresOn})</span>
+                    </span>
+                    <Badge className={alert.status === 'expired' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : 'bg-[#fcf4e9] text-[#805322]'}>{alert.status}</Badge>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Care worker notes will appear here as the team shares progress." compact />}</Card>
         <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
@@ -1084,7 +1110,7 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
   );
 }
 
-function ProfileDialog({ profile, manager, busy, onClose, submit, upload }: any) {
+function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs = [], mutate }: any) {
   if (!profile) return null;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -1108,6 +1134,36 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload }: any)
           {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
           <Button disabled={busy} className="bg-[#287b6f]">Save profile</Button>
         </form>
+        {(manager || certs.length > 0) && (
+          <div className="border-t border-[#e5eae4] pt-4">
+            <h3 className="text-sm font-semibold">Certification records</h3>
+            {certs.length ? (
+              <ul className="mt-2 space-y-2">
+                {certs.map((cert: any) => {
+                  const status = certStatus(cert.expiresOn, today());
+                  const daysLeft = certDaysLeft(cert.expiresOn, today());
+                  return (
+                    <li key={cert.id} className="flex items-center gap-2 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">{cert.name}</span>
+                        <span className="block text-xs text-[#687873]">{status === 'expired' ? `Expired ${Math.abs(daysLeft)}d ago` : status === 'expiring' ? `Expires in ${daysLeft}d` : 'Valid'} · {cert.expiresOn}</span>
+                      </span>
+                      <Badge className={status === 'expired' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : status === 'expiring' ? 'bg-[#fcf4e9] text-[#805322]' : 'bg-[#e8f4ef] text-[#216b61]'}>{status}</Badge>
+                      {manager && <button type="button" disabled={busy} aria-label={`Delete ${cert.name}`} onClick={() => mutate({ action: 'deleteCertification', id: cert.id }, 'Certification removed.')} className="grid size-9 shrink-0 place-items-center rounded-lg text-[#8b4e2c] transition hover:bg-[#f8e9dc]"><Trash2 className="size-4" /></button>}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : <p className="mt-1 text-xs text-[#687873]">No certification records on file yet.</p>}
+            {manager && (
+              <form className="mt-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'saveCertification', memberId: profile.id, ...Object.fromEntries(new FormData(form)) }, 'Certification saved.'); form.reset(); }}>
+                <Input name="name" required maxLength={200} placeholder="e.g. First aid, criminal record check" aria-label="Certification name" className="min-h-11 min-w-0 flex-1" />
+                <Input name="expiresOn" type="date" required aria-label="Expiry date" className="min-h-11 w-40" />
+                <Button disabled={busy} aria-label="Add certification" className="bg-[#287b6f]"><Plus className="size-4" /></Button>
+              </form>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

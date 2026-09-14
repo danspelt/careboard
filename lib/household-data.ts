@@ -10,6 +10,7 @@ import { memberIdForEmail, ownerEmail } from '@/lib/auth-config';
 import { credentialForEmail, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
+import type { Certification } from '@/lib/certifications';
 
 export type Member = {
   id: string;
@@ -84,6 +85,7 @@ export type HouseholdState = {
   shifts?: Shift[];
   availability?: Shift[];
   timeEntries?: TimeEntry[];
+  certifications?: Certification[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -173,7 +175,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
-  const [members, chores, activity, shifts, availability, timeEntries] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -202,6 +204,7 @@ async function rawState() {
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= datetime('now', '-90 days') ORDER BY started_at DESC`).all<TimeEntry>(),
+    db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -212,7 +215,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -249,7 +252,7 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id) };
 }
 
 async function generateRecurringTasks() {
@@ -384,6 +387,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'inviteMember',
     'reinviteMember',
     'deleteTimeEntry',
+    'saveCertification',
+    'deleteCertification',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -653,6 +658,26 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
+  } else if (action === 'saveCertification') {
+    const memberId = requiredString(input.memberId, 'Care worker');
+    const worker = await db.prepare("SELECT name FROM members WHERE id=? AND role='worker'").bind(memberId).first<Member>();
+    if (!worker) throw new Error('Certifications can only be recorded for care workers.');
+    const name = requiredString(input.name, 'Certification name').slice(0, 200);
+    const expiresOn = typeof input.expiresOn === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.expiresOn) ? input.expiresOn : null;
+    if (!expiresOn) throw new Error('Choose a valid expiry date.');
+    const certId = typeof input.id === 'string' && input.id ? input.id : crypto.randomUUID();
+    await db.batch([
+      db
+        .prepare(`INSERT INTO certification_records(id, member_id, name, expires_on, created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, expires_on=excluded.expires_on`)
+        .bind(certId, memberId, name, expiresOn, now),
+      activity(null, actorId, 'saved_certification', `updated a certification for ${worker.name}`, now),
+    ]);
+  } else if (action === 'deleteCertification') {
+    const certId = requiredString(input.id, 'Certification');
+    await db.batch([
+      db.prepare(`DELETE FROM certification_records WHERE id=?`).bind(certId),
+      activity(null, actorId, 'deleted_certification', 'removed a certification record', now),
+    ]);
   } else if (action === 'deleteUpload') {
     const uploadId = requiredString(input.uploadId, 'Upload');
     const upload = await db
