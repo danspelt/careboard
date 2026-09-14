@@ -14,6 +14,7 @@ import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
+import { buildProgressReport } from '@/lib/progress-report';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -327,6 +328,10 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
 function MoreManager({ state, mutate, busy }: any) {
   const settings = state.settings;
   const month = today().slice(0, 7);
+  const reportWorkers = state.members.filter((item: Member) => item.role === 'worker');
+  const report = buildProgressReport<Chore>(state.chores, reportWorkers, today(), 30);
+  const maxWeekly = Math.max(1, ...report.weekly.map((week) => week.completed));
+  const maxArea = Math.max(1, ...report.byArea.map((area) => area.count));
   return (
     <>
       <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history." />
@@ -342,17 +347,66 @@ function MoreManager({ state, mutate, busy }: any) {
           </form>
         </Card>
         <Card>
-          <h2 className="text-lg font-bold">Monthly report</h2>
-          <p className="mt-2 text-sm text-[#687873]">Export tasks, assignments, completion details, issues, notes, and team records.</p>
+          <h2 className="text-lg font-bold">Monthly export</h2>
+          <p className="mt-2 text-sm text-[#687873]">Download tasks, assignments, completion details, issues, notes, and team records as CSV.</p>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <Metric label="On time" value={state.metrics?.completedOnTime ?? 0} icon={Check} tone="success" />
-            <Metric label="Open issues" value={state.chores.filter((t: Chore) => t.issueOpen).length} icon={Shield} tone="caution" />
+            <Metric label="On time (30d)" value={report.onTime} icon={Check} tone="success" />
+            <Metric label="Open issues" value={report.openIssues} icon={Shield} tone="caution" />
           </div>
           <a href={`/api/export?from=${month}-01&to=${today()}`} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]">
             <FileDown className="size-4" />Download monthly CSV
           </a>
         </Card>
       </div>
+      <Card className="mt-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div><h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Care plan progress — last 30 days</h2><p className="mt-1 text-sm text-[#687873]">{dateLabel(report.start)} – {dateLabel(report.end)}</p></div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Metric label="Completed" value={report.completed} icon={CheckCircle2} tone="success" />
+          <Metric label="On-time rate" value={report.onTimeRate ?? 0} icon={Check} />
+          <Metric label="Issues opened" value={report.issuesOpened} icon={AlertTriangle} tone="caution" />
+          <Metric label="Still open" value={report.openIssues} icon={Shield} tone="caution" />
+        </div>
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="text-sm font-bold">Completions per week</h3>
+            <p className="sr-only">Weekly completions: {report.weekly.map((week) => `${week.start} to ${week.end}, ${week.completed}`).join('; ')}</p>
+            <div className="mt-3 grid h-32 grid-cols-5 items-end gap-2" aria-hidden="true">
+              {report.weekly.map((week) => <div key={week.start} className="flex h-full min-w-0 flex-col items-center justify-end gap-1.5"><span className="text-xs font-semibold tabular-nums">{week.completed}</span><span className="w-full max-w-12 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (week.completed / maxWeekly) * 88)}px` }} /><span className="text-[10px] text-[#687873]">{new Date(`${week.start}T12:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>)}
+            </div>
+            <h3 className="mt-6 text-sm font-bold">By area</h3>
+            <div className="mt-3 space-y-2">
+              {report.byArea.length ? report.byArea.map((area) => (
+                <div key={area.area} className="flex items-center gap-3">
+                  <span className="w-24 shrink-0 truncate text-xs font-semibold">{area.area}</span>
+                  <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#eef2ec]"><span className="block h-full rounded-full bg-[#67a193]" style={{ width: `${(area.count / maxArea) * 100}%` }} /></span>
+                  <span className="w-8 shrink-0 text-right text-xs font-bold tabular-nums">{area.count}</span>
+                </div>
+              )) : <p className="rounded-xl bg-[#f7f6f1] p-4 text-center text-sm text-[#687873]">No completions in this window yet.</p>}
+            </div>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold">Per worker</h3>
+            <div className="mt-3 space-y-2">
+              {report.perWorker.length ? report.perWorker.map((row) => {
+                const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
+                if (!worker) return null;
+                return (
+                  <div key={worker.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                    <AvatarFor member={worker} className="size-9" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{worker.name}</p>
+                      <p className="text-xs text-[#687873]">{row.completed} completed{row.onTimeRate !== null ? ` · ${row.onTimeRate}% on time` : ''}{row.issues ? ` · ${row.issues} issue${row.issues === 1 ? '' : 's'}` : ''}</p>
+                    </div>
+                    <span className="h-2.5 w-20 shrink-0 overflow-hidden rounded-full bg-[#eef2ec]" aria-hidden="true"><span className="block h-full rounded-full bg-[#287b6f]" style={{ width: `${Math.min(100, (row.completed / Math.max(1, report.completed)) * 100)}%` }} /></span>
+                  </div>
+                );
+              }) : <EmptyHandoff icon={Users} title="No active workers" text="Add workers to see per-person progress." compact />}
+            </div>
+          </div>
+        </div>
+      </Card>
       <Card className="mt-6">
         <h2 className="text-lg font-bold">Audit history</h2>
         <p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p>
