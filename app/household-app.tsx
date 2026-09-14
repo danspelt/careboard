@@ -2,8 +2,9 @@
 /* oxlint-disable typescript/no-explicit-any, next/no-img-element -- API photo URLs require authenticated, unoptimized requests; compact view prop types are intentionally structural. */
 
 import { logOut } from '@/app/actions/auth';
+import Link from 'next/link';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -878,6 +879,8 @@ function ViewerView({ section, state, setTask }: any) {
 }
 
 function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, busy }: any) {
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
@@ -901,31 +904,79 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
           <Button variant="outline" onClick={() => setAvailWorker(member)} className="min-h-11"><CalendarDays className="size-4" />Edit availability</Button>
         </div>
       </Card>
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Certifications</h2>
+        <p className="text-sm text-[#687873]">Your current certifications and expiry dates</p>
+        <div className="mt-4 space-y-2">
+          {(state.certifications ?? []).length ? (state.certifications ?? []).map((cert: any) => {
+            const status = certStatus(cert.expiresOn, today());
+            return (
+              <div key={cert.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{cert.name}</p><p className="text-xs text-[#687873]">{status === 'expired' ? 'Expired' : `Expires ${cert.expiresOn}`}</p></div>
+                <Badge className={status === 'expired' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : status === 'expiring' ? 'bg-[#fcf4e9] text-[#805322]' : 'bg-[#e8f1ec] text-[#287b6f]'}>{status}</Badge>
+              </div>
+            );
+          }) : <EmptyHandoff icon={Shield} title="No certifications" text="Your manager can add certifications to your profile." compact />}
+        </div>
+      </Card>
     </>
   );
   if (section === 'more') return (
     <>
       <Title title="More" text="Account and privacy." />
-      <Card>
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
-          <h2 className="font-bold">Privacy</h2>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other care workers’ contact details, activity, reports, settings, and audit records remain private.</p>
-      </Card>
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Privacy</h2>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other care workers’ contact details, activity, reports, settings, and audit records remain private.</p>
+        </Card>
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><User className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Account</h2>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">Manage your password and sign out.</p>
+          <div className="mt-4 grid gap-2">
+            <Link href="/change-password" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-4 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]"><Pencil className="size-4" />Change password</Link>
+            <form action={logOut}><button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><LogOut className="size-4" />Sign out</button></form>
+          </div>
+        </Card>
+      </div>
     </>
   );
   if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
+  const query = taskQuery.trim().toLowerCase();
+  const filtered = tasks.filter((task: Chore) => {
+    if (taskFilter === 'mine' && task.assignedTo !== member.id) return false;
+    if (taskFilter === 'available' && !(task.assignedTo === null && task.status === 'open')) return false;
+    if (taskFilter === 'in_progress' && task.status !== 'in_progress') return false;
+    if (taskFilter === 'complete' && task.status !== 'complete') return false;
+    if (query && !task.title.toLowerCase().includes(query) && !(task.instructions ?? '').toLowerCase().includes(query)) return false;
+    return true;
+  });
   return (
     <>
       <Title title="Tasks" text="Your assigned work and tasks available to claim." />
       <Card className="p-0">
         <div className="border-b border-[#dfe5dc] px-5 py-4">
-          <h2 className="font-semibold">Your task list</h2>
-          <p className="text-sm text-[#687873]">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-semibold">Your task list</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {tasks.length} total</p></div>
+            <div className="flex flex-wrap gap-2">
+              <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-52" />
+              <select value={taskFilter} onChange={(e) => setTaskFilter(e.target.value as any)} aria-label="Filter tasks" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
+                <option value="all">All tasks</option>
+                <option value="mine">Assigned to me</option>
+                <option value="available">Available to claim</option>
+                <option value="in_progress">In progress</option>
+                <option value="complete">Complete</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <TaskList tasks={tasks} members={[member]} onOpen={setTask} />
+        <TaskList tasks={filtered} members={[member]} onOpen={setTask} />
       </Card>
     </>
   );
@@ -972,6 +1023,12 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
           <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-2xl bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[#bcd9ca]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-[#d8e7df]">completed today</p></div>
         </div>
       </section>
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric label="Completed today" value={handoff.completed.length} icon={CheckCircle2} tone="success" />
+        <Metric label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
+        <Metric label="Due today" value={outstanding.length} icon={CalendarDays} />
+        <Metric label="Available to claim" value={state.chores.filter((task: Chore) => task.assignedTo === null && task.status === 'open').length} icon={ClipboardList} />
+      </div>
       <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
         <div className="space-y-6">
           <Card className="p-0">
