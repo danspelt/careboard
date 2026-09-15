@@ -9,8 +9,11 @@ let queue = Promise.resolve();
 
 function localWorker() {
   workerPromise ??= createWorker('eng', OEM.LSTM_ONLY, {
-    langPath: join(process.cwd(), 'node_modules', '@tesseract.js-data', 'eng', '4.0.0'),
+    workerPath: join(/* turbopackIgnore: true */ process.cwd(), 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js'),
+    corePath: join(/* turbopackIgnore: true */ process.cwd(), 'node_modules', 'tesseract.js-core', 'tesseract-core-lstm.wasm.js'),
+    langPath: join(/* turbopackIgnore: true */ process.cwd(), 'node_modules', '@tesseract.js-data', 'eng', '4.0.0'),
     cacheMethod: 'none',
+    workerBlobURL: false,
   });
   return workerPromise;
 }

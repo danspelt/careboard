@@ -79,7 +79,7 @@ test('migration persists review state, messages, and original safety-triaged tex
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   db.exec('CREATE TABLE members(id TEXT PRIMARY KEY); CREATE TABLE proof_photos(id TEXT PRIMARY KEY);');
-  for (const file of ['0012_client_notes.sql', '0013_inbox_safety.sql']) {
+  for (const file of ['0012_client_notes.sql', '0013_inbox_safety.sql', '0014_inbox_direct_message.sql']) {
     const migration = readFileSync(new URL(`../drizzle/${file}`, import.meta.url), 'utf8');
     for (const statement of migration.split('--> statement-breakpoint').map((value) => value.trim()).filter(Boolean)) db.exec(statement);
   }
