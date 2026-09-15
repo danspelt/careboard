@@ -15,6 +15,7 @@ export function canAssignTo(status: AccountStatus) {
 
 export function workerCan(action: string, actorId: string, task: AccessTask) {
   if (action === 'claim') return task.status === 'open' && task.assignedTo === null;
+  if (action === 'takeover') return task.status !== 'complete' && task.assignedTo !== null && task.assignedTo !== actorId;
   if (action === 'start') return task.status === 'open' && task.assignedTo === actorId;
   if (action === 'complete') return task.status === 'in_progress' && task.assignedTo === actorId;
   return false;
@@ -22,7 +23,8 @@ export function workerCan(action: string, actorId: string, task: AccessTask) {
 
 export function visibleTasks<T extends AccessTask>(member: AccessMember, tasks: T[]) {
   if (member.role === 'manager' || member.role === 'viewer') return tasks;
-  return tasks.filter((task) => task.assignedTo === member.id || (task.assignedTo === null && task.status === 'open'));
+  // Workers see all unfinished work so the next shift can take over what was not completed, plus their own completed tasks.
+  return tasks.filter((task) => task.assignedTo === member.id || task.status !== 'complete');
 }
 
 export function workerTaskGroups<T extends AccessTask>(member: AccessMember, tasks: T[]) {

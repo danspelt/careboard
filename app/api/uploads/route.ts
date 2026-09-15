@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   const id = crypto.randomUUID();
   const storedName = safeStoredName(id, file.type);
-  const root = resolve(process.env.UPLOAD_PATH || '/data/uploads');
+  const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
   const destination = resolve(root, storedName);
   if (!destination.startsWith(`${root}\\`) && !destination.startsWith(`${root}/`)) {
     return Response.json({ error: 'Invalid upload path.' }, { status: 400 });

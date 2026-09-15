@@ -196,3 +196,46 @@ export const auditLog = sqliteTable(
   },
   (table) => [index('idx_audit_log_created_at').on(table.createdAt)],
 );
+
+export const clientNoteSubmissions = sqliteTable(
+  'client_note_submissions',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id').notNull().default('default'),
+    clientMemberId: text('client_member_id').notNull().references(() => members.id),
+    submittedBy: text('submitted_by').notNull().references(() => members.id),
+    sourcePhotoId: text('source_photo_id').references(() => proofPhotos.id, { onDelete: 'set null' }),
+    ocrText: text('ocr_text').notNull(),
+    status: text('status').notNull().default('pending'),
+    approvedText: text('approved_text'),
+    reviewedBy: text('reviewed_by').references(() => members.id),
+    reviewedAt: text('reviewed_at'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_client_note_submissions_status').on(table.householdId, table.status, table.createdAt),
+    index('idx_client_note_submissions_client').on(table.clientMemberId, table.createdAt),
+  ],
+);
+
+export const workerInboxItems = sqliteTable(
+  'worker_inbox_items',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id').notNull().default('default'),
+    workerId: text('worker_id').notNull().references(() => members.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    body: text('body').notNull(),
+    submissionId: text('submission_id').references(() => clientNoteSubmissions.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').notNull().references(() => members.id),
+    safetyCategory: text('safety_category'),
+    safetyReason: text('safety_reason'),
+    safetyReviewedBy: text('safety_reviewed_by').references(() => members.id),
+    safetyReviewedAt: text('safety_reviewed_at'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_worker_inbox_items_worker').on(table.householdId, table.workerId, table.createdAt),
+    index('idx_worker_inbox_items_sender').on(table.householdId, table.createdBy, table.createdAt),
+  ],
+);

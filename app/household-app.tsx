@@ -2,14 +2,15 @@
 /* oxlint-disable typescript/no-explicit-any, next/no-img-element -- API photo URLs require authenticated, unoptimized requests; compact view prop types are intentionally structural. */
 
 import { logOut } from '@/app/actions/auth';
+import Link from 'next/link';
 import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, FileDown, Home, LayoutDashboard, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, Settings, Shield, Sofa, Sprout, Trash2, Upload, User, UserCheck, Users, Utensils, WashingMachine, X } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import type { Chore, HouseholdState, Member } from '@/lib/household-data';
+import type { Chore, HouseholdState, Member, Message } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
@@ -26,8 +27,8 @@ const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outs
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-type ManagerSection = 'home' | 'tasks' | 'schedule' | 'team' | 'more';
-type WorkerSection = 'today' | 'tasks' | 'schedule' | 'profile' | 'more';
+type ManagerSection = 'home' | 'tasks' | 'client' | 'schedule' | 'team' | 'messages' | 'more';
+type WorkerSection = 'today' | 'tasks' | 'client' | 'schedule' | 'messages' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
@@ -99,6 +100,17 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { const response = await fetch('/api/uploads', { method: 'POST', body: data }); const result = await response.json(); if (!response.ok) throw new Error(result.error); await refresh('Photo uploaded.'); }
     catch (error) { setNotice(error instanceof Error ? error.message : 'Upload failed.'); } finally { setBusy(false); }
   }
+  async function uploadClientNote(file: File, clientMemberId: string) {
+    const data = new FormData(); data.set('photo', file); data.set('clientMemberId', clientMemberId);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/client-notes', { method: 'POST', body: data });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'The client note could not be submitted.');
+      await refresh('Client note submitted for manager review.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Client note upload failed.'); throw error; }
+    finally { setBusy(false); }
+  }
   async function refresh(message = '') { const response = await fetch('/api/household', { cache: 'no-store' }); const next = await response.json() as HouseholdState; setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); if (message) setNotice(message); }
   async function deletePhoto(id: string) { setBusy(true); try { const response = await fetch(`/api/uploads/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Photo could not be deleted.'); await refresh('Photo deleted.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.'); } finally { setBusy(false); } }
 
@@ -121,10 +133,10 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
   }
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
-      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
@@ -140,7 +152,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </button>
         <div className="flex items-center gap-2">
           {bell}
-          <form action={logOut}><button className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[#287b6f]">Sign out</button></form>
+          <form action={logOut}><button className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#287b6f]"><LogOut className="size-4" aria-hidden="true" />Sign out</button></form>
           <AvatarFor member={member} className="size-9" />
         </div>
       </header>
@@ -175,7 +187,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           </div>
           <form action={logOut} className="mt-3">
             <button className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
-              Sign out
+              <LogOut className="size-4" aria-hidden="true" />Sign out
             </button>
           </form>
         </div>
@@ -190,29 +202,30 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} />
           )}
         </div>
       </main>
 
       {/* Mobile bottom nav */}
       <nav className="dashboard-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
-        <div className="mx-auto grid max-w-md" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
+        <ul className="mx-auto flex max-w-full snap-x gap-1 overflow-x-auto">
           {nav.map(([id, label, Icon]) => (
+            <li key={id} className="min-w-16 flex-1 snap-center">
             <button
-              key={id}
               onClick={() => setSection(id)}
               aria-current={section === id ? 'page' : undefined}
-              className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
             >
               <Icon className="size-5" aria-hidden="true" />
               {label}
             </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </nav>
 
-      <TaskDialog task={task} manager={manager} readOnly={viewer} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+      <TaskDialog task={task} manager={manager} readOnly={viewer} memberId={member.id} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
       <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -223,7 +236,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
             <ol className="divide-y divide-[#e5eae4]">
               {notifications.map((item) => {
                 const linked = item.choreId ? state.chores.find((chore: Chore) => chore.id === item.choreId) : null;
-                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind === 'announcement' ? Megaphone : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
+                const Icon = item.kind === 'completed' ? CheckCircle2 : item.kind === 'announcement' || item.kind === 'posted_message' ? Megaphone : item.kind.startsWith('note_') ? MessageSquareText : item.kind === 'available' ? CircleDot : ClipboardList;
                 return (
                   <li key={item.id}>
                     <button onClick={() => { setFeedOpen(false); if (linked) setTask(linked); }} className="flex min-h-14 w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
@@ -278,6 +291,7 @@ function OnboardingCard({ steps, onDone }: any) {
         </div>
         <button onClick={onDone} aria-label="Dismiss getting started guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
       </div>
+      <progress value={done} max={steps.length} aria-label={`${done} of ${steps.length} onboarding steps complete`} className="mt-3 h-2 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dfe5dc] [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:bg-[#287b6f] [&::-webkit-progress-value]:bg-[#287b6f]" />
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">
         {steps.map((step: any) => (
           <li key={step.id} className={`flex items-start gap-3 rounded-xl border p-3 ${step.done ? 'border-[#cfe0d3] bg-white/60' : 'border-[#dfe5dc] bg-white'}`}>
@@ -297,24 +311,56 @@ function StatusBadge({ status }: { status: string }) {
     complete: 'bg-[#e6f0eb] text-[#216b61]',
     disabled: 'bg-[#f0f0f0] text-[#687873]',
     invited: 'bg-[#ece9f7] text-[#5b4e94]',
+    pending: 'bg-[#fcf0dc] text-[#80531b]',
+    approved: 'bg-[#e6f0eb] text-[#216b61]',
+    rejected: 'bg-[#f8e4dc] text-[#873d27]',
+    direct_message: 'bg-[#e7eef8] text-[#3f5f92]',
+    manager_message: 'bg-[#ece9f7] text-[#5b4e94]',
+    abuse: 'bg-[#f8e4dc] text-[#873d27]',
+    threat: 'bg-[#f8e4dc] text-[#873d27]',
+    medication: 'bg-[#fcf0dc] text-[#80531b]',
+    emergency: 'bg-[#f8e4dc] text-[#873d27]',
   };
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
 function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
-  if (section === 'tasks') return (
-    <>
-      <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
-      <Card className="p-0">
-        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="font-semibold">All household tasks</h2><p className="text-sm text-[#687873]">{state.chores.length} total · {open.length} open</p></div>
-        <TaskList tasks={state.chores} members={state.members} onOpen={setTask} />
-      </Card>
-    </>
-  );
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
+  if (section === 'tasks') {
+    const query = taskQuery.trim().toLowerCase();
+    const filtered = state.chores.filter((task: Chore) => {
+      if (taskStatus !== 'all' && task.status !== taskStatus) return false;
+      if (query && !task.title.toLowerCase().includes(query) && !(task.instructions ?? '').toLowerCase().includes(query)) return false;
+      return true;
+    });
+    return (
+      <>
+        <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
+        <Card className="p-0">
+          <div className="border-b border-[#dfe5dc] px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><h2 className="flex items-center gap-2 font-semibold"><ClipboardList className="size-4 text-[#287b6f]" aria-hidden="true" />All household tasks</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {state.chores.length} total · {open.length} open</p></div>
+              <div className="flex flex-wrap gap-2">
+                <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-full flex-1 sm:w-52 sm:flex-none" />
+                <select value={taskStatus} onChange={(e) => setTaskStatus(e.target.value as any)} aria-label="Filter by status" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <TaskList tasks={filtered} members={state.members} onOpen={setTask} />
+        </Card>
+      </>
+    );
+  }
   if (section === 'team') return (
     <>
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
-      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
+      {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><ul className="mt-4 space-y-2 text-sm text-[#687873]"><li>Invite by email — they set their own password</li><li>Set weekly shifts and availability</li><li>Track certifications and contact details</li></ul><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => {
           const workerShifts = (state.shifts ?? []).filter((shift: any) => shift.memberId === worker.id);
@@ -341,9 +387,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
               <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
               <Button variant="outline" size="sm" onClick={() => setAvailWorker(worker)}><CalendarDays className="size-4" />Availability</Button>
               {worker.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: worker.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
-              {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}>Reset password</Button>}
+              {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}><KeyRound className="size-4" />Reset password</Button>}
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
-                {worker.status === 'disabled' ? 'Reactivate' : 'Disable'}
+                {worker.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
               </Button>
             </div>
           </Card>
@@ -352,7 +398,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
       {state.members.some((item: Member) => item.role === 'viewer') && (
         <>
-          <h2 className="mt-8 text-lg font-bold">Family viewers</h2>
+          <h2 className="mt-8 flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Family viewers</h2>
           <p className="mt-1 text-sm text-[#687873]">Read-only access to the care plan and schedule.</p>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {state.members.filter((item: Member) => item.role === 'viewer').map((viewer: Member) => (
@@ -367,9 +413,9 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {viewer.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: viewer.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
-                  {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}>Reset password</Button>}
+                  {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}><KeyRound className="size-4" />Reset password</Button>}
                   <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: viewer.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: viewer.id }, viewer.status === 'disabled' ? 'Family viewer reactivated.' : 'Family viewer disabled.')}>
-                    {viewer.status === 'disabled' ? 'Reactivate' : 'Disable'}
+                    {viewer.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
                   </Button>
                 </div>
               </Card>
@@ -380,6 +426,8 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     </>
   );
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
+  if (section === 'client') return <ClientRecordView state={state} mutate={mutate} busy={busy} />;
+  if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
@@ -398,7 +446,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.85fr)]">
         <Card className="p-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="text-lg font-bold">Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#287b6f]" aria-hidden="true" />Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
           <TaskList tasks={command.attention.slice(0, 8)} members={state.members} onOpen={setTask} />
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
@@ -407,7 +455,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
           <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
             <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
-            <Button disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
+            <Button type="submit" disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
           </form>
         </Card>
       </div>
@@ -425,7 +473,7 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
                     <span className="block text-xs text-[#687873]">{finisher?.name ?? 'Care worker'} · {task.completedAt ? new Date(task.completedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}</span>
                   </button>
                   <Button size="sm" disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]"><Check className="size-4" />Approve</Button>
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}><Undo2 className="size-4" />Send back</Button>
                 </div>
               );
             })}
@@ -479,6 +527,25 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           </div>
         </Card>
       )}
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Recent activity</h2>
+        <p className="text-sm text-[#687873]">Latest household actions across tasks, team, and settings</p>
+        <ol className="mt-4 divide-y divide-[#e5eae4]">
+          {(state.activity ?? []).length ? (state.activity ?? []).slice(0, 8).map((item: any) => {
+            const actor = state.members.find((m: Member) => m.id === item.memberId)?.name ?? 'Household';
+            const Icon = item.action === 'announcement' ? Megaphone : item.action === 'completed' ? CheckCircle2 : item.action === 'assigned' ? UserCheck : item.action === 'created' ? Plus : item.action === 'updated' ? Pencil : item.action === 'disabled' ? Shield : item.action === 'reactivated' ? UserCheck : ClipboardList;
+            return (
+              <li key={item.id} className="flex items-center gap-3 py-2">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#f1f5f1] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">{item.action.replace(/_/g, ' ')}{item.detail ? ` — ${item.detail}` : ''}</span>
+                  <span className="block text-xs text-[#687873]">{actor} · {new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                </span>
+              </li>
+            );
+          }) : <li><EmptyHandoff icon={Clock} title="No activity yet" text="Household actions will appear here as your team works." compact /></li>}
+        </ol>
+      </Card>
     </>
   );
 }
@@ -505,7 +572,7 @@ function MoreManager({ state, mutate, busy }: any) {
       <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history." />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <h2 className="text-lg font-bold">Settings</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Settings className="size-5 text-[#287b6f]" aria-hidden="true" />Settings</h2>
           <p className="text-sm text-[#687873]">Tune automation without changing privacy policy.</p>
           <form className="mt-4 grid gap-4" onSubmit={(e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); mutate({ action: 'updateHouseholdSettings', ...data, retentionDays: 90 }, 'Settings saved.'); }}>
             <Field label="Recurrence horizon (days)" name="recurrenceHorizonDays" type="number" defaultValue={settings?.recurrenceHorizonDays ?? 30} />
@@ -513,11 +580,11 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
-            <Button disabled={busy} className="min-h-11 bg-[#287b6f]">Save settings</Button>
+            <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
           </form>
         </Card>
         <Card>
-          <h2 className="text-lg font-bold">Monthly export</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Monthly export</h2>
           <p className="mt-2 text-sm text-[#687873]">Download tasks, assignments, completion details, issues, notes, and team records as CSV.</p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Metric label="On time (30d)" value={report.onTime} icon={Check} tone="success" />
@@ -540,12 +607,12 @@ function MoreManager({ state, mutate, busy }: any) {
         </div>
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <div>
-            <h3 className="text-sm font-bold">Completions per week</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><CheckCircle2 className="size-4 text-[#287b6f]" aria-hidden="true" />Completions per week</h3>
             <p className="sr-only">Weekly completions: {report.weekly.map((week) => `${week.start} to ${week.end}, ${week.completed}`).join('; ')}</p>
             <div className="mt-3 grid h-32 grid-cols-5 items-end gap-2" aria-hidden="true">
               {report.weekly.map((week) => <div key={week.start} className="flex h-full min-w-0 flex-col items-center justify-end gap-1.5"><span className="text-xs font-semibold tabular-nums">{week.completed}</span><span className="w-full max-w-12 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (week.completed / maxWeekly) * 88)}px` }} /><span className="text-[10px] text-[#687873]">{new Date(`${week.start}T12:00:00`).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' })}</span></div>)}
             </div>
-            <h3 className="mt-6 text-sm font-bold">By area</h3>
+            <h3 className="mt-6 flex items-center gap-2 text-sm font-bold"><Home className="size-4 text-[#287b6f]" aria-hidden="true" />By area</h3>
             <div className="mt-3 space-y-2">
               {report.byArea.length ? report.byArea.map((area) => (
                 <div key={area.area} className="flex items-center gap-3">
@@ -557,7 +624,7 @@ function MoreManager({ state, mutate, busy }: any) {
             </div>
           </div>
           <div>
-            <h3 className="text-sm font-bold">Per care worker</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><Users className="size-4 text-[#287b6f]" aria-hidden="true" />Per care worker</h3>
             <div className="mt-3 space-y-2">
               {report.perWorker.length ? report.perWorker.map((row) => {
                 const worker = reportWorkers.find((item: Member) => item.id === row.workerId);
@@ -638,7 +705,7 @@ function MoreManager({ state, mutate, busy }: any) {
         </div>
         {(state.timeEntries ?? []).length > 0 && (
           <div className="mt-4 border-t border-[#e5eae4] pt-4">
-            <h3 className="text-sm font-bold">Recent entries</h3>
+            <h3 className="flex items-center gap-2 text-sm font-bold"><Clock className="size-4 text-[#287b6f]" aria-hidden="true" />Recent entries</h3>
             <ol className="mt-2 divide-y divide-[#e5eae4]">
               {(state.timeEntries ?? []).slice(0, 8).map((entry: any) => {
                 const worker = state.members.find((item: Member) => item.id === entry.memberId);
@@ -655,7 +722,7 @@ function MoreManager({ state, mutate, busy }: any) {
         )}
       </Card>
       <Card className="mt-6">
-        <h2 className="text-lg font-bold">Audit history</h2>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />Audit history</h2>
         <p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p>
         <div className="mt-4 max-h-[32rem] divide-y overflow-auto rounded-xl border border-[#dfe5dc]">
           {(state.audit ?? []).length ? (state.audit ?? []).map((entry: any) => {
@@ -826,7 +893,7 @@ function ViewerView({ section, state, setTask }: any) {
           </div>
         </Card>
         <Card className="p-0">
-          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="font-semibold">Due today</h2></div>
+          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays className="size-4 text-[#287b6f]" aria-hidden="true" />Due today</h2></div>
           <TaskList tasks={dueToday} members={state.members} onOpen={setTask} compact />
         </Card>
       </div>
@@ -834,7 +901,9 @@ function ViewerView({ section, state, setTask }: any) {
   );
 }
 
-function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, busy }: any) {
+function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy }: any) {
+  const [taskQuery, setTaskQuery] = useState('');
+  const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
@@ -858,34 +927,174 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
           <Button variant="outline" onClick={() => setAvailWorker(member)} className="min-h-11"><CalendarDays className="size-4" />Edit availability</Button>
         </div>
       </Card>
-    </>
-  );
-  if (section === 'more') return (
-    <>
-      <Title title="More" text="Account and privacy." />
-      <Card>
-        <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
-          <h2 className="font-bold">Privacy</h2>
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Certifications</h2>
+        <p className="text-sm text-[#687873]">Your current certifications and expiry dates</p>
+        <div className="mt-4 space-y-2">
+          {(state.certifications ?? []).length ? (state.certifications ?? []).map((cert: any) => {
+            const status = certStatus(cert.expiresOn, today());
+            return (
+              <div key={cert.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{cert.name}</p><p className="text-xs text-[#687873]">{status === 'expired' ? 'Expired' : `Expires ${cert.expiresOn}`}</p></div>
+                <Badge className={status === 'expired' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : status === 'expiring' ? 'bg-[#fcf4e9] text-[#805322]' : 'bg-[#e8f1ec] text-[#287b6f]'}>{status}</Badge>
+              </div>
+            );
+          }) : <EmptyHandoff icon={Shield} title="No certifications" text="Your manager can add certifications to your profile." compact />}
         </div>
-        <p className="mt-3 text-sm leading-6 text-[#687873]">You can see only your profile, tasks assigned to you, and tasks available to claim. Other care workers’ contact details, activity, reports, settings, and audit records remain private.</p>
       </Card>
     </>
   );
+  if (section === 'more') {
+    const todayStr = today();
+    const monthMinutes = minutesInRange(state.timeEntries ?? [], member.id, `${todayStr.slice(0, 7)}-01`, todayStr, new Date().toISOString());
+    const estimatedPay = member.hourlyRate != null ? (monthMinutes / 60) * member.hourlyRate : null;
+    return (
+    <>
+      <Title title="More" text="Account, pay, and privacy." />
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><CircleDollarSign className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Your pay</h2>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="flex items-center justify-between gap-3"><span className="text-[#687873]">Pay rate</span><span className="font-semibold">{member.hourlyRate != null ? `$${member.hourlyRate.toFixed(2)}/hr` : 'Not set by your manager'}</span></p>
+            <p className="flex items-center justify-between gap-3"><span className="text-[#687873]">Hours this month</span><span className="font-semibold">{formatMinutes(monthMinutes)}</span></p>
+            {estimatedPay != null && (
+              <p className="flex items-center justify-between gap-3 border-t border-[#e2e8e1] pt-2"><span className="text-[#687873]">Estimated pay</span><span className="font-semibold">${estimatedPay.toFixed(2)}</span></p>
+            )}
+          </div>
+        </Card>
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Privacy</h2>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">You can see your profile, your own pay rate and hours, tasks assigned to you, unfinished work you can take over, tasks available to claim, and the team chat. Other care workers’ pay, contact details, activity, reports, settings, and audit records remain private.</p>
+        </Card>
+        <Card>
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><User className="size-5" aria-hidden="true" /></span>
+            <h2 className="font-bold">Account</h2>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#687873]">Manage your password and sign out.</p>
+          <div className="mt-4 grid gap-2">
+            <Link href="/change-password" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#d7dfd7] bg-white px-4 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]"><KeyRound className="size-4" />Change password</Link>
+            <form action={logOut}><button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><LogOut className="size-4" />Sign out</button></form>
+          </div>
+        </Card>
+      </div>
+    </>
+    );
+  }
+  if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
+  if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
+  const query = taskQuery.trim().toLowerCase();
+  const filtered = tasks.filter((task: Chore) => {
+    if (taskFilter === 'mine' && task.assignedTo !== member.id) return false;
+    if (taskFilter === 'available' && !(task.assignedTo === null && task.status === 'open')) return false;
+    if (taskFilter === 'in_progress' && task.status !== 'in_progress') return false;
+    if (taskFilter === 'complete' && task.status !== 'complete') return false;
+    if (query && !task.title.toLowerCase().includes(query) && !(task.instructions ?? '').toLowerCase().includes(query)) return false;
+    return true;
+  });
   return (
     <>
       <Title title="Tasks" text="Your assigned work and tasks available to claim." />
       <Card className="p-0">
         <div className="border-b border-[#dfe5dc] px-5 py-4">
-          <h2 className="font-semibold">Your task list</h2>
-          <p className="text-sm text-[#687873]">{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="flex items-center gap-2 font-semibold"><ClipboardList className="size-4 text-[#287b6f]" aria-hidden="true" />Your task list</h2><p className="text-sm text-[#687873]">{filtered.length} shown · {tasks.length} total</p></div>
+            <div className="flex flex-wrap gap-2">
+              <Input value={taskQuery} onChange={(e) => setTaskQuery(e.target.value)} placeholder="Search tasks…" aria-label="Search tasks" className="h-10 w-full flex-1 sm:w-52 sm:flex-none" />
+              <select value={taskFilter} onChange={(e) => setTaskFilter(e.target.value as any)} aria-label="Filter tasks" className="field-control h-10 w-auto rounded-xl border border-[#d7dfd7] bg-white px-3 text-sm">
+                <option value="all">All tasks</option>
+                <option value="mine">Assigned to me</option>
+                <option value="available">Available to claim</option>
+                <option value="in_progress">In progress</option>
+                <option value="complete">Complete</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <TaskList tasks={tasks} members={[member]} onOpen={setTask} />
+        <TaskList tasks={filtered} members={[member]} onOpen={setTask} />
       </Card>
     </>
   );
+}
+
+function InboxView({ state, mutate, busy }: any) {
+  const me = state.viewer.id;
+  const isManager = state.viewer.role === 'manager';
+  const inbox = state.inbox ?? [];
+  const people = state.members.filter((item: Member) => item.status === 'active' && item.id !== me && item.role !== 'viewer' && (!isManager || item.role === 'worker'));
+  const memberFor = (id: string) => state.members.find((item: Member) => item.id === id);
+  const alerts = (state.safetyAlerts ?? []).filter((item: any) => !item.safetyReviewedAt);
+  const statusKind = (kind: string) => kind.startsWith('client_note_');
+  return (
+    <>
+      <Title title="Care team inbox" text={isManager ? 'All direct care-team messages, worker note updates, and advisory safety alerts.' : 'Direct messages and your note updates. The manager can read all team messages.'} />
+      {!isManager && <div role="note" className="mb-5 flex items-start gap-3 rounded-2xl border border-[#d9c99d] bg-[#fff8e8] p-4 text-sm text-[#6f5422]"><Shield className="mt-0.5 size-5 shrink-0" aria-hidden="true" /><p><strong>Monitored team inbox.</strong> Messages are visible to participants and the household manager. Unrelated workers cannot read them.</p></div>}
+      {isManager && alerts.length > 0 && <Card className="mb-6 border-[#e2b69f] bg-[#fff8f4]">
+        <div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#f8dfd1] text-[#8f3f25]"><ShieldAlert className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Advisory safety alerts</h2><p className="mt-1 text-sm leading-6 text-[#6d5a51]">Local automated triage found wording that may need prompt manager review. It does not diagnose or take clinical action.</p></div></div>
+        <ol className="mt-4 space-y-3">{alerts.map((alert: any) => <li key={alert.id} className="rounded-xl border border-[#ead1c4] bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-2"><StatusBadge status={alert.safetyCategory} /><time className="text-xs text-[#687873]">{new Date(alert.createdAt).toLocaleString()}</time></div><p className="mt-2 text-sm font-semibold">{alert.safetyReason}</p><p className="mt-2 break-words rounded-lg bg-[#f7f6f1] p-3 text-sm leading-6">{alert.body}</p><Button type="button" variant="outline" className="mt-3 min-h-11" disabled={busy} onClick={() => mutate({ action: 'acknowledgeSafetyAlert', messageId: alert.id }, 'Safety alert marked reviewed.')}><Check className="size-4" aria-hidden="true" />Mark reviewed</Button></li>)}</ol>
+      </Card>}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,.6fr)]">
+        <Card className="p-0">
+          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><Inbox className="size-5 text-[#287b6f]" aria-hidden="true" />Personal and monitored messages</h2><p className="mt-1 text-sm text-[#687873]">{inbox.length ? `${inbox.length} item${inbox.length === 1 ? '' : 's'}` : 'No inbox items yet'}</p></div>
+          <div className="max-h-[60vh] overflow-y-auto p-4">
+            {inbox.length ? <ol className="space-y-3">{inbox.map((item: any) => {
+              const sender = memberFor(item.createdBy); const recipient = memberFor(item.workerId); const mine = item.createdBy === me;
+              return <li key={item.id} className={`rounded-2xl border p-4 ${statusKind(item.kind) ? 'border-[#cbdccf] bg-[#f2f7f1]' : mine ? 'border-[#bcd4c9] bg-[#eef4ec]' : 'border-[#e2e8e1] bg-white'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{statusKind(item.kind) ? 'Client note update' : `${sender?.name ?? 'Former member'} → ${recipient?.name ?? 'Former member'}`}</p><StatusBadge status={item.kind.replace('client_note_', '')} /></div>
+                <p className="mt-2 break-words text-sm leading-6">{item.body}</p><time className="mt-2 block text-xs text-[#687873]">{new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+              </li>;
+            })}</ol> : <EmptyHandoff icon={Inbox} title="Your inbox is clear" text="Direct messages and client-note review updates will appear here." compact />}
+          </div>
+        </Card>
+        <Card className="h-fit">
+          <h2 className="flex items-center gap-2 font-bold"><Send className="size-5 text-[#287b6f]" aria-hidden="true" />Send a direct message</h2>
+          <p className="mt-1 text-sm leading-6 text-[#687873]">Participants and the manager can read it. Automated triage may flag urgent wording for manager review.</p>
+          <form className="mt-4 space-y-3" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'sendInboxMessage', ...Object.fromEntries(new FormData(form)) }, 'Inbox message sent.').then(() => form.reset()).catch(() => {}); }}>
+            <label className="block text-sm font-semibold">Recipient<select name="recipientId" required className={fieldClass}><option value="">Choose a team member</option>{people.map((person: Member) => <option key={person.id} value={person.id}>{person.name} · {person.role === 'manager' ? 'Manager' : 'Care worker'}</option>)}</select></label>
+            <TextArea label="Message" name="body" />
+            <Button type="submit" disabled={busy || people.length === 0} className="min-h-11 w-full bg-[#287b6f]"><Send className="size-4" aria-hidden="true" />Send message</Button>
+          </form>
+        </Card>
+      </div>
+      <Card className="mt-6 p-0">
+        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Team-wide chat</h2><p className="mt-1 text-sm text-[#687873]">Visible to the full care team and retained for existing team coordination.</p></div>
+        <div className="max-h-80 overflow-y-auto p-4">{(state.messages ?? []).length ? <ol className="space-y-3">{(state.messages as Message[]).map((msg) => <li key={msg.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{memberFor(msg.memberId)?.name ?? 'Former member'}{msg.memberId === me ? ' (you)' : ''}</span><time className="text-xs text-[#687873]">{new Date(msg.createdAt).toLocaleString()}</time></div><p className="mt-1 break-words text-sm leading-6">{msg.body}</p></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No team-wide messages" text="Use this shared space for information intended for everyone." compact />}</div>
+        <form className="flex gap-2 border-t border-[#dfe5dc] p-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'postMessage', ...Object.fromEntries(new FormData(form)) }, 'Team message sent.').then(() => form.reset()).catch(() => {}); }}><Input name="body" required maxLength={1000} placeholder="Message the full care team…" aria-label="Team-wide message" className="min-h-11 flex-1" /><Button type="submit" disabled={busy} aria-label="Send team-wide message" className="min-h-11 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Send</span></Button></form>
+      </Card>
+    </>
+  );
+}
+
+function ClientRecordView({ state, mutate, uploadClientNote, busy }: any) {
+  const isManager = state.viewer.role === 'manager';
+  const manager = state.members.find((item: Member) => item.role === 'manager');
+  const notes = state.clientNotes ?? [];
+  const queue = state.clientNoteQueue ?? [];
+  const memberFor = (id: string) => state.members.find((item: Member) => item.id === id);
+  return <>
+    <Title title="Client record" text={isManager ? 'Review OCR drafts before explicitly adding them to the official client record.' : 'Capture a hard-copy note for manager review and read approved client notes.'} />
+    {!isManager && <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]"><div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#dfece3] text-[#287b6f]"><ScanLine className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Submit a paper note</h2><p className="mt-1 text-sm leading-6 text-[#52645f]">Take a clear, well-lit photo or choose an image. Text is read locally on the CareBoard server and stays pending until the manager reviews it.</p></div></div>
+      <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end" onSubmit={async (e) => { e.preventDefault(); const form = e.currentTarget; const file = new FormData(form).get('photo'); if (!(file instanceof File) || !file.size || !manager) return; try { await uploadClientNote(file, manager.id); form.reset(); } catch { /* live notice reports error */ } }}>
+        <label htmlFor="client-note-photo" className="block text-sm font-semibold">Photo of note<Input id="client-note-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" required className="mt-1 min-h-12 bg-white file:mr-3 file:rounded-lg file:border-0 file:bg-[#e8f1ec] file:px-3 file:py-2 file:font-semibold file:text-[#287b6f]" /></label>
+        <Button type="submit" disabled={busy || !manager} className="min-h-12 bg-[#287b6f]"><Upload className="size-5" aria-hidden="true" />Scan and submit</Button>
+      </form>
+    </Card>}
+    {isManager && <Card className="mb-6 p-0"><div className="flex items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 font-bold"><ClipboardList className="size-5 text-[#287b6f]" aria-hidden="true" />Pending review queue</h2><p className="mt-1 text-sm text-[#687873]">Edit OCR text if needed, then explicitly approve or reject.</p></div><span className="rounded-full bg-[#fcf0dc] px-3 py-1 text-sm font-bold text-[#8a5a1d]">{queue.length}</span></div>
+      {queue.length ? <div className="grid gap-4 p-4">{queue.map((note: any) => <form key={note.id} className="grid gap-4 rounded-2xl border border-[#dfe5dc] bg-white p-4 lg:grid-cols-[12rem_1fr]" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'reviewClientNote', submissionId: note.id, decision: 'approve', ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Client note approved.').catch(() => {}); }}>
+        <a href={note.sourcePhotoId ? `/api/uploads/${note.sourcePhotoId}` : undefined} target="_blank" rel="noreferrer" className="group overflow-hidden rounded-xl border border-[#dfe5dc] bg-[#f7f6f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">{note.sourcePhotoId ? <img src={`/api/uploads/${note.sourcePhotoId}`} alt="Original submitted client note" className="aspect-[4/3] size-full object-cover transition group-hover:scale-[1.02]" /> : <span className="grid aspect-[4/3] place-items-center text-sm text-[#687873]">Source image expired</span>}</a>
+        <div><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">Submitted by {memberFor(note.submittedBy)?.name ?? 'Former worker'}</p><time className="text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString()}</time></div><label className="mt-3 block text-sm font-semibold">Reviewed note text<textarea name="reviewedText" required defaultValue={note.ocrText} rows={7} className={fieldClass} /></label><div className="mt-3 flex flex-wrap gap-2"><Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><CheckCircle2 className="size-4" aria-hidden="true" />Approve to record</Button><Button type="button" variant="outline" disabled={busy} className="min-h-11 border-[#d7a995] text-[#873d27]" onClick={() => mutate({ action: 'reviewClientNote', submissionId: note.id, decision: 'reject' }, 'Client note rejected.')}><XCircle className="size-4" aria-hidden="true" />Reject</Button></div></div>
+      </form>)}</div> : <EmptyHandoff icon={CheckCircle2} title="Review queue is clear" text="New worker submissions will appear here before they can enter the client record." />}
+    </Card>}
+    <Card className="p-0"><div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-bold"><FileText className="size-5 text-[#287b6f]" aria-hidden="true" />Approved notes</h2><p className="mt-1 text-sm text-[#687873]">The official record includes approved content only.</p></div>{notes.length ? <ol className="divide-y divide-[#e5eae4]">{notes.map((note: any) => <li key={note.id} className="p-5"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold">{memberFor(note.submittedBy)?.name ?? 'Former worker'}</p><StatusBadge status="approved" /></div><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7">{note.body}</p><p className="mt-3 text-xs text-[#687873]">Approved {note.reviewedAt ? new Date(note.reviewedAt).toLocaleString() : ''}{note.editedDuringReview ? ' · Edited during manager review' : ''}</p></li>)}</ol> : <EmptyHandoff icon={FileText} title="No approved notes yet" text="Pending and rejected submissions never appear in the official client record." />}</Card>
+  </>;
 }
 
 function TimeClock({ member, entries, mutate, busy }: any) {
@@ -906,7 +1115,7 @@ function TimeClock({ member, entries, mutate, busy }: any) {
           <p className="text-sm text-[#687873]">{open ? `Clocked in at ${new Date(open.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · ${formatMinutes(elapsed)} so far` : `Tracked today: ${formatMinutes(todayMinutes)}`}</p>
         </div>
       </div>
-      <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? 'Clock out' : 'Clock in'}</Button>
+      <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? <><Check className="size-4" />Clock out</> : <><Clock className="size-4" />Clock in</>}</Button>
     </Card>
   );
 }
@@ -929,6 +1138,12 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
           <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-2xl bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[#bcd9ca]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-[#d8e7df]">completed today</p></div>
         </div>
       </section>
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Metric label="Completed today" value={handoff.completed.length} icon={CheckCircle2} tone="success" />
+        <Metric label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
+        <Metric label="Due today" value={outstanding.length} icon={CalendarDays} />
+        <Metric label="Available to claim" value={state.chores.filter((task: Chore) => task.assignedTo === null && task.status === 'open').length} icon={ClipboardList} />
+      </div>
       <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
         <div className="space-y-6">
           <Card className="p-0">
@@ -946,7 +1161,7 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
             {handoff.latestNotes.length ? <ol className="mt-4 space-y-3">{handoff.latestNotes.map(({ task, ...note }: any) => <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl border border-[#dfe5dc] bg-white p-3 text-left transition hover:border-[#aac3b3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-2 line-clamp-3 block text-sm leading-5 text-[#52645f]">{note.body}</span><time className="mt-2 block text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></button></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoff notes yet" text="Progress and issue notes from your assigned tasks will collect here." compact />}
           </Card>
           <Card>
-            <h2 className="font-bold">Shift snapshot</h2><div className="mt-4 space-y-4">
+            <h2 className="flex items-center gap-2 font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Shift snapshot</h2><div className="mt-4 space-y-4">
               <ProgressRow label="Completed today" value={handoff.completed.length} icon={CheckCircle2} />
               <ProgressRow label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
               <ProgressRow label="Still due today" value={outstanding.length} icon={CalendarDays} />
@@ -1031,9 +1246,9 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
   );
 }
 
-function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
+function TaskDialog({ task, manager, readOnly = false, memberId, workers, busy, onClose, mutate, upload, deletePhoto }: any) {
   if (!task) return null;
-  const editable = !readOnly && (manager || (task.assignedTo && task.status !== 'complete'));
+  const editable = !readOnly && (manager || (task.assignedTo === memberId && task.status !== 'complete'));
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-2xl">
@@ -1054,7 +1269,7 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
               <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={task.reminderLeadDays ?? 1} />
             </div>
             <TextArea label="Instructions" name="instructions" defaultValue={task.instructions} />
-            <Button disabled={busy} className="bg-[#287b6f]">Save task changes</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save task changes</Button>
           </form>
         ) : editable ? (
           <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'updateTask', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)), issueOpen: new FormData(e.currentTarget).get('issueOpen') === 'on' }, 'Task update saved.'); }}>
@@ -1063,11 +1278,11 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
             <TextArea label="Issue or blocker" name="issueReport" defaultValue={task.issueReport} />
             <label className="flex min-h-11 items-center gap-2 text-sm font-semibold"><input type="checkbox" name="issueOpen" defaultChecked={task.issueOpen} />Issue still open</label>
             <Field label="Expected completion" name="expectedCompletionAt" type="datetime-local" defaultValue={task.expectedCompletionAt} />
-            <Button disabled={busy} className="bg-[#287b6f]">Save update</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save update</Button>
           </form>
         ) : null}
         <div className="border-t pt-4">
-          <h3 className="font-bold">Photos</h3>
+          <h3 className="flex items-center gap-2 font-bold"><Camera className="size-5 text-[#287b6f]" aria-hidden="true" />Photos</h3>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {(task.photos ?? []).map((photo: any) => (
               <figure key={photo.id} className="relative overflow-hidden rounded-xl border bg-white">
@@ -1079,30 +1294,31 @@ function TaskDialog({ task, manager, readOnly = false, workers, busy, onClose, m
           {editable && <label className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border px-4 text-sm font-semibold"><Upload className="size-4" />Upload photo<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0], { choreId: task.id })} /></label>}
         </div>
         <div className="border-t pt-4">
-          <h3 className="font-bold">Updates</h3>
+          <h3 className="flex items-center gap-2 font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Updates</h3>
           {(task.notes ?? []).map((note: any) => <p key={note.id} className="mt-2 rounded-xl bg-[#f1f5f1] p-3 text-sm"><Badge>{note.kind}</Badge> {note.body}</p>)}
           {editable && (
             <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); mutate({ action: 'addNote', choreId: task.id, ...Object.fromEntries(new FormData(e.currentTarget)) }, 'Note added.'); e.currentTarget.reset(); }}>
               <select name="kind" className={fieldClass}><option value="progress">Progress</option><option value="issue">Issue</option><option value="completion">Completion</option></select>
               <Input name="body" required placeholder="Add an update" className="min-h-11" />
-              <Button disabled={busy} className="bg-[#287b6f]">Add</Button>
+              <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Add</Button>
             </form>
           )}
         </div>
         <DialogFooter>
           <div className="flex w-full flex-wrap gap-2">
-            {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}>Claim</Button>}
-            {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}>Start</Button>}
-            {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]">Complete</Button>}
+            {!readOnly && task.status === 'open' && !task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'claim', choreId: task.id }, 'Task claimed.')}><UserCheck className="size-4" />Claim</Button>}
+            {!manager && !readOnly && task.assignedTo && task.assignedTo !== memberId && task.status !== 'complete' && <Button disabled={busy} onClick={() => mutate({ action: 'takeover', choreId: task.id }, 'Task is yours now — start it when you are ready.')} className="bg-[#287b6f]"><UserCheck className="size-4" />Take over</Button>}
+            {!readOnly && task.status === 'open' && task.assignedTo && <Button disabled={busy} onClick={() => mutate({ action: 'start', choreId: task.id }, 'Task started.')}><Play className="size-4" />Start</Button>}
+            {!readOnly && task.status === 'in_progress' && <Button disabled={busy} onClick={() => mutate({ action: 'complete', choreId: task.id }, 'Task completed.')} className="bg-[#287b6f]"><Check className="size-4" />Complete</Button>}
             {manager && task.reviewStatus === 'pending' && (
               <>
-                <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]">Approve</Button>
-                <Button variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}>Send back</Button>
+                <Button disabled={busy} onClick={() => mutate({ action: 'approveTask', choreId: task.id }, 'Review approved.')} className="bg-[#287b6f]"><Check className="size-4" />Approve</Button>
+                <Button variant="outline" disabled={busy} onClick={() => mutate({ action: 'reopenTask', choreId: task.id }, 'Sent back for rework.')}><Undo2 className="size-4" />Send back</Button>
               </>
             )}
             {!manager && task.reviewStatus === 'pending' && <span className="self-center text-xs font-semibold text-[#9e6b2e]">Awaiting manager review</span>}
             {!manager && task.reviewStatus === 'approved' && <span className="self-center text-xs font-semibold text-[#216b61]">Approved by the manager</span>}
-            <Button variant="outline" onClick={onClose}>Close</Button>
+            <Button variant="outline" onClick={onClose}><X className="size-4" />Close</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -1132,11 +1348,11 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
           <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
           {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}
-          <Button disabled={busy} className="bg-[#287b6f]">Save profile</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Check className="size-4" />Save profile</Button>
         </form>
         {(manager || certs.length > 0) && (
           <div className="border-t border-[#e5eae4] pt-4">
-            <h3 className="text-sm font-semibold">Certification records</h3>
+            <h3 className="flex items-center gap-2 text-sm font-semibold"><Shield className="size-4 text-[#287b6f]" aria-hidden="true" />Certification records</h3>
             {certs.length ? (
               <ul className="mt-2 space-y-2">
                 {certs.map((cert: any) => {
@@ -1159,7 +1375,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
               <form className="mt-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'saveCertification', memberId: profile.id, ...Object.fromEntries(new FormData(form)) }, 'Certification saved.'); form.reset(); }}>
                 <Input name="name" required maxLength={200} placeholder="e.g. First aid, criminal record check" aria-label="Certification name" className="min-h-11 min-w-0 flex-1" />
                 <Input name="expiresOn" type="date" required aria-label="Expiry date" className="min-h-11 w-40" />
-                <Button disabled={busy} aria-label="Add certification" className="bg-[#287b6f]"><Plus className="size-4" /></Button>
+                <Button type="submit" disabled={busy} aria-label="Add certification" className="bg-[#287b6f]"><Plus className="size-4" /></Button>
               </form>
             )}
           </div>
@@ -1181,12 +1397,12 @@ function CreateDialog({ open, workers, busy, onClose, submit }: any) {
           <Field label="Task title" name="title" required />
           <label className="text-sm font-semibold">Area<select name="area" className={fieldClass}>{areas.map(a => <option key={a}>{a}</option>)}</select></label>
           <div className="grid grid-cols-2 gap-3"><Field label="Due date" name="dueDate" type="date" /><Field label="Due time" name="dueTime" type="time" /></div>
-          <label className="text-sm font-semibold">Priority<select name="priority" className={fieldClass}><option>low</option><option selected value="normal">normal</option><option>high</option><option>urgent</option></select></label>
+          <label className="text-sm font-semibold">Priority<select name="priority" defaultValue="normal" className={fieldClass}><option>low</option><option value="normal">normal</option><option>high</option><option>urgent</option></select></label>
           <TextArea label="Instructions" name="instructions" />
           <label className="text-sm font-semibold">Repeat<select name="recurrence" className={fieldClass}><option value="">Never</option><option>daily</option><option>weekly</option><option>monthly</option></select></label>
           <label className="text-sm font-semibold">Assign to<select name="assigneeId" className={fieldClass}><option value="">Available to claim</option>{workers.filter((w: Member) => w.status === 'active').map((w: Member) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
           <Field label="Reminder lead days" name="reminderLeadDays" type="number" defaultValue={1} />
-          <Button disabled={busy} className="bg-[#287b6f]">Create task</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]"><Plus className="size-4" />Create task</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1220,8 +1436,8 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
           <Field label="Email" name="googleEmail" type="email" required />
           <fieldset className="grid grid-cols-2 gap-2">
             <legend className="sr-only">Sign-in method</legend>
-            <button type="button" onClick={() => setMethod('invite')} aria-pressed={method === 'invite'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'invite' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Invite link</button>
-            <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`min-h-11 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}>Temporary password</button>
+            <button type="button" onClick={() => setMethod('invite')} aria-pressed={method === 'invite'} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${method === 'invite' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}><UserCheck className="size-4" aria-hidden="true" />Invite link</button>
+            <button type="button" onClick={() => setMethod('password')} aria-pressed={method === 'password'} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${method === 'password' ? 'border-[#287b6f] bg-[#e8f1ec] text-[#287b6f]' : 'border-[#dfe5dc] text-[#52645f]'}`}><KeyRound className="size-4" aria-hidden="true" />Temporary password</button>
           </fieldset>
           {method === 'invite' ? (
             <>
@@ -1234,7 +1450,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
               <p className="text-xs text-[#687873]">Use at least 12 characters with upper/lowercase, a number, and a symbol.</p>
             </>
           )}
-          <Button disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? 'Create invite link' : 'Add care worker'}</Button>
+          <Button type="submit" disabled={busy} className="bg-[#287b6f]">{method === 'invite' ? <><UserCheck className="size-4" />Create invite link</> : <><Plus className="size-4" />Add care worker</>}</Button>
         </form>
       </DialogContent>
     </Dialog>
@@ -1255,8 +1471,8 @@ function InviteLinkDialog({ url, onClose }: any) {
         </DialogHeader>
         <Input readOnly value={url} aria-label="Invite link" onFocus={(e) => e.target.select()} className="min-h-11 text-xs" />
         <DialogFooter>
-          <Button variant="outline" onClick={copy} className="min-h-11">{copied ? 'Copied' : 'Copy link'}</Button>
-          <Button onClick={onClose} className="bg-[#287b6f]">Done</Button>
+          <Button variant="outline" onClick={copy} className="min-h-11">{copied ? <><Check className="size-4" />Copied</> : <><Copy className="size-4" />Copy link</>}</Button>
+          <Button onClick={onClose} className="bg-[#287b6f]"><Check className="size-4" />Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1275,7 +1491,7 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
           <form className="grid gap-4" onSubmit={(e) => submit(e, 'resetMemberPassword', 'Temporary password updated.', onClose)}>
             <input type="hidden" name="memberId" value={member.id} />
             <Field label="Temporary password" name="temporaryPassword" type="password" required />
-            <Button disabled={busy} className="bg-[#287b6f]">Reset password</Button>
+            <Button type="submit" disabled={busy} className="bg-[#287b6f]"><KeyRound className="size-4" />Reset password</Button>
           </form>
         )}
       </DialogContent>
@@ -1321,8 +1537,8 @@ function WindowDialog({ worker, windows, action, title, description, busy, onClo
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={busy} onClick={save} className="bg-[#287b6f]">Save shifts</Button>
+          <Button variant="outline" onClick={onClose}><X className="size-4" />Cancel</Button>
+          <Button disabled={busy} onClick={save} className="bg-[#287b6f]"><Check className="size-4" />Save shifts</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -11,6 +11,7 @@ import { credentialForEmail, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
+import { canSendInboxMessage, reviewClientNote, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 
 export type Member = {
   id: string;
@@ -60,6 +61,13 @@ export type Chore = {
 export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
+export type Message = { id: string; memberId: string; body: string; createdAt: string };
+export type ClientNoteSubmission = {
+  id: string; clientMemberId: string; submittedBy: string; sourcePhotoId: string | null; ocrText: string;
+  status: ClientNoteStatus; approvedText: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string;
+};
+export type ClientNote = ClientNoteSubmission & { body: string; editedDuringReview: boolean };
+export type SafetyAlert = InboxItem & { safetyCategory: SafetyCategory; safetyReason: string };
 export type AuditEntry = { id: string; choreId: string | null; actorId: string; action: string; detail: string; createdAt: string };
 export type TaskGroup = { id: 'my-tasks' | 'available-tasks'; title: 'My Tasks' | 'Available Tasks'; tasks: Chore[] };
 export type HouseholdSettings = {
@@ -86,6 +94,11 @@ export type HouseholdState = {
   availability?: Shift[];
   timeEntries?: TimeEntry[];
   certifications?: Certification[];
+  messages?: Message[];
+  clientNotes?: ClientNote[];
+  clientNoteQueue?: ClientNoteSubmission[];
+  inbox?: InboxItem[];
+  safetyAlerts?: SafetyAlert[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -175,7 +188,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
-  const [members, chores, activity, shifts, availability, timeEntries, certifications] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -205,6 +218,9 @@ async function rawState() {
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= datetime('now', '-90 days') ORDER BY started_at DESC`).all<TimeEntry>(),
     db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
+    db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
+    db.prepare(`SELECT id, client_member_id AS clientMemberId, submitted_by AS submittedBy, source_photo_id AS sourcePhotoId, ocr_text AS ocrText, status, approved_text AS approvedText, reviewed_by AS reviewedBy, reviewed_at AS reviewedAt, created_at AS createdAt FROM client_note_submissions ORDER BY created_at DESC`).all<ClientNoteSubmission>(),
+    db.prepare(`SELECT id, worker_id AS workerId, kind, body, submission_id AS submissionId, created_by AS createdBy, safety_category AS safetyCategory, safety_reason AS safetyReason, safety_reviewed_by AS safetyReviewedBy, safety_reviewed_at AS safetyReviewedAt, created_at AS createdAt FROM worker_inbox_items ORDER BY created_at DESC LIMIT 300`).all<InboxItem>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -215,7 +231,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -224,13 +240,23 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
   if (!viewer) throw new Error('Household access denied.');
   const today = new Date().toISOString().slice(0, 10);
   const defaultLeadDays = state.settings.reminderDefaultLeadDays;
+  const clientNotes: ClientNote[] = state.clientNoteSubmissions
+    .filter((note) => note.status === 'approved' && note.approvedText)
+    .map((note) => ({ ...note, body: note.approvedText as string, editedDuringReview: note.approvedText !== note.ocrText }));
   const remindersFor = (chores: Chore[]) =>
     chores.filter((chore) => {
       if (chore.status === 'complete' || !chore.dueDate) return false;
       const lead = chore.reminderLeadDays ?? defaultLeadDays;
       return chore.dueDate <= addDaysISO(today, lead);
     });
-  if (viewer.role === 'manager') return { viewer: { id: viewer.id, role: viewer.role }, ...state, metrics: metrics(state.chores, today), reminders: remindersFor(state.chores) };
+  if (viewer.role === 'manager') return {
+    viewer: { id: viewer.id, role: viewer.role }, ...state,
+    clientNotes,
+    clientNoteQueue: state.clientNoteSubmissions.filter((note) => note.status === 'pending'),
+    inbox: visibleInbox(viewer.role, viewer.id, state.inboxItems),
+    safetyAlerts: visibleSafetyAlerts(viewer.role, state.inboxItems) as SafetyAlert[],
+    metrics: metrics(state.chores, today), reminders: remindersFor(state.chores),
+  };
   if (viewer.role === 'viewer') {
     // Family viewers see the care plan and schedule, but not care workers' private details, audit data, or settings.
     const people: Member[] = state.members.map((item) => ({
@@ -252,7 +278,16 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
   };
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id) };
+  // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
+  const roster: Member[] = state.members
+    .filter((item) => item.id !== viewer.id && item.role !== 'viewer')
+    .map((item) => ({
+      id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
+      createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
+      certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+    }));
+  const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox };
 }
 
 async function generateRecurringTasks() {
@@ -300,7 +335,7 @@ async function generateRecurringTasks() {
 
 async function cleanupExpiredUploads() {
   const settings = await getHouseholdSettings();
-  const root = resolve(process.env.UPLOAD_PATH || '/data/uploads');
+  const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - Math.max(1, Math.min(365, settings.retentionDays)));
   const db = getD1();
@@ -312,7 +347,7 @@ async function cleanupExpiredUploads() {
     try {
       const path = resolve(root, row.storedName);
       if (path.startsWith(`${root}\\`) || path.startsWith(`${root}/`)) {
-        if (existsSync(path)) await unlink(path);
+        if (existsSync(/* turbopackIgnore: true */ path)) await unlink(path);
       }
     } catch {
       // best-effort cleanup
@@ -389,6 +424,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'deleteTimeEntry',
     'saveCertification',
     'deleteCertification',
+    'reviewClientNote',
+    'acknowledgeSafetyAlert',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -436,6 +473,67 @@ export async function mutateHousehold(input: Record<string, unknown>) {
         .run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('That task changed before your update. Refresh and try again.');
     await activity(choreId, actorId, action === 'complete' ? 'completed' : action === 'start' ? 'started' : 'claimed', `${action === 'complete' ? 'finished' : action === 'start' ? 'started' : 'claimed'} ${chore.title}`, now).run();
+  } else if (action === 'takeover') {
+    const choreId = requiredString(input.choreId, 'Chore');
+    const chore = await db.prepare('SELECT title, status, assigned_to AS assignedTo FROM chores WHERE id=?').bind(choreId).first<Chore>();
+    if (!chore || chore.status === 'complete') throw new Error('That task is already complete.');
+    if (chore.assignedTo === actorId) throw new Error('That task is already yours.');
+    if (!chore.assignedTo) throw new Error('That task is unassigned — claim it instead.');
+    if (actor.role === 'worker' && !workerCan('takeover', actorId, chore)) throw new Error('You can only take over unfinished tasks.');
+    const previous = await db.prepare('SELECT name FROM members WHERE id=?').bind(chore.assignedTo).first<{ name: string }>();
+    await db.batch([
+      db.prepare("UPDATE chores SET assigned_to=?, status='open', started_at=NULL WHERE id=? AND status!='complete'").bind(actorId, choreId),
+      db.prepare('INSERT INTO task_notes(id,chore_id,member_id,kind,body,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(), choreId, actorId, 'progress', `Took over${previous ? ` from ${previous.name}` : ''}`, now),
+      activity(choreId, actorId, 'took_over', `took over ${chore.title}`, now),
+    ]);
+  } else if (action === 'postMessage') {
+    const body = requiredString(input.body, 'Message').slice(0, 1000);
+    await db.batch([
+      db.prepare('INSERT INTO messages(id,member_id,body,created_at) VALUES(?,?,?,?)').bind(crypto.randomUUID(), actorId, body, now),
+      activity(null, actorId, 'posted_message', body.slice(0, 200), now),
+    ]);
+  } else if (action === 'sendInboxMessage') {
+    const recipientId = requiredString(input.recipientId, 'Recipient');
+    const body = requiredString(input.body, 'Message').slice(0, 1000);
+    const recipient = await db
+      .prepare(`SELECT m.id, m.role, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=?`)
+      .bind(recipientId)
+      .first<{ id: string; role: Role; status: AccountStatus }>();
+    if (!recipient || !canSendInboxMessage(actor.role, actor.id, recipient)) throw new Error('You cannot message that team member.');
+    const triage = triageInboxMessage(body);
+    const messageId = crypto.randomUUID();
+    const statements = [
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,safety_category,safety_reason,created_at) VALUES(?,'default',?,?,?,NULL,?,?,?,?)`)
+        .bind(messageId, recipientId, actor.role === 'manager' ? 'manager_message' : 'direct_message', body, actorId, triage?.category ?? null, triage?.reason ?? null, now),
+      activity(null, actorId, 'sent_inbox_message', `sent a monitored inbox message to ${recipientId}`, now),
+    ];
+    if (triage) statements.push(activity(null, actorId, 'safety_alert_created', `advisory ${triage.category} alert for inbox message ${messageId}`, now));
+    await db.batch(statements);
+  } else if (action === 'reviewClientNote') {
+    const submissionId = requiredString(input.submissionId, 'Client note');
+    const decision = input.decision === 'approve' ? 'approve' : input.decision === 'reject' ? 'reject' : '';
+    if (!decision) throw new Error('Choose approve or reject.');
+    const note = await db.prepare(`SELECT status, submitted_by AS submittedBy FROM client_note_submissions WHERE id=? AND household_id='default'`)
+      .bind(submissionId).first<{ status: ClientNoteStatus; submittedBy: string }>();
+    if (!note) throw new Error('Client note not found.');
+    const review = reviewClientNote(note.status, decision, input.reviewedText);
+    const [result] = await db.batch([
+      db.prepare(`UPDATE client_note_submissions SET status=?, approved_text=?, reviewed_by=?, reviewed_at=? WHERE id=? AND status='pending'`)
+        .bind(review.status, review.approvedText, actorId, now, submissionId),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at)
+        SELECT ?,'default',?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM client_note_submissions WHERE id=? AND reviewed_by=? AND reviewed_at=?)`)
+        .bind(crypto.randomUUID(), note.submittedBy, review.status === 'approved' ? 'client_note_approved' : 'client_note_rejected', review.status === 'approved' ? 'Your client note was approved and added to the client record.' : 'Your client note was rejected and was not added to the client record.', submissionId, actorId, now, submissionId, actorId, now),
+      db.prepare(`INSERT INTO activity(id,chore_id,member_id,action,detail,created_at)
+        SELECT ?,NULL,?,?,?,? WHERE EXISTS (SELECT 1 FROM client_note_submissions WHERE id=? AND reviewed_by=? AND reviewed_at=?)`)
+        .bind(crypto.randomUUID(), actorId, review.status === 'approved' ? 'approved_client_note' : 'rejected_client_note', `${review.status} client note ${submissionId}`, now, submissionId, actorId, now),
+    ]);
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That client note has already been reviewed.');
+  } else if (action === 'acknowledgeSafetyAlert') {
+    const messageId = requiredString(input.messageId, 'Alert');
+    const result = await db.prepare(`UPDATE worker_inbox_items SET safety_reviewed_by=?, safety_reviewed_at=? WHERE id=? AND household_id='default' AND safety_category IS NOT NULL AND safety_reviewed_at IS NULL`)
+      .bind(actorId, now, messageId).run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That safety alert is unavailable or already reviewed.');
+    await activity(null, actorId, 'safety_alert_reviewed', `reviewed advisory alert for inbox message ${messageId}`, now).run();
   } else if (action === 'addNote') {
     const choreId = requiredString(input.choreId, 'Task');
     const kind = ['progress', 'completion', 'issue'].includes(String(input.kind)) ? String(input.kind) : '';
@@ -688,10 +786,12 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       .bind(uploadId)
       .first<{ storedName: string; uploadedBy: string; choreId: string | null; assignedTo: string | null }>();
     if (!upload) throw new Error('Upload not found.');
+    const clientNote = await db.prepare('SELECT id FROM client_note_submissions WHERE source_photo_id=?').bind(uploadId).first<{ id: string }>();
+    if (clientNote) throw new Error('Client note source images are retained with their review record.');
     if (actor.role !== 'manager' && actor.id !== upload.uploadedBy && upload.assignedTo !== actor.id) throw new Error('Only the manager or the upload owner can remove this.');
-    const root = resolve(process.env.UPLOAD_PATH || '/data/uploads');
+    const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
     const path = resolve(root, upload.storedName);
-    if ((path.startsWith(`${root}\\`) || path.startsWith(`${root}/`)) && existsSync(path)) await unlink(path);
+    if ((path.startsWith(`${root}\\`) || path.startsWith(`${root}/`)) && existsSync(/* turbopackIgnore: true */ path)) await unlink(path);
     await db.prepare('DELETE FROM proof_photos WHERE id=?').bind(uploadId).run();
     await db.prepare('UPDATE members SET profile_photo_id=NULL WHERE profile_photo_id=?').bind(uploadId).run();
     await activity(null, actorId, 'deleted_upload', `deleted upload ${uploadId}`, now).run();
@@ -754,7 +854,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
 }
 
 export function uploadRoot(): string {
-  return resolve(process.env.UPLOAD_PATH || '/data/uploads');
+  return resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
 }
 
 export function safeUploadPath(root: string, storedName: string): string | null {

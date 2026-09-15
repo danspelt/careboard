@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { authenticatedAccess } from '@/lib/auth-access';
 import { trustedMutationOrigin } from '@/lib/auth-config';
 import { getD1 } from '@/db';
+import { canViewClientNoteImage, type ClientNoteStatus } from '@/lib/client-notes';
 
 export const runtime = 'nodejs';
 
@@ -14,13 +15,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const photo = await getD1()
     .prepare(
       `SELECT p.stored_name AS storedName, p.mime_type AS mimeType, p.uploaded_by AS uploadedBy,
-              p.chore_id AS choreId, p.profile_member_id AS profileMemberId, c.assigned_to AS assignedTo
+              p.chore_id AS choreId, p.profile_member_id AS profileMemberId, c.assigned_to AS assignedTo,
+              n.submitted_by AS noteSubmittedBy, n.status AS noteStatus
         FROM proof_photos p
         LEFT JOIN chores c ON c.id=p.chore_id
+        LEFT JOIN client_note_submissions n ON n.source_photo_id=p.id
         WHERE p.id=?`,
     )
     .bind(id)
-    .first<{ storedName: string; mimeType: string; uploadedBy: string; choreId: string | null; profileMemberId: string | null; assignedTo: string | null }>();
+    .first<{ storedName: string; mimeType: string; uploadedBy: string; choreId: string | null; profileMemberId: string | null; assignedTo: string | null; noteSubmittedBy: string | null; noteStatus: ClientNoteStatus | null }>();
 
   if (!photo) return new Response(null, { status: 404 });
 
@@ -30,12 +33,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const isProfileOwner = photo.profileMemberId === access.memberId;
   // Family viewers can see task photos (part of the care plan) but not profile photos.
   const isViewerTaskPhoto = access.role === 'viewer' && Boolean(photo.choreId);
+  const isVisibleClientNote = photo.noteSubmittedBy && photo.noteStatus
+    ? canViewClientNoteImage(access.role, access.memberId, photo.noteSubmittedBy, photo.noteStatus)
+    : false;
 
-  if (!isManager && !isOwner && !isTaskOwner && !isProfileOwner && !isViewerTaskPhoto) {
+  if (!isManager && !isOwner && !isTaskOwner && !isProfileOwner && !isViewerTaskPhoto && !isVisibleClientNote) {
     return new Response(null, { status: 404 });
   }
 
-  const root = resolve(process.env.UPLOAD_PATH || '/data/uploads');
+  const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
   const path = resolve(root, photo.storedName);
   if (!path.startsWith(`${root}\\`) && !path.startsWith(`${root}/`)) {
     return new Response(null, { status: 404 });
@@ -45,7 +51,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    const file = await readFile(path);
+    const file = await readFile(/* turbopackIgnore: true */ path);
     return new Response(file, {
       headers: {
         'Content-Type': photo.mimeType,
@@ -66,15 +72,18 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   const db = getD1();
   const photo = await db
     .prepare(
-      `SELECT p.stored_name AS storedName, p.uploaded_by AS uploadedBy, p.chore_id AS choreId, c.assigned_to AS assignedTo
+      `SELECT p.stored_name AS storedName, p.uploaded_by AS uploadedBy, p.chore_id AS choreId, c.assigned_to AS assignedTo,
+              n.id AS clientNoteId
         FROM proof_photos p
         LEFT JOIN chores c ON c.id=p.chore_id
+        LEFT JOIN client_note_submissions n ON n.source_photo_id=p.id
         WHERE p.id=?`,
     )
     .bind(id)
-    .first<{ storedName: string; uploadedBy: string; choreId: string | null; assignedTo: string | null }>();
+    .first<{ storedName: string; uploadedBy: string; choreId: string | null; assignedTo: string | null; clientNoteId: string | null }>();
 
   if (!photo) return new Response(null, { status: 404 });
+  if (photo.clientNoteId) return new Response(null, { status: 409 });
   const isManager = access.role === 'manager';
   const isOwner = photo.uploadedBy === access.memberId;
   const isTaskOwner = photo.choreId && photo.assignedTo === access.memberId;
@@ -82,9 +91,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     return new Response(null, { status: 403 });
   }
 
-  const root = resolve(process.env.UPLOAD_PATH || '/data/uploads');
+  const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
   const path = resolve(root, photo.storedName);
-  if ((path.startsWith(`${root}\\`) || path.startsWith(`${root}/`)) && existsSync(path)) {
+  if ((path.startsWith(`${root}\\`) || path.startsWith(`${root}/`)) && existsSync(/* turbopackIgnore: true */ path)) {
     await unlink(path);
   }
 
