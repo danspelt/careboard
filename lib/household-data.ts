@@ -164,7 +164,7 @@ export async function acceptInvite(token: string, password: string) {
 
 export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   const db = getD1();
-  await db.prepare("INSERT OR IGNORE INTO household_settings (household_id) VALUES ('default')").run();
+  await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
       "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
@@ -188,6 +188,7 @@ async function rawState() {
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
+  const cutoff = db.dialect === 'postgres' ? "(NOW() - INTERVAL '90 days')::TEXT" : "datetime('now', '-90 days')";
   const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems] = await Promise.all([
     db
       .prepare(
@@ -216,7 +217,7 @@ async function rawState() {
     db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, action, detail, created_at AS createdAt FROM activity ORDER BY created_at DESC LIMIT 60`).all<ActivityItem>(),
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
-    db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= datetime('now', '-90 days') ORDER BY started_at DESC`).all<TimeEntry>(),
+    db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= ${cutoff} ORDER BY started_at DESC`).all<TimeEntry>(),
     db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
     db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
     db.prepare(`SELECT id, client_member_id AS clientMemberId, submitted_by AS submittedBy, source_photo_id AS sourcePhotoId, ocr_text AS ocrText, status, approved_text AS approvedText, reviewed_by AS reviewedBy, reviewed_at AS reviewedAt, created_at AS createdAt FROM client_note_submissions ORDER BY created_at DESC`).all<ClientNoteSubmission>(),
@@ -300,11 +301,12 @@ async function generateRecurringTasks() {
     .prepare(`SELECT id, title, area, due_date, due_time, created_by, assigned_to, priority, instructions, recurrence, reminder_lead_days FROM chores WHERE recurrence IS NOT NULL AND recurrence_parent_id IS NULL AND due_date IS NOT NULL`)
     .all<Record<string, string | number | null>>();
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO chores(
+    `INSERT INTO chores(
       id, title, area, due_date, due_time, status, created_by, assigned_to, completed_by,
       created_at, completed_at, started_at, priority, instructions, recurrence, recurrence_parent_id,
       recurrence_date, progress_notes, completion_notes, issue_report, issue_open, reminder_lead_days
-    ) VALUES(?,?,?,?,?,'open',?,?,NULL,?,NULL,NULL,?,?,NULL,?,?,'','','',0,?)`,
+    ) VALUES(?,?,?,?,?,'open',?,?,NULL,?,NULL,NULL,?,?,NULL,?,?,'','','',0,?)
+    ON CONFLICT (recurrence_parent_id, recurrence_date) WHERE recurrence_parent_id IS NOT NULL DO NOTHING`,
   );
   for (const source of sources.results) {
     let date = source.due_date as string;

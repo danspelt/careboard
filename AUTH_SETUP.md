@@ -27,7 +27,11 @@ Managers can set another temporary password, disable a worker, or reactivate one
 
 Workers receive only their own assigned tasks (including completed history) and unassigned open tasks. They never receive the roster, other workers' tasks, or unrelated activity. Workers may atomically claim an unassigned open task, start only their own assigned open task, and complete only their own in-progress task. Managers retain full task and account control.
 
-Run database migrations before production startup. The local SQLite adapter applies migrations automatically.
+Run database migrations before production startup. The SQLite and PostgreSQL adapters apply migrations automatically.
+
+## PostgreSQL (recommended for production)
+
+Set `DATABASE_URL` to a PostgreSQL connection string (e.g. `postgresql://careboard:password@db:5432/careboard`). When `DATABASE_URL` is set, `DATABASE_PATH` is ignored and the app uses PostgreSQL. The docker-compose.yml in the repository provides a ready-to-use PostgreSQL + CareBoard setup. Migrations apply automatically on startup.
 
 ## Coolify persistence
 

@@ -1,10 +1,26 @@
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { Pool, type PoolClient } from 'pg';
 
 type RunResult = { meta: { changes: number } };
+type AllResult<T> = { results: T[] };
 
-class BoundStatement {
+export interface DatabaseBoundStatement {
+  bind(...parameters: unknown[]): DatabaseBoundStatement;
+  first<T>(): Promise<T | undefined>;
+  all<T>(): Promise<AllResult<T>>;
+  run(): Promise<RunResult>;
+  runSync(): RunResult;
+}
+
+export interface DatabaseAdapter {
+  readonly dialect: 'sqlite' | 'postgres';
+  prepare(sql: string): DatabaseBoundStatement;
+  batch(statements: DatabaseBoundStatement[]): Promise<RunResult[]>;
+}
+
+class BoundStatement implements DatabaseBoundStatement {
   private parameters: unknown[] = [];
 
   constructor(private readonly statement: Database.Statement) {}
@@ -32,20 +48,104 @@ class BoundStatement {
   }
 }
 
-class SqliteAdapter {
+class SqliteAdapter implements DatabaseAdapter {
+  readonly dialect = 'sqlite' as const;
+
   constructor(private readonly database: Database.Database) {}
 
   prepare(sql: string) {
     return new BoundStatement(this.database.prepare(sql));
   }
 
-  async batch(statements: BoundStatement[]) {
+  async batch(statements: DatabaseBoundStatement[]) {
     const execute = this.database.transaction(() => statements.map((statement) => statement.runSync()));
     return execute();
   }
 }
 
-let adapter: SqliteAdapter | undefined;
+class PgBoundStatement implements DatabaseBoundStatement {
+  private parameters: unknown[] = [];
+  private readonly sql: string;
+
+  constructor(
+    sql: string,
+    private readonly pool: Pool,
+    private readonly ready: Promise<void>,
+  ) {
+    let parameterIndex = 0;
+    this.sql = sql
+      .replace(/\bAS\s+([a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*)\b/gi, 'AS "$1"')
+      .replace(/\?/g, () => `$${++parameterIndex}`);
+  }
+
+  bind(...parameters: unknown[]) {
+    this.parameters = parameters;
+    return this;
+  }
+
+  async first<T>() {
+    await this.ready;
+    const { rows } = await this.pool.query<T & Record<string, unknown>>(this.sql, this.parameters);
+    return rows[0] as T | undefined;
+  }
+
+  async all<T>() {
+    await this.ready;
+    const { rows } = await this.pool.query<T & Record<string, unknown>>(this.sql, this.parameters);
+    return { results: rows as T[] };
+  }
+
+  async run(): Promise<RunResult> {
+    await this.ready;
+    const result = await this.pool.query(this.sql, this.parameters);
+    return { meta: { changes: result.rowCount ?? 0 } };
+  }
+
+  runSync(): RunResult {
+    throw new Error('PostgreSQL does not support synchronous queries');
+  }
+
+  async runWithClient(client: PoolClient): Promise<RunResult> {
+    const result = await client.query(this.sql, this.parameters);
+    return { meta: { changes: result.rowCount ?? 0 } };
+  }
+}
+
+class PostgresAdapter implements DatabaseAdapter {
+  readonly dialect = 'postgres' as const;
+
+  constructor(
+    private readonly pool: Pool,
+    private readonly ready: Promise<void>,
+  ) {}
+
+  prepare(sql: string) {
+    return new PgBoundStatement(sql, this.pool, this.ready);
+  }
+
+  async batch(statements: DatabaseBoundStatement[]) {
+    await this.ready;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const results: RunResult[] = [];
+      for (const statement of statements) {
+        if (!(statement instanceof PgBoundStatement)) throw new Error('PostgreSQL batch received an incompatible statement');
+        results.push(await statement.runWithClient(client));
+      }
+      await client.query('COMMIT');
+      return results;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+let adapter: DatabaseAdapter | undefined;
+let pgReady: Promise<void> | null = null;
 
 function runMigrations(database: Database.Database) {
   database.exec(`
@@ -73,15 +173,48 @@ function runMigrations(database: Database.Database) {
   database.pragma('optimize');
 }
 
-export function getD1() {
+async function runPostgresMigrations(pool: Pool) {
+  await pool.query('CREATE TABLE IF NOT EXISTS _careboard_migrations (id TEXT PRIMARY KEY NOT NULL, applied_at TEXT NOT NULL)');
+  const migrationId = '0000_full_schema';
+  const { rows } = await pool.query('SELECT id FROM _careboard_migrations WHERE id = $1', [migrationId]);
+  if (rows.length > 0) return;
+  const migrationPath = join(process.cwd(), 'drizzle', 'pg', `${migrationId}.sql`);
+  if (!existsSync(migrationPath)) throw new Error(`PostgreSQL migration missing: ${migrationPath}`);
+  const sql = readFileSync(migrationPath, 'utf8');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const statements = sql
+      .split('--> statement-breakpoint')
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    for (const statement of statements) await client.query(statement);
+    await client.query('INSERT INTO _careboard_migrations (id, applied_at) VALUES ($1, $2)', [migrationId, new Date().toISOString()]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export function getD1(): DatabaseAdapter {
   if (adapter) return adapter;
-  const databasePath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'careboard.db');
-  mkdirSync(dirname(databasePath), { recursive: true });
-  const database = new Database(databasePath);
-  database.pragma('journal_mode = WAL');
-  database.pragma('foreign_keys = ON');
-  database.pragma('busy_timeout = 5000');
-  runMigrations(database);
-  adapter = new SqliteAdapter(database);
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl && (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://'))) {
+    const pool = new Pool({ connectionString: databaseUrl });
+    pgReady = runPostgresMigrations(pool);
+    adapter = new PostgresAdapter(pool, pgReady);
+  } else {
+    const databasePath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'careboard.db');
+    mkdirSync(dirname(databasePath), { recursive: true });
+    const database = new Database(databasePath);
+    database.pragma('journal_mode = WAL');
+    database.pragma('foreign_keys = ON');
+    database.pragma('busy_timeout = 5000');
+    runMigrations(database);
+    adapter = new SqliteAdapter(database);
+  }
   return adapter;
 }

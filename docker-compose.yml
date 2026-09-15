@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: careboard
+      POSTGRES_USER: careboard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-careboard_local_dev}
+    volumes:
+      - careboard-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U careboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://careboard:${POSTGRES_PASSWORD:-careboard_local_dev}@db:5432/careboard
+      UPLOAD_PATH: /data/uploads
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL}
+      CAREBOARD_OWNER_EMAIL: ${CAREBOARD_OWNER_EMAIL}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+    volumes:
+      - careboard-uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  careboard-pgdata:
+  careboard-uploads:

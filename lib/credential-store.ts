@@ -10,7 +10,10 @@ export async function ensureCredentialTables() {
     must_change_password INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL
   )`).run();
-  const columns = await db.prepare('PRAGMA table_info(auth_credentials)').all<{ name: string }>();
+  const columnQuery = db.dialect === 'postgres'
+    ? "SELECT column_name AS name FROM information_schema.columns WHERE table_name = 'auth_credentials'"
+    : 'PRAGMA table_info(auth_credentials)';
+  const columns = await db.prepare(columnQuery).all<{ name: string }>();
   if (!columns.results.some((column) => column.name === 'must_change_password')) {
     await db.prepare('ALTER TABLE auth_credentials ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 1').run();
   }
