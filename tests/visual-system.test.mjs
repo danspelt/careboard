@@ -23,9 +23,10 @@ test('dashboard surfaces use the shared visual system hooks', () => {
 test('authentication routes share polished panel and control styles', () => {
   const signIn = source('app/sign-in/page.tsx');
   const changePassword = source('app/change-password/page.tsx');
+  const authUi = source('app/auth-ui.tsx');
   for (const className of ['auth-shell', 'auth-panel', 'auth-control', 'auth-submit']) {
-    assert.ok(signIn.includes(className), `sign-in must use ${className}`);
-    assert.ok(changePassword.includes(className), `change-password must use ${className}`);
+    assert.ok(signIn.includes(className) || authUi.includes(className), `sign-in must use ${className}`);
+    assert.ok(changePassword.includes(className) || authUi.includes(className), `change-password must use ${className}`);
   }
 });
 

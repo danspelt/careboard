@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { KeyRound } from 'lucide-react';
 import { changePassword, logOut } from '@/app/actions/auth';
+import { PasswordField, SubmitButton } from '@/app/auth-ui';
 import { authenticatedAccess } from '@/lib/auth-access';
 
 export const dynamic = 'force-dynamic';
@@ -18,11 +19,10 @@ export default async function ChangePassword({ searchParams }: { searchParams: P
     <h1 className="text-3xl font-semibold tracking-tight">Choose a new password</h1>
     <p className="mt-3 text-sm text-[#64746f]">Replace the temporary password before using CareBoard.</p>
     <form action={changePassword} className="mt-6 grid gap-4">
-      <label className="grid gap-2 text-sm font-semibold">New password<input className="auth-control font-normal" name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
-      <label className="grid gap-2 text-sm font-semibold">Confirm password<input className="auth-control font-normal" name="confirmation" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
-      <p className="text-xs leading-5 text-[#64746f]">Use 12–128 characters with uppercase, lowercase, a number, and a symbol.</p>
+      <PasswordField name="password" label="New password" minLength={12} maxLength={128} autoComplete="new-password" showRules />
+      <PasswordField name="confirmation" label="Confirm password" minLength={12} maxLength={128} autoComplete="new-password" />
       {error && <p role="alert" className="text-sm text-[#934c37]">Passwords must match and meet the requirements.</p>}
-      <button className="auth-submit p-3" type="submit">Save password</button>
+      <SubmitButton pendingLabel="Saving…">Save password</SubmitButton>
     </form>
     <form action={logOut} className="mt-4"><button className="text-sm font-semibold text-[#287b6f]">Sign out</button></form>
   </section></main>;

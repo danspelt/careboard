@@ -2,6 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { KeyRound, TriangleAlert } from 'lucide-react';
 import { acceptInviteAction } from '@/app/actions/invite';
+import { PasswordField, SubmitButton } from '@/app/auth-ui';
 import { inviteForToken } from '@/lib/household-data';
 
 export const dynamic = 'force-dynamic';
@@ -17,14 +18,14 @@ export default async function AcceptInvite({ searchParams }: { searchParams: Pro
           <>
             <span className="mb-4 grid size-12 place-items-center rounded-2xl bg-[#e7f0ec] text-[#287b6f]"><KeyRound className="size-5" aria-hidden="true" /></span>
             <h1 className="text-3xl font-semibold tracking-tight">Welcome, {invite.name}</h1>
+            <p className="mt-1 text-sm text-[#64746f]">Activating the account for {invite.email}</p>
             <p className="mt-3 text-sm text-[#64746f]">You’ve been invited to join the household care team. Choose a password to activate your account.</p>
             <form action={acceptInviteAction} className="mt-6 grid gap-4">
               <input type="hidden" name="token" value={token} />
-              <label className="grid gap-2 text-sm font-semibold">Choose a password<input className="auth-control font-normal" name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
-              <label className="grid gap-2 text-sm font-semibold">Confirm password<input className="auth-control font-normal" name="confirmation" type="password" required minLength={12} maxLength={128} autoComplete="new-password" /></label>
-              <p className="text-xs leading-5 text-[#64746f]">Use 12–128 characters with uppercase, lowercase, a number, and a symbol.</p>
+              <PasswordField name="password" label="Choose a password" minLength={12} maxLength={128} autoComplete="new-password" showRules />
+              <PasswordField name="confirmation" label="Confirm password" minLength={12} maxLength={128} autoComplete="new-password" />
               {error && <p role="alert" className="text-sm text-[#934c37]">Passwords must match and meet the requirements.</p>}
-              <button className="auth-submit p-3" type="submit">Activate account</button>
+              <SubmitButton pendingLabel="Activating…">Activate account</SubmitButton>
             </form>
           </>
         ) : (
