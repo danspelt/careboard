@@ -18,10 +18,12 @@ import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
-import { formatShift, shiftsForDay } from '@/lib/shifts';
+import { formatShift, shiftsForDay, weekdayOf } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
 import { fundingSummary } from '@/lib/funding';
 import { certDaysLeft, certStatus, certificationAlerts } from '@/lib/certifications';
+import { addDaysISO } from '@/lib/operations';
+import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -198,7 +200,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
+            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} />
           ) : (
@@ -324,7 +326,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
+function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
   if (section === 'tasks') {
@@ -430,6 +432,24 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
+  const homeNow = new Date();
+  const nowTime = homeNow.toTimeString().slice(0, 5);
+  const nowStamp = homeNow.toISOString();
+  const attendance = buildAttendance({ workers: command.activeWorkers, shifts: state.shifts ?? [], entries: state.timeEntries ?? [], date: today(), nowTime, now: nowStamp });
+  const onDutyCount = attendance.filter((row) => row.status === 'on_duty' || row.status === 'unscheduled_on_duty').length;
+  const lateCount = attendance.filter((row) => row.status === 'late').length;
+  const homeFunding = fundingSummary({
+    entries: state.timeEntries ?? [],
+    workers: workers.map((worker: Member) => ({ id: worker.id, hourlyRate: worker.hourlyRate })),
+    fundedHoursMonthly: state.settings?.fundedHoursMonthly ?? 0,
+    fundingHourlyRate: state.settings?.fundingHourlyRate ?? 0,
+    month: today().slice(0, 7),
+  });
+  const fundedConfigured = homeFunding.fundedMinutes > 0;
+  const fundedPct = fundedConfigured ? Math.min(999, Math.round((homeFunding.usedMinutes / homeFunding.fundedMinutes) * 100)) : 0;
+  const fundedOverPace = fundedConfigured && homeFunding.projectedMinutes > homeFunding.fundedMinutes;
+  const safetyCount = (state.safetyAlerts ?? []).filter((alert: any) => !alert.safetyReviewedAt).length;
+  const clientNoteCount = (state.clientNoteQueue ?? []).filter((note: any) => note.status === 'pending').length;
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
   const proofPhotos = state.chores
     .flatMap((task: Chore) => (task.photos ?? []).map((photo: any) => ({ ...photo, task })))
@@ -439,11 +459,42 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
     <>
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Metric label="Active care workers" value={command.activeWorkers.length} icon={Users} />
+        <Metric label="On duty now" value={onDutyCount} icon={Clock} tone={lateCount > 0 ? 'caution' : 'neutral'} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
         <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
-        <Metric label="Completed today" value={command.completedToday} icon={Check} tone="success" />
+        <Metric label="Funded hours used" value={fundedConfigured ? `${fundedPct}%` : '—'} icon={CircleDollarSign} tone={fundedOverPace ? 'caution' : 'neutral'} />
       </div>
+      {(safetyCount + clientNoteCount + command.awaitingReview.length) > 0 && (
+        <Card className="mt-6">
+          <h2 className="flex items-center gap-2 text-lg font-bold"><ShieldAlert className="size-5 text-[#b4532a]" aria-hidden="true" />Needs your decision</h2>
+          <p className="text-sm text-[#687873]">Items only the household manager can resolve</p>
+          <div className="mt-4 space-y-2">
+            {safetyCount > 0 && (
+              <button onClick={() => setSection('messages')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2b69f] bg-[#fff8f4] p-3 text-left text-[#8f3f25] transition hover:border-[#cf9873]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f8e9dc]"><ShieldAlert className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Safety alerts to review</span>
+                <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold">{safetyCount}</span>
+                <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+              </button>
+            )}
+            {clientNoteCount > 0 && (
+              <button onClick={() => setSection('client')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><ScanLine className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Client notes awaiting approval</span>
+                <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{clientNoteCount}</span>
+                <ChevronRight className="size-4 shrink-0 text-[#687873]" aria-hidden="true" />
+              </button>
+            )}
+            {command.awaitingReview.length > 0 && (
+              <div className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Shield className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Completions awaiting your review</span>
+                <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{command.awaitingReview.length}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.85fr)]">
         <Card className="p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#287b6f]" aria-hidden="true" />Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
@@ -451,14 +502,34 @@ function ManagerView({ section, state, workers, open, dueToday, setTask, setProf
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
         <Card className="manager-coverage">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s coverage</h2><p className="text-sm text-[#687873]">Active care workers and assigned workload</p>
-          <div className="mt-4 space-y-3">{command.coverage.length ? command.coverage.map((coverage) => { const worker = workers.find((item: Member) => item.id === coverage.workerId); if (!worker) return null; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s attendance</h2><p className="text-sm text-[#687873]">Shift status and workload for each active care worker</p>
+          <div className="mt-4 space-y-3">{attendance.length ? attendance.map((row) => { const worker = workers.find((item: Member) => item.id === row.workerId); if (!worker) return null; const coverage = command.coverage.find((item: any) => item.workerId === row.workerId) ?? { dueToday: 0, inProgress: 0, overdue: 0 }; const pillClass = row.status === 'late' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : row.status === 'on_duty' || row.status === 'unscheduled_on_duty' ? 'bg-[#e4f0e8] text-[#25654f]' : row.status === 'upcoming' ? 'bg-[#eef2ec] text-[#52645f]' : 'bg-[#f1f5f1] text-[#687873]'; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{worker.name}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{attendanceLabel(row)}</span></span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
           <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
             <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
             <Button type="submit" disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
           </form>
         </Card>
       </div>
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />CSIL funding — this month</h2>
+        {fundedConfigured ? (
+          <>
+            <p className="mt-2 text-sm text-[#687873]">{formatMinutes(homeFunding.usedMinutes)} of {formatMinutes(homeFunding.fundedMinutes)} funded hours used · projected {formatMinutes(homeFunding.projectedMinutes)}</p>
+            <progress
+              value={Math.round(Math.min(100, (homeFunding.usedMinutes / homeFunding.fundedMinutes) * 100))}
+              max={100}
+              aria-label="Share of funded hours used"
+              className={`mt-4 h-3 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#eef2ec] [&::-webkit-progress-value]:rounded-full ${fundedOverPace ? '[&::-moz-progress-bar]:bg-[#b4532a] [&::-webkit-progress-value]:bg-[#b4532a]' : '[&::-moz-progress-bar]:bg-[#287b6f] [&::-webkit-progress-value]:bg-[#287b6f]'}`}
+            />
+            <div className="mt-4"><Button variant="outline" size="sm" onClick={() => setSection('more')}>Open funding details</Button></div>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-sm leading-6 text-[#687873]">Set your monthly funded hours and CSIL rate to track your budget here.</p>
+            <div className="mt-4"><Button variant="outline" size="sm" onClick={() => setSection('more')}>Open settings</Button></div>
+          </>
+        )}
+      </Card>
       {command.awaitingReview.length > 0 && (
         <Card className="mt-6 border-[#bcd4c9]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Awaiting your review</h2>
@@ -989,7 +1060,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   }
   if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
-  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
+  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
   const filtered = tasks.filter((task: Chore) => {
@@ -1097,7 +1168,7 @@ function ClientRecordView({ state, mutate, uploadClientNote, busy }: any) {
   </>;
 }
 
-function TimeClock({ member, entries, mutate, busy }: any) {
+function TimeClock({ member, entries, shifts, mutate, busy }: any) {
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date().toISOString()), 30_000);
@@ -1106,6 +1177,10 @@ function TimeClock({ member, entries, mutate, busy }: any) {
   const open = openEntryFor(entries, member.id);
   const todayMinutes = minutesInRange(entries, member.id, today(), today(), now);
   const elapsed = open ? Math.max(0, (new Date(now).getTime() - new Date(open.startedAt).getTime()) / 60000) : 0;
+  const shift = shiftsForDay(shifts, today()).find((item: any) => item.memberId === member.id) ?? null;
+  const mondayISO = addDaysISO(today(), -((weekdayOf(today()) + 6) % 7));
+  const weekMinutes = minutesInRange(entries, member.id, mondayISO, today(), now);
+  const attendanceRow = buildAttendance({ workers: [member], shifts, entries, date: today(), nowTime: new Date(now).toTimeString().slice(0, 5), now })[0];
   return (
     <Card className="mb-6 flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3">
@@ -1113,6 +1188,8 @@ function TimeClock({ member, entries, mutate, busy }: any) {
         <div>
           <h2 className="font-bold">{open ? 'You’re on the clock' : 'Time clock'}</h2>
           <p className="text-sm text-[#687873]">{open ? `Clocked in at ${new Date(open.startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · ${formatMinutes(elapsed)} so far` : `Tracked today: ${formatMinutes(todayMinutes)}`}</p>
+          <p className="mt-1 text-xs text-[#687873]">{shift ? `Shift today ${formatShift(shift)}` : 'No shift scheduled today'} · This week {formatMinutes(weekMinutes)}</p>
+          {attendanceRow?.status === 'late' && <p className="mt-1 text-xs font-semibold text-[#98552e]">Your shift started at {shift?.startTime} — don’t forget to clock in.</p>}
         </div>
       </div>
       <Button disabled={busy} onClick={() => mutate({ action: open ? 'clockOut' : 'clockIn' }, open ? 'Clocked out.' : 'Clocked in.')} className={`min-h-11 ${open ? '' : 'bg-[#287b6f]'}`} variant={open ? 'outline' : 'default'}>{open ? <><Check className="size-4" />Clock out</> : <><Clock className="size-4" />Clock in</>}</Button>
