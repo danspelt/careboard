@@ -10,5 +10,5 @@
 
 ## Windows verification with Linux dependencies
 
-- If `node_modules` contains Linux binaries and Windows cannot resolve `oxlint` or `next`, run tests and lint in Docker rather than changing dependencies: `docker run --rm --mount "type=bind,source=E:\Git\careboard,target=/app,readonly" -w /app node:22-bookworm-slim sh -c "node --test tests/*.test.mjs && npm run lint"`.
+- If `node_modules` contains Linux binaries and Windows cannot resolve `oxlint` or `next`, run tests and lint in Docker rather than changing dependencies: `docker run --rm --mount "type=bind,source=C:\Users\Dans.minme\Documents\GitHub\careboard,target=/app,readonly" -w /app node:22-bookworm-slim sh -c "node --test tests/*.test.mjs && npm run lint"`.
 - Use `docker build -t careboard-ui-verify .` for the production build; the project Dockerfile runs `npm run build` with Node.js 22.
