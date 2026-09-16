@@ -7,7 +7,7 @@ import { createContext, createElement, useContext, useEffect, useState } from 'r
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [inviteUrl, setInviteUrl] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [connection, setConnection] = useState<'online' | 'refreshing' | 'offline' | 'error'>('online');
   const [feedOpen, setFeedOpen] = useState(false);
   const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
@@ -76,14 +77,27 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     return () => { delete document.body.dataset.role; };
   }, [role]);
   useEffect(() => {
+    let active = true;
+    let refreshing = false;
     const reload = async () => {
-      const response = await fetch('/api/household', { cache: 'no-store' });
-      if (response.ok) setState(await response.json() as HouseholdState);
+      if (refreshing || !navigator.onLine) { if (active) setConnection('offline'); return; }
+      refreshing = true;
+      try {
+        const response = await fetch('/api/household', { cache: 'no-store' });
+        if (!response.ok) throw new Error('refresh failed');
+        const next = await response.json() as HouseholdState;
+        if (active) { setState(next); setConnection('online'); }
+      } catch { if (active) setConnection(navigator.onLine ? 'error' : 'offline'); }
+      finally { refreshing = false; }
     };
     const poll = setInterval(() => { if (document.visibilityState === 'visible') void reload(); }, 30_000);
     const onFocus = () => void reload();
+    const onOnline = () => void reload();
+    const onOffline = () => setConnection('offline');
     window.addEventListener('focus', onFocus);
-    return () => { clearInterval(poll); window.removeEventListener('focus', onFocus); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => { active = false; clearInterval(poll); window.removeEventListener('focus', onFocus); window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
   }, []);
   if (!member) return null;
 
@@ -121,7 +135,19 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Client note upload failed.'); throw error; }
     finally { setBusy(false); }
   }
-  async function refresh(message = '') { const response = await fetch('/api/household', { cache: 'no-store' }); const next = await response.json() as HouseholdState; setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); if (message) setNotice(message); }
+  async function refresh(message = '') {
+    setConnection('refreshing');
+    try {
+      const response = await fetch('/api/household', { cache: 'no-store' });
+      const next = await response.json() as HouseholdState & { error?: string };
+      if (!response.ok) throw new Error(next.error || 'CareBoard could not refresh.');
+      setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); setConnection('online'); if (message) setNotice(message);
+    } catch (error) {
+      setConnection(navigator.onLine ? 'error' : 'offline');
+      if (message) setNotice(error instanceof Error ? error.message : 'CareBoard could not refresh.');
+      throw error;
+    }
+  }
   async function deletePhoto(id: string) { setBusy(true); try { const response = await fetch(`/api/uploads/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Photo could not be deleted.'); await refresh('Photo deleted.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.'); } finally { setBusy(false); } }
 
   const workers = state.members.filter((item) => item.role === 'worker');
@@ -209,6 +235,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
+          {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
@@ -285,6 +312,15 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     </div>
     </RoleContext.Provider>
   );
+}
+
+function ConnectionBanner({ status, onRetry }: { status: 'refreshing' | 'offline' | 'error'; onRetry: () => void }) {
+  const refreshing = status === 'refreshing';
+  return <div role={refreshing ? 'status' : 'alert'} className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-[#d6dfd7] bg-white/95 p-3 pl-4 shadow-[var(--shadow-soft)]">
+    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]">{refreshing ? <RefreshCw className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WifiOff className="size-5" aria-hidden="true" />}</span>
+    <span className="min-w-52 flex-1"><strong className="block text-sm">{refreshing ? 'Refreshing CareBoard' : status === 'offline' ? 'You’re offline' : 'Updates are temporarily paused'}</strong><span className="block text-xs leading-5 text-[#52645f]">{refreshing ? 'Checking for the latest household updates.' : 'Your last loaded information is still available. Retry when your connection is ready.'}</span></span>
+    {!refreshing && <Button type="button" variant="outline" size="sm" onClick={onRetry}><RefreshCw className="size-4" aria-hidden="true" />Retry</Button>}
+  </div>;
 }
 
 function BellButton({ unread, onClick }: { unread: number; onClick: () => void }) {
