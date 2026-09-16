@@ -202,3 +202,338 @@
   .dashboard-main { padding-bottom: 2rem; }
   .dashboard-notice { bottom: 1.5rem; }
 }
+
+/* Role-based dashboard themes — manager command center vs. caregiver shift view. */
+.careboard[data-role='manager'],
+body[data-role='manager'] {
+  --role-primary: #1e6b5e;
+  --role-primary-hover: #16544a;
+  --role-primary-dark: #0f3f37;
+  --role-primary-light: #e3eef0;
+  --role-primary-soft: #c5e0dc;
+  --role-surface: #f3f7f7;
+  --role-warm: #f4f8f8;
+  --role-amber: #8c6b2f;
+  --role-amber-bg: #f5efe3;
+  --role-success: #25654f;
+  --role-success-bg: #e4f0ec;
+}
+.careboard[data-role='worker'],
+body[data-role='worker'] {
+  --role-primary: #a36a2e;
+  --role-primary-hover: #7f5223;
+  --role-primary-dark: #4d3316;
+  --role-primary-light: #f8f1e6;
+  --role-primary-soft: #e8dcc9;
+  --role-surface: #faf7f2;
+  --role-warm: #fff8ed;
+  --role-amber: #c98c3c;
+  --role-amber-bg: #fff4e0;
+  --role-success: #5a7c4f;
+  --role-success-bg: #eaf3e6;
+}
+.careboard[data-role='viewer'],
+body[data-role='viewer'] {
+  --role-primary: #4a6b7c;
+  --role-primary-hover: #385360;
+  --role-primary-dark: #243842;
+  --role-primary-light: #e8eef2;
+  --role-primary-soft: #cddbe3;
+  --role-surface: #f4f6f8;
+  --role-warm: #f7f9fa;
+  --role-amber: #6b8fa3;
+  --role-amber-bg: #e9f0f4;
+  --role-success: #4a6b7c;
+  --role-success-bg: #e8eef2;
+}
+
+/* Manager: cooler, command-center surfaces. */
+.careboard[data-role='manager'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(151 201 201 / 30%) 0%, transparent 18rem),
+    linear-gradient(135deg, #eff5f5 0%, #e4efed 100%);
+  border-color: #c5d8d6;
+}
+.careboard[data-role='manager'] .welcome-banner::after {
+  border-color: rgb(30 107 94 / 12%);
+  box-shadow: 0 0 0 28px rgb(30 107 94 / 4%), 0 0 0 58px rgb(30 107 94 / 3%);
+}
+.careboard[data-role='manager'] .dashboard-sidebar,
+.careboard[data-role='manager'] .dashboard-mobile-header,
+.careboard[data-role='manager'] .dashboard-mobile-nav {
+  background: rgb(255 255 255 / 94%);
+}
+.careboard[data-role='manager'] .dashboard-card {
+  border-color: rgb(197 215 213 / 86%);
+}
+.careboard[data-role='manager'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 8px 20px rgb(30 107 94 / 22%);
+}
+body[data-role='manager'] [data-radix-dialog-content] {
+  border-color: rgb(197 215 213 / 86%);
+}
+
+/* Worker: warm, approachable shift surfaces. */
+.careboard[data-role='worker'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(232 205 162 / 32%) 0%, transparent 18rem),
+    linear-gradient(135deg, #faf6ef 0%, #f3efe6 100%);
+  border-color: #e6d8c0;
+}
+.careboard[data-role='worker'] .welcome-banner::after {
+  border-color: rgb(163 106 46 / 12%);
+  box-shadow: 0 0 0 28px rgb(163 106 46 / 4%), 0 0 0 58px rgb(163 106 46 / 3%);
+}
+.careboard[data-role='worker'] .dashboard-sidebar,
+.careboard[data-role='worker'] .dashboard-mobile-header,
+.careboard[data-role='worker'] .dashboard-mobile-nav {
+  background: rgb(255 252 247 / 95%);
+}
+.careboard[data-role='worker'] .dashboard-card {
+  border-color: rgb(222 211 193 / 86%);
+}
+.careboard[data-role='worker'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 8px 20px rgb(163 106 46 / 22%);
+}
+body[data-role='worker'] [data-radix-dialog-content] {
+  border-color: rgb(222 211 193 / 86%);
+}
+
+/* Viewer: calm, read-only blue-gray. */
+.careboard[data-role='viewer'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(180 202 216 / 28%) 0%, transparent 18rem),
+    linear-gradient(135deg, #f4f7f9 0%, #eef2f4 100%);
+  border-color: #cddbe3;
+}
+.careboard[data-role='viewer'] .dashboard-sidebar,
+.careboard[data-role='viewer'] .dashboard-mobile-header,
+.careboard[data-role='viewer'] .dashboard-mobile-nav {
+  background: rgb(255 255 255 / 94%);
+}
+.careboard[data-role='viewer'] .dashboard-card {
+  border-color: rgb(205 219 227 / 86%);
+}
+.careboard[data-role='viewer'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 8px 20px rgb(74 107 124 / 18%);
+}
+body[data-role='viewer'] [data-radix-dialog-content] {
+  border-color: rgb(205 219 227 / 86%);
+}
+
+/* Shared surface and hover overrides. */
+.careboard[data-role='manager'] .bg-\[\#e6f0eb\],
+body[data-role='manager'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#f7f6f1\],
+body[data-role='manager'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='manager'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='manager'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#e6f0eb\],
+body[data-role='worker'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#f7f6f1\],
+body[data-role='worker'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='worker'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='worker'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#e6f0eb\],
+body[data-role='viewer'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#f7f6f1\],
+body[data-role='viewer'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='viewer'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='viewer'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+
+/* Primary color swaps for the most common Tailwind arbitrary utility classes. */
+.careboard[data-role='manager'] .bg-\[\#287b6f\],
+body[data-role='manager'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='manager'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='manager'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='manager'] .text-\[\#287b6f\],
+body[data-role='manager'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#e8f1ec\],
+body[data-role='manager'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#eef4ec\],
+body[data-role='manager'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#203f36\],
+body[data-role='manager'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='manager'] .text-\[\#bcd9ca\],
+body[data-role='manager'] .text-\[\#bcd9ca\] {
+  color: var(--role-primary-soft) !important;
+}
+.careboard[data-role='manager'] .text-\[\#216b61\],
+body[data-role='manager'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#67a193\],
+body[data-role='manager'] .bg-\[\#67a193\] {
+  background-color: #5c9a8b !important;
+}
+
+.careboard[data-role='worker'] .bg-\[\#287b6f\],
+body[data-role='worker'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='worker'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='worker'] .text-\[\#287b6f\],
+body[data-role='worker'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#e8f1ec\],
+body[data-role='worker'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#eef4ec\],
+body[data-role='worker'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#203f36\],
+body[data-role='worker'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='worker'] .text-\[\#bcd9ca\],
+body[data-role='worker'] .text-\[\#bcd9ca\],
+.careboard[data-role='worker'] .text-\[\#d8e7df\],
+body[data-role='worker'] .text-\[\#d8e7df\] {
+  color: var(--role-primary-soft) !important;
+}
+.careboard[data-role='worker'] .text-\[\#216b61\],
+body[data-role='worker'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#67a193\],
+body[data-role='worker'] .bg-\[\#67a193\] {
+  background-color: #8ba87c !important;
+}
+
+.careboard[data-role='viewer'] .bg-\[\#287b6f\],
+body[data-role='viewer'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='viewer'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='viewer'] .text-\[\#287b6f\],
+body[data-role='viewer'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#e8f1ec\],
+body[data-role='viewer'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#eef4ec\],
+body[data-role='viewer'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#203f36\],
+body[data-role='viewer'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='viewer'] .text-\[\#216b61\],
+body[data-role='viewer'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+
+/* Focus rings and borders should follow the active role. */
+.careboard[data-role='manager'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='manager'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='worker'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='viewer'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .careboard button:focus-visible,
+body[data-role='worker'] .careboard button:focus-visible,
+.careboard[data-role='manager'] .careboard button:focus-visible,
+body[data-role='manager'] .careboard button:focus-visible,
+.careboard[data-role='viewer'] .careboard button:focus-visible,
+body[data-role='viewer'] .careboard button:focus-visible {
+  outline-color: var(--role-primary);
+}
+
+/* Role badge shown in header and sidebar. */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+.role-badge::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+.role-badge-manager {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+.role-badge-worker {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+.role-badge-viewer {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+
+/* Manager command center hero card. */
+.manager-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgb(197 224 220 / 45%), transparent 22rem),
+    linear-gradient(135deg, #eef5f4 0%, #e5efed 100%);
+  border: 1px solid #c5d8d6;
+}
+
+/* Caregiver shift hero card. */
+.worker-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgb(232 205 162 / 38%), transparent 22rem),
+    linear-gradient(135deg, #fdf8f0 0%, #f5efe3 100%);
+  border: 1px solid #e6d8c0;
+}

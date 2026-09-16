@@ -3,7 +3,10 @@
 
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
-import { createElement, useEffect, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useState } from 'react';
+
+const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
+function useRole() { return useContext(RoleContext); }
 import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -52,6 +55,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const member = state.members.find((item) => item.id === authenticatedId) ?? state.members[0];
   const manager = member?.role === 'manager';
   const viewer = member?.role === 'viewer';
+  const role = manager ? 'manager' : viewer ? 'viewer' : 'worker';
   const [section, setSection] = useState<Section>(manager ? 'home' : 'today');
   const [task, setTask] = useState<Chore | null>(null);
   const [profile, setProfile] = useState<Member | null>(null);
@@ -67,6 +71,10 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
   const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
+  useEffect(() => {
+    document.body.dataset.role = role;
+    return () => { delete document.body.dataset.role; };
+  }, [role]);
   useEffect(() => {
     const reload = async () => {
       const response = await fetch('/api/household', { cache: 'no-store' });
@@ -141,7 +149,8 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
-    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
+    <RoleContext.Provider value={role}>
+    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]" data-role={role}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[#287b6f] focus:px-4 focus:py-2 focus:text-white">
         Skip to dashboard content
       </a>
@@ -151,6 +160,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <button onClick={() => setSection(manager ? 'home' : 'today')} className="flex min-h-11 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
           <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
+          <RoleBadge role={role} />
         </button>
         <div className="flex items-center gap-2">
           {bell}
@@ -164,6 +174,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <div className="flex h-16 items-center gap-3 border-b border-[#dfe5dc] px-5">
           <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
+          <RoleBadge role={role} />
         </div>
         <nav className="dashboard-nav flex flex-1 flex-col gap-1 p-4">
           {nav.map(([id, label, Icon]) => (
@@ -271,6 +282,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </span>}
       </output>
     </div>
+    </RoleContext.Provider>
   );
 }
 
@@ -458,6 +470,16 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   return (
     <>
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <section className="manager-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Household at a glance</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">{workers.length} care worker{workers.length === 1 ? '' : 's'} · {state.chores.length} household task{state.chores.length === 1 ? '' : 's'} · {command.attention.length} operational priorit{command.attention.length === 1 ? 'y' : 'ies'}</p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
+        </div>
+      </section>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="On duty now" value={onDutyCount} icon={Clock} tone={lateCount > 0 ? 'caution' : 'neutral'} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
@@ -1060,7 +1082,23 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   }
   if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
-  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
+  if (section === 'today') return (
+    <>
+      <AnnouncementBanner items={state.announcements ?? []} />
+      <section className="worker-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
+        </div>
+      </section>
+      <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />
+      <ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />
+    </>
+  );
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
   const filtered = tasks.filter((task: Chore) => {
@@ -1274,7 +1312,15 @@ function AnnouncementBanner({ items }: { items: Array<{ id: string; detail: stri
 function EmptyHandoff({ icon: Icon, title, text, compact = false }: any) { return <div className={`flex flex-col items-center px-5 text-center ${compact ? 'py-7' : 'py-10'}`}><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-6" aria-hidden="true" /></span><p className="font-semibold">{title}</p><p className="mt-1 max-w-sm text-sm leading-6 text-[#52645f]">{text}</p></div>; }
 function ProgressRow({ label, value, icon: Icon }: any) { return <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span><span className="flex-1 text-sm text-[#52645f]">{label}</span><strong className="text-lg tabular-nums">{value}</strong></div>; }
 
-function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Your household, connected</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>; }
+function RoleBadge({ role }: { role: 'manager' | 'viewer' | 'worker' }) {
+  const labels = { manager: 'Manager', viewer: 'Family viewer', worker: 'Caregiver' };
+  return <span className={`role-badge role-badge-${role}`}>{labels[role]}</span>;
+}
+function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {
+  const role = useRole();
+  const eyebrow = role === 'manager' ? 'Household command center' : role === 'worker' ? 'Your shift dashboard' : 'Household overview';
+  return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">{eyebrow}</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>;
+}
 function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number | string; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
   const toneStyles = {
     neutral: 'bg-[#fffefa]',
