@@ -5,8 +5,10 @@ import { resolveAccountMember } from '@/lib/account-store';
 import { credentialForEmail } from '@/lib/credential-store';
 import { ensureHouseholdData } from '@/lib/household-data';
 import { normalizeEmail, verifyPassword } from '@/lib/auth-security';
+import { localDevMode } from '@/lib/auth-config';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  secret: process.env.AUTH_SECRET || (localDevMode() ? 'careboard-local-dev-secret-do-not-use-in-production' : undefined),
   providers: [
     Google({ checks: ['pkce', 'state', 'nonce'] }),
     Credentials({

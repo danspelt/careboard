@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/client-notes': ['./node_modules/@tesseract.js-data/eng/4.0.0/**/*'],
   },
+  allowedDevOrigins: ['127.0.0.1'],
 };
 
 export default nextConfig;
