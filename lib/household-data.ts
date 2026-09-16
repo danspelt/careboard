@@ -12,6 +12,8 @@ import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
 import { canSendInboxMessage, reviewClientNote, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
+import { localDevMode } from '@/lib/auth-config';
+import { getLocalDevState, mutateLocalDevState } from '@/lib/local-dev';
 
 export type Member = {
   id: string;
@@ -236,6 +238,7 @@ async function rawState() {
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
+  if (localDevMode()) return getLocalDevState();
   const state = await rawState();
   const viewer = state.members.find((member) => member.id === memberId && member.status === 'active');
   if (!viewer) throw new Error('Household access denied.');
@@ -397,6 +400,7 @@ function parseWindowRows(value: unknown) {
 }
 
 export async function mutateHousehold(input: Record<string, unknown>) {
+  if (localDevMode()) return mutateLocalDevState(input);
   const db = getD1();
   const action = requiredString(input.action, 'Action');
   const actorId = requiredString(input.actorId, 'Profile');

@@ -51,3 +51,8 @@ export function accountRoleAllowed(email: string, memberId: string, role: string
   if (email.trim().toLowerCase() === ownerEmail()) return memberId === ownerMemberId() && role === 'manager';
   return memberId !== ownerMemberId() && (role === 'worker' || role === 'viewer');
 }
+
+export function localDevMode(): boolean {
+  if (process.env.CAREBOARD_LOCAL_DEV === 'false') return false;
+  return process.env.NODE_ENV === 'development' || process.env.CAREBOARD_LOCAL_DEV === 'true' || process.env.CAREBOARD_LOCAL_DEV === '1';
+}

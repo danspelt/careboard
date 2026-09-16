@@ -28,6 +28,7 @@ async function signIn({ searchParams = {}, passwordEnabled = true, googleEnabled
       return {
         authenticationConfigured: () => passwordEnabled,
         googleAuthenticationConfigured: () => googleEnabled,
+        localDevMode: () => false,
       };
     }
     if (specifier === '@/app/auth-ui') {

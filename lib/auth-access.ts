@@ -1,13 +1,15 @@
 import 'server-only';
 import { accountForEmail, resolveAccountMember } from '@/lib/account-store';
 import { auth } from '@/auth';
-import { authenticationConfigured } from '@/lib/auth-config';
+import { authenticationConfigured, localDevMode } from '@/lib/auth-config';
 import { credentialMustChange } from '@/lib/credential-store';
+import { localDevAccess } from '@/lib/local-dev';
 import type { Role } from '@/lib/access-policy';
 
 export type AuthenticatedAccess = { memberId: string; email: string; role: Role; credentialLogin: boolean; mustChangePassword: boolean };
 
 export async function authenticatedAccess(): Promise<AuthenticatedAccess | null> {
+  if (localDevMode()) return localDevAccess();
   if (!authenticationConfigured()) return null;
   const session = await auth();
   const email = session?.user?.email?.trim().toLowerCase();
