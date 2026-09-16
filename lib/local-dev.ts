@@ -1,6 +1,8 @@
 import 'server-only';
+import { cookies } from 'next/headers';
 import type { AuthenticatedAccess } from '@/lib/auth-access';
-import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem } from '@/lib/household-data';
+import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem, ClientNoteSubmission } from '@/lib/household-data';
+import type { InboxItem } from '@/lib/client-notes';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
 
@@ -43,6 +45,24 @@ const worker: Member = {
   hourlyRate: 22,
 };
 
+const viewerMember: Member = {
+  id: 'member-viewer-1',
+  name: 'Jordan',
+  role: 'viewer',
+  status: 'active',
+  email: 'jordan@example.com',
+  color: '#5b72b8',
+  createdAt: now,
+  phone: null,
+  availability: '',
+  skillsNotes: '',
+  emergencyContact: null,
+  certifications: '',
+  languages: '',
+  profilePhotoId: null,
+  hourlyRate: null,
+};
+
 function makeChore(overrides: Partial<Chore> & Pick<Chore, 'id' | 'title' | 'area' | 'dueDate' | 'priority' | 'status' | 'assignedTo'>): Chore {
   return {
     dueTime: null,
@@ -66,9 +86,13 @@ function makeChore(overrides: Partial<Chore> & Pick<Chore, 'id' | 'title' | 'are
   } as Chore;
 }
 
-const mockState: HouseholdState = {
-  viewer: { id: manager.id, role: 'manager' },
-  members: [manager, worker],
+type RawLocalState = Omit<HouseholdState, 'clientNotes' | 'clientNoteQueue' | 'inbox' | 'safetyAlerts' | 'viewer' | 'taskGroups' | 'metrics' | 'reminders' | 'announcements'> & {
+  clientNoteSubmissions: ClientNoteSubmission[];
+  inboxItems: InboxItem[];
+};
+
+const mockState: RawLocalState = {
+  members: [manager, worker, viewerMember],
   chores: [
     makeChore({ id: 'chore-1', title: 'Prepare breakfast', area: 'Kitchen', dueDate: today, dueTime: '08:00', priority: 'normal', status: 'open', assignedTo: worker.id }),
     makeChore({ id: 'chore-2', title: 'Take out recycling', area: 'Outside', dueDate: today, priority: 'high', status: 'open', assignedTo: null }),
@@ -78,30 +102,40 @@ const mockState: HouseholdState = {
   activity: [],
   audit: [],
   settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, updatedAt: now },
-  reminders: [],
-  announcements: [],
   shifts: [{ id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', createdAt: now }],
   availability: [{ id: 'avail-1', memberId: worker.id, weekday: 1, startTime: '14:00', endTime: '20:00', createdAt: now }],
   timeEntries: [],
   certifications: [],
   messages: [],
-  clientNotes: [],
-  clientNoteQueue: [],
-  inbox: [],
-  safetyAlerts: [],
+  clientNoteSubmissions: [],
+  inboxItems: [],
 };
 
-export function localDevAccess(): AuthenticatedAccess {
+async function localDevRole(): Promise<Role> {
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get('careboard-local-role')?.value;
+  if (cookie === 'worker' || cookie === 'viewer' || cookie === 'manager') return cookie;
+  return 'manager';
+}
+
+function memberIdForRole(role: Role): string {
+  if (role === 'worker') return worker.id;
+  if (role === 'viewer') return viewerMember.id;
+  return manager.id;
+}
+
+export async function localDevAccess(): Promise<AuthenticatedAccess> {
+  const role = await localDevRole();
   return {
-    memberId: manager.id,
-    email: 'local@example.com',
-    role: 'manager',
+    memberId: memberIdForRole(role),
+    email: role === 'manager' ? 'local@example.com' : role === 'worker' ? 'alex@example.com' : 'jordan@example.com',
+    role,
     credentialLogin: false,
     mustChangePassword: false,
   };
 }
 
-export function getLocalDevState(): HouseholdState {
+export function getLocalDevRawState(): RawLocalState {
   return mockState;
 }
 
@@ -113,7 +147,6 @@ function logUnhandled(action: string, input: Record<string, unknown>) {
 function pushActivity(action: string, detail: string) {
   const item: ActivityItem = { id: crypto.randomUUID(), choreId: null, memberId: manager.id, action, detail, createdAt: new Date().toISOString() };
   mockState.activity = [item, ...(mockState.activity ?? [])];
-  mockState.announcements = mockState.activity.filter((a) => a.action === 'announcement').slice(0, 5);
 }
 
 function pushAudit(action: string, detail: string) {
@@ -131,7 +164,7 @@ function optionalString(value: unknown, maxLength: number) {
   return text.slice(0, maxLength);
 }
 
-export function mutateLocalDevState(input: Record<string, unknown>): HouseholdState {
+export function mutateLocalDevState(input: Record<string, unknown>): RawLocalState {
   const action = requiredString(input.action, 'Action');
   const actorId = typeof input.actorId === 'string' ? input.actorId : manager.id;
   const now2 = new Date().toISOString();

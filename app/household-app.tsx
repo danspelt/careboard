@@ -50,7 +50,7 @@ function TextArea({ label, name, defaultValue }: { label: string; name: string; 
   return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
 }
 
-export function HouseholdApp({ initialState, authenticatedId }: { initialState: HouseholdState; authenticatedId: string }) {
+export function HouseholdApp({ initialState, authenticatedId, localDev = false }: { initialState: HouseholdState; authenticatedId: string; localDev?: boolean }) {
   const [state, setState] = useState(initialState);
   const member = state.members.find((item) => item.id === authenticatedId) ?? state.members[0];
   const manager = member?.role === 'manager';
@@ -209,6 +209,7 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
+          {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
@@ -292,6 +293,35 @@ function BellButton({ unread, onClick }: { unread: number; onClick: () => void }
       <Bell className="size-5" aria-hidden="true" />
       {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4.5 place-items-center rounded-full bg-[#b4532a] px-1 py-0.5 text-[10px] font-bold leading-none text-white">{unread}</span>}
     </button>
+  );
+}
+function switchLocalDevRole(role: 'manager' | 'viewer' | 'worker') {
+  document.cookie = `careboard-local-role=${role}; path=/; max-age=86400`;
+  window.location.reload();
+}
+
+function LocalDevRoleSwitcher({ currentRole }: { currentRole: 'manager' | 'viewer' | 'worker' }) {
+  const roles: Array<{ id: 'manager' | 'viewer' | 'worker'; label: string }> = [
+    { id: 'manager', label: 'Manager' },
+    { id: 'worker', label: 'Caregiver' },
+    { id: 'viewer', label: 'Viewer' },
+  ];
+  return (
+    <div className="rounded-2xl border border-dashed border-[#c6d2c8] bg-[#f7f6f1] p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#687873]">Local preview</p>
+      <div className="grid grid-cols-3 gap-2">
+        {roles.map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => switchLocalDevRole(id)}
+            aria-pressed={currentRole === id}
+            className={`rounded-xl px-2 py-2 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${currentRole === id ? 'bg-[#287b6f] text-white' : 'bg-white text-[#52645f] hover:bg-[#eef2ec]'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 function OnboardingCard({ steps, onDone }: any) {
