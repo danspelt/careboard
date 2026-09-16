@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight, BedDouble, Bell, Check, ClipboardCheck, Clock3, FileCheck2, HeartHandshake, House, LockKeyhole, LogIn, ShieldCheck, Sprout, Users } from 'lucide-react';
 import { auth } from '@/auth';
-import { googleSignIn } from '@/app/actions/auth';
-import { googleAuthenticationConfigured } from '@/lib/auth-config';
 
 const focusClass = 'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]';
 const primaryClass = `inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#246f63] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_0_#194e46] transition hover:bg-[#1d5b51] active:translate-y-px sm:w-auto ${focusClass}`;
@@ -79,7 +77,6 @@ function ExampleBoard() {
 export default async function Home() {
   const session = await auth();
   const signedIn = Boolean(session?.user);
-  const googleEnabled = googleAuthenticationConfigured();
   const destination = signedIn ? '/dashboard' : '/sign-in';
 
   return (
@@ -109,10 +106,9 @@ export default async function Home() {
             <h1 id="hero-heading" className="mt-5 max-w-lg text-[2.6rem] font-semibold leading-[1.08] tracking-[-.045em] sm:text-5xl lg:text-[3.6rem]">A little less juggling.<br /><span className="text-[#287b6f]">A lot more care.</span></h1>
             <p className="mt-5 max-w-md text-base leading-7 text-[#53685f]">Your private household care board. Organize tasks, coordinate trusted care workers, and see what’s done—all in one calm, shared space.</p>
             <div className="mt-7 flex flex-col items-start gap-4">
-              {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : googleEnabled ? <form action={googleSignIn} className="w-full sm:w-auto"><button type="submit" className={primaryClass}><LogIn className="size-4" aria-hidden="true" />Continue with Google<ArrowRight className="size-4" aria-hidden="true" /></button></form> : <Link href="/sign-in" className={primaryClass}>Sign in to your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
+              {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : <Link href="/sign-in" className={primaryClass}>Sign in to your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#53685f]">
                 <span className="inline-flex items-center gap-1.5"><LockKeyhole className="size-3.5" aria-hidden="true" />Manager-approved access</span>
-                {!signedIn && googleEnabled && <Link href="/sign-in" className={`rounded font-medium underline decoration-[#adc4b5] underline-offset-4 hover:text-[#246f63] ${focusClass}`}>Use a password</Link>}
               </div>
             </div>
             <div className="mt-8 flex flex-wrap gap-x-5 gap-y-3 border-t border-[#e0e7dc] pt-5 text-xs font-medium text-[#466457]">
@@ -136,7 +132,7 @@ export default async function Home() {
 
         <section id="privacy" aria-labelledby="privacy-heading" className="grid scroll-mt-48 gap-5 rounded-2xl bg-[#203f36] p-5 text-white sm:p-6 md:grid-cols-[1.3fr_1fr] md:gap-8 lg:scroll-mt-28">
           <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-5" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-sm font-semibold">Your household. Your people.</h2><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Managers coordinate the household. Care workers see only their profile, assigned tasks, and available work. Personal details stay private.</p></div></div>
-          <div className="border-t border-white/15 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0"><p className="text-sm font-semibold">{googleEnabled ? 'Google single sign-on' : 'A private, approved-account space'}</p><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">{googleEnabled ? 'Use your approved Google account—no separate password to remember. Password sign-in is available too.' : 'Use the account your household manager approved. Need access? Ask your manager to add you to the team.'}</p><Link href={destination} className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg text-xs font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
+          <div className="border-t border-white/15 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0"><p className="text-sm font-semibold">A private, approved-account space</p><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Use the account your household manager approved. Need access? Ask your manager to add you to the team.</p><Link href={destination} className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg text-xs font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
         </section>
       </main>
 

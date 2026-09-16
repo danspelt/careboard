@@ -54,12 +54,11 @@ test('landing header has a prominent app icon and three labeled icon navigation 
   assert.ok(/class="[^"]*\bsticky\b/.test(header), 'Header must stay visible while scrolling');
 });
 
-test('configured Google SSO has a direct sign-in form and a password alternative', async () => {
+test('configured Google SSO stays on the sign-in page, not the landing page', async () => {
   const html = await landing({ googleEnabled: true });
-  assert.match(html, /<form\b/);
-  assert.match(html, /Continue with Google/);
-  assert.match(html, /Google single sign-on/);
-  assert.match(html, /href="\/sign-in"[^>]*>[^<]*Use a password/);
+  assert.doesNotMatch(html, /Continue with Google|<form\b/);
+  assert.match(html, /href="\/sign-in"/);
+  assert.match(html, /Sign in to your care team/);
 });
 
 test('unconfigured Google SSO falls back to the standard sign-in page', async () => {
