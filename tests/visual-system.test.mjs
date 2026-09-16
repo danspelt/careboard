@@ -37,6 +37,14 @@ test('shared buttons keep touch-friendly default and large sizes', () => {
   assert.match(button, /lg: 'h-12 gap-2 px-5/);
 });
 
+test('dashboard depth system is green-led and reduced-motion safe', () => {
+  const css = source('app/globals.css');
+  assert.match(css, /--shadow-raised:/);
+  assert.match(css, /\.dashboard-card:has\(> button:hover\)/);
+  assert.match(css, /--role-primary: #347858/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.careboard \[data-slot='button'\]/);
+});
+
 test('every dashboard form action uses explicit submit semantics', () => {
   const dashboard = source('app/household-app.tsx');
   const syntax = ts.createSourceFile('household-app.tsx', dashboard, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
