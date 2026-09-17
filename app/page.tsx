@@ -140,7 +140,7 @@ export default async function Home() {
         </section>
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 pb-6 text-[11px] text-[#53685f] sm:px-8"><span className="inline-flex items-center gap-2"><BrandIcon size={24} /><span className="font-semibold">CareBoard</span><span>Care, clearly coordinated.</span></span><a href="#privacy" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Private by design</a></footer>
+      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 pb-6 text-[11px] text-[#53685f] sm:px-8"><span className="inline-flex items-center gap-2"><BrandIcon size={24} /><span className="font-semibold">CareBoard</span><span>Care, clearly coordinated.</span></span><span className="inline-flex items-center gap-3"><a href="https://danspelt.com/?utm_source=careboard&utm_medium=footer&utm_campaign=product-sites" target="_blank" rel="noopener" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Built by Dan Spelt</a><a href="#privacy" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Private by design</a></span></footer>
     </div>
   );
 }
