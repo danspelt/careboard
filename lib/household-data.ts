@@ -12,6 +12,8 @@ import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
 import { canSendInboxMessage, reviewClientNote, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
+import { localDevMode } from '@/lib/auth-config';
+import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
 
 export type Member = {
   id: string;
@@ -235,8 +237,9 @@ async function rawState() {
   return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results };
 }
 
-export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
-  const state = await rawState();
+type RawState = Awaited<ReturnType<typeof rawState>>;
+
+function buildHouseholdState(state: RawState, memberId: string): HouseholdState {
   const viewer = state.members.find((member) => member.id === memberId && member.status === 'active');
   if (!viewer) throw new Error('Household access denied.');
   const today = new Date().toISOString().slice(0, 10);
@@ -289,6 +292,11 @@ export async function getHouseholdState(memberId: string): Promise<HouseholdStat
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
   return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox };
+}
+
+export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
+  const state = localDevMode() ? getLocalDevRawState() : await rawState();
+  return buildHouseholdState(state as RawState, memberId);
 }
 
 async function generateRecurringTasks() {
@@ -397,6 +405,11 @@ function parseWindowRows(value: unknown) {
 }
 
 export async function mutateHousehold(input: Record<string, unknown>) {
+  if (localDevMode()) {
+    const raw = mutateLocalDevState(input);
+    const actorId = requiredString(input.actorId, 'Profile');
+    return buildHouseholdState(raw as RawState, actorId);
+  }
   const db = getD1();
   const action = requiredString(input.action, 'Action');
   const actorId = requiredString(input.actorId, 'Profile');

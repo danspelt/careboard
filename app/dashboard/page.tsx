@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { HouseholdApp } from '@/app/household-app';
 import { getHouseholdState } from '@/lib/household-data';
 import { authenticatedAccess } from '@/lib/auth-access';
+import { localDevMode } from '@/lib/auth-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,5 +11,5 @@ export default async function Dashboard() {
   if (!access) redirect('/sign-in');
   if (access.mustChangePassword) redirect('/change-password');
   const initialState = await getHouseholdState(access.memberId);
-  return <HouseholdApp initialState={initialState} authenticatedId={access.memberId} />;
+  return <HouseholdApp initialState={initialState} authenticatedId={access.memberId} localDev={localDevMode()} />;
 }

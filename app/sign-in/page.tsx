@@ -4,11 +4,13 @@ import { ArrowRight, CalendarDays, Clock, ShieldCheck } from 'lucide-react';
 import type { Metadata } from 'next';
 import { googleSignIn, passwordSignIn } from '@/app/actions/auth';
 import { PasswordField, SubmitButton } from '@/app/auth-ui';
-import { authenticationConfigured, googleAuthenticationConfigured } from '@/lib/auth-config';
+import { authenticationConfigured, googleAuthenticationConfigured, localDevMode } from '@/lib/auth-config';
+import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = { title: 'Sign in — CareBoard', description: 'Welcome back to your household care team.' };
 
 export default async function SignIn({ searchParams }: { searchParams: Promise<{ error?: string; joined?: string }> }) {
+  if (localDevMode()) redirect('/dashboard');
   const { error, joined } = await searchParams;
   const passwordEnabled = authenticationConfigured();
   const googleEnabled = googleAuthenticationConfigured();

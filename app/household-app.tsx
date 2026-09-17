@@ -3,8 +3,11 @@
 
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
-import { createElement, useEffect, useState } from 'react';
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, X, XCircle } from 'lucide-react';
+import { createContext, createElement, useContext, useEffect, useState } from 'react';
+
+const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
+function useRole() { return useContext(RoleContext); }
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,11 +50,12 @@ function TextArea({ label, name, defaultValue }: { label: string; name: string; 
   return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
 }
 
-export function HouseholdApp({ initialState, authenticatedId }: { initialState: HouseholdState; authenticatedId: string }) {
+export function HouseholdApp({ initialState, authenticatedId, localDev = false }: { initialState: HouseholdState; authenticatedId: string; localDev?: boolean }) {
   const [state, setState] = useState(initialState);
   const member = state.members.find((item) => item.id === authenticatedId) ?? state.members[0];
   const manager = member?.role === 'manager';
   const viewer = member?.role === 'viewer';
+  const role = manager ? 'manager' : viewer ? 'viewer' : 'worker';
   const [section, setSection] = useState<Section>(manager ? 'home' : 'today');
   const [task, setTask] = useState<Chore | null>(null);
   const [profile, setProfile] = useState<Member | null>(null);
@@ -63,19 +67,37 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
   const [inviteUrl, setInviteUrl] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [connection, setConnection] = useState<'online' | 'refreshing' | 'offline' | 'error'>('online');
   const [feedOpen, setFeedOpen] = useState(false);
   const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
   const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
   useEffect(() => {
+    document.body.dataset.role = role;
+    return () => { delete document.body.dataset.role; };
+  }, [role]);
+  useEffect(() => {
+    let active = true;
+    let refreshing = false;
     const reload = async () => {
-      const response = await fetch('/api/household', { cache: 'no-store' });
-      if (response.ok) setState(await response.json() as HouseholdState);
+      if (refreshing || !navigator.onLine) { if (active) setConnection('offline'); return; }
+      refreshing = true;
+      try {
+        const response = await fetch('/api/household', { cache: 'no-store' });
+        if (!response.ok) throw new Error('refresh failed');
+        const next = await response.json() as HouseholdState;
+        if (active) { setState(next); setConnection('online'); }
+      } catch { if (active) setConnection(navigator.onLine ? 'error' : 'offline'); }
+      finally { refreshing = false; }
     };
     const poll = setInterval(() => { if (document.visibilityState === 'visible') void reload(); }, 30_000);
     const onFocus = () => void reload();
+    const onOnline = () => void reload();
+    const onOffline = () => setConnection('offline');
     window.addEventListener('focus', onFocus);
-    return () => { clearInterval(poll); window.removeEventListener('focus', onFocus); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => { active = false; clearInterval(poll); window.removeEventListener('focus', onFocus); window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
   }, []);
   if (!member) return null;
 
@@ -113,7 +135,19 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
     } catch (error) { setNotice(error instanceof Error ? error.message : 'Client note upload failed.'); throw error; }
     finally { setBusy(false); }
   }
-  async function refresh(message = '') { const response = await fetch('/api/household', { cache: 'no-store' }); const next = await response.json() as HouseholdState; setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); if (message) setNotice(message); }
+  async function refresh(message = '') {
+    setConnection('refreshing');
+    try {
+      const response = await fetch('/api/household', { cache: 'no-store' });
+      const next = await response.json() as HouseholdState & { error?: string };
+      if (!response.ok) throw new Error(next.error || 'CareBoard could not refresh.');
+      setState(next); setTask((old) => old ? next.chores.find((item) => item.id === old.id) ?? null : null); setProfile((old) => old ? next.members.find((item) => item.id === old.id) ?? null : null); setConnection('online'); if (message) setNotice(message);
+    } catch (error) {
+      setConnection(navigator.onLine ? 'error' : 'offline');
+      if (message) setNotice(error instanceof Error ? error.message : 'CareBoard could not refresh.');
+      throw error;
+    }
+  }
   async function deletePhoto(id: string) { setBusy(true); try { const response = await fetch(`/api/uploads/${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Photo could not be deleted.'); await refresh('Photo deleted.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Delete failed.'); } finally { setBusy(false); } }
 
   const workers = state.members.filter((item) => item.role === 'worker');
@@ -141,7 +175,8 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
-    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]">
+    <RoleContext.Provider value={role}>
+    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]" data-role={role}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[#287b6f] focus:px-4 focus:py-2 focus:text-white">
         Skip to dashboard content
       </a>
@@ -151,10 +186,11 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         <button onClick={() => setSection(manager ? 'home' : 'today')} className="flex min-h-11 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
           <img src="/favicon.svg" alt="" width={36} height={36} className="size-9 shrink-0" />
           <span className="text-lg font-bold">CareBoard</span>
+          <span className="hidden sm:inline-flex"><RoleBadge role={role} /></span>
         </button>
         <div className="flex items-center gap-2">
           {bell}
-          <form action={logOut}><button className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#287b6f]"><LogOut className="size-4" aria-hidden="true" />Sign out</button></form>
+          <form action={logOut}><button aria-label="Sign out" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#287b6f]"><LogOut className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Sign out</span></button></form>
           <AvatarFor member={member} className="size-9" />
         </div>
       </header>
@@ -198,6 +234,8 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-6xl px-4 py-5 sm:px-7 sm:py-7">
+          {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
+          {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
@@ -271,7 +309,17 @@ export function HouseholdApp({ initialState, authenticatedId }: { initialState: 
         </span>}
       </output>
     </div>
+    </RoleContext.Provider>
   );
+}
+
+function ConnectionBanner({ status, onRetry }: { status: 'refreshing' | 'offline' | 'error'; onRetry: () => void }) {
+  const refreshing = status === 'refreshing';
+  return <div role={refreshing ? 'status' : 'alert'} className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-[#d6dfd7] bg-white/95 p-3 pl-4 shadow-[var(--shadow-soft)]">
+    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]">{refreshing ? <RefreshCw className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <WifiOff className="size-5" aria-hidden="true" />}</span>
+    <span className="min-w-52 flex-1"><strong className="block text-sm">{refreshing ? 'Refreshing CareBoard' : status === 'offline' ? 'You’re offline' : 'Updates are temporarily paused'}</strong><span className="block text-xs leading-5 text-[#52645f]">{refreshing ? 'Checking for the latest household updates.' : 'Your last loaded information is still available. Retry when your connection is ready.'}</span></span>
+    {!refreshing && <Button type="button" variant="outline" size="sm" onClick={onRetry}><RefreshCw className="size-4" aria-hidden="true" />Retry</Button>}
+  </div>;
 }
 
 function BellButton({ unread, onClick }: { unread: number; onClick: () => void }) {
@@ -280,6 +328,35 @@ function BellButton({ unread, onClick }: { unread: number; onClick: () => void }
       <Bell className="size-5" aria-hidden="true" />
       {unread > 0 && <span className="absolute right-1 top-1 grid min-w-4.5 place-items-center rounded-full bg-[#b4532a] px-1 py-0.5 text-[10px] font-bold leading-none text-white">{unread}</span>}
     </button>
+  );
+}
+function switchLocalDevRole(role: 'manager' | 'viewer' | 'worker') {
+  document.cookie = `careboard-local-role=${role}; path=/; max-age=86400`;
+  window.location.reload();
+}
+
+function LocalDevRoleSwitcher({ currentRole }: { currentRole: 'manager' | 'viewer' | 'worker' }) {
+  const roles: Array<{ id: 'manager' | 'viewer' | 'worker'; label: string }> = [
+    { id: 'manager', label: 'Manager' },
+    { id: 'worker', label: 'Caregiver' },
+    { id: 'viewer', label: 'Viewer' },
+  ];
+  return (
+    <div className="rounded-2xl border border-dashed border-[#c6d2c8] bg-[#f7f6f1] p-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#687873]">Local preview</p>
+      <div className="grid grid-cols-3 gap-2">
+        {roles.map(({ id, label }) => (
+          <button
+            key={id}
+            onClick={() => switchLocalDevRole(id)}
+            aria-pressed={currentRole === id}
+            className={`rounded-xl px-2 py-2 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${currentRole === id ? 'bg-[#287b6f] text-white' : 'bg-white text-[#52645f] hover:bg-[#eef2ec]'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 function OnboardingCard({ steps, onDone }: any) {
@@ -458,6 +535,16 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   return (
     <>
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <section className="manager-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Household at a glance</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">{workers.length} care worker{workers.length === 1 ? '' : 's'} · {state.chores.length} household task{state.chores.length === 1 ? '' : 's'} · {command.attention.length} operational priorit{command.attention.length === 1 ? 'y' : 'ies'}</p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
+        </div>
+      </section>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="On duty now" value={onDutyCount} icon={Clock} tone={lateCount > 0 ? 'caution' : 'neutral'} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
@@ -1060,7 +1147,23 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   }
   if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
-  if (section === 'today') return <><AnnouncementBanner items={state.announcements ?? []} /><TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} /><ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} /></>;
+  if (section === 'today') return (
+    <>
+      <AnnouncementBanner items={state.announcements ?? []} />
+      <section className="worker-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
+        </div>
+      </section>
+      <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />
+      <ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />
+    </>
+  );
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
   const filtered = tasks.filter((task: Chore) => {
@@ -1274,7 +1377,15 @@ function AnnouncementBanner({ items }: { items: Array<{ id: string; detail: stri
 function EmptyHandoff({ icon: Icon, title, text, compact = false }: any) { return <div className={`flex flex-col items-center px-5 text-center ${compact ? 'py-7' : 'py-10'}`}><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-6" aria-hidden="true" /></span><p className="font-semibold">{title}</p><p className="mt-1 max-w-sm text-sm leading-6 text-[#52645f]">{text}</p></div>; }
 function ProgressRow({ label, value, icon: Icon }: any) { return <div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><Icon className="size-4" aria-hidden="true" /></span><span className="flex-1 text-sm text-[#52645f]">{label}</span><strong className="text-lg tabular-nums">{value}</strong></div>; }
 
-function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Your household, connected</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>; }
+function RoleBadge({ role }: { role: 'manager' | 'viewer' | 'worker' }) {
+  const labels = { manager: 'Manager', viewer: 'Family viewer', worker: 'Caregiver' };
+  return <span className={`role-badge role-badge-${role}`}>{labels[role]}</span>;
+}
+function Title({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {
+  const role = useRole();
+  const eyebrow = role === 'manager' ? 'Household command center' : role === 'worker' ? 'Your shift dashboard' : 'Household overview';
+  return <div className="welcome-banner mb-6 flex flex-wrap items-end justify-between gap-5"><div className="min-w-0 flex-1 basis-64"><p className="mb-3 text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">{eyebrow}</p><h1 className="welcome-title break-words text-3xl font-semibold tracking-tight">{title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#52645f]">{text}</p></div>{action && <div className="shrink-0 [&_button]:min-h-11">{action}</div>}</div>;
+}
 function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string; value: number | string; icon?: React.ComponentType<{ className?: string }>; tone?: 'neutral' | 'caution' | 'success' }) {
   const toneStyles = {
     neutral: 'bg-[#fffefa]',

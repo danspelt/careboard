@@ -51,3 +51,8 @@ export function accountRoleAllowed(email: string, memberId: string, role: string
   if (email.trim().toLowerCase() === ownerEmail()) return memberId === ownerMemberId() && role === 'manager';
   return memberId !== ownerMemberId() && (role === 'worker' || role === 'viewer');
 }
+
+export function localDevMode(): boolean {
+  // Never allow flags or role cookies to bypass authentication in a release.
+  return process.env.NODE_ENV === 'development' && process.env.CAREBOARD_LOCAL_DEV !== 'false';
+}

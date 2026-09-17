@@ -56,8 +56,9 @@
   --surface-raised: #ffffff;
   --surface-soft: #edf4ef;
   --surface-deep: #173f36;
-  --shadow-soft: 0 8px 28px rgb(24 63 54 / 7%);
-  --shadow-raised: 0 16px 44px rgb(24 63 54 / 11%);
+  --shadow-soft: 0 1px 1px rgb(255 255 255 / 88%) inset, 0 2px 5px rgb(18 61 49 / 6%), 0 12px 30px rgb(18 61 49 / 8%);
+  --shadow-raised: 0 1px 1px rgb(255 255 255 / 92%) inset, 0 3px 8px rgb(18 61 49 / 8%), 0 22px 52px rgb(18 61 49 / 13%);
+  --shadow-pressed: 0 1px 2px rgb(18 61 49 / 11%) inset, 0 5px 14px rgb(18 61 49 / 8%);
 }
 
 @layer base {
@@ -106,8 +107,9 @@
 /* Warm, quiet surfaces keep the work itself in focus. */
 .careboard {
   background:
-    radial-gradient(circle at 85% 5%, rgb(206 229 216 / 46%), transparent 26rem),
-    linear-gradient(180deg, #f7f9f6 0%, #f2f6f3 100%);
+    radial-gradient(circle at 85% 5%, rgb(180 220 196 / 42%), transparent 29rem),
+    radial-gradient(circle at 12% 58%, rgb(222 237 226 / 52%), transparent 34rem),
+    linear-gradient(180deg, #f8faf7 0%, #eef5f0 100%);
 }
 .app-header { background: #fffefa; }
 .welcome-banner {
@@ -145,12 +147,21 @@
 .dashboard-sidebar { background: rgb(255 255 255 / 88%); box-shadow: 12px 0 40px rgb(23 52 45 / 5%); backdrop-filter: blur(18px); }
 .dashboard-mobile-header, .dashboard-mobile-nav { background: rgb(255 255 255 / 92%); backdrop-filter: blur(18px); }
 .dashboard-nav button { position: relative; }
-.dashboard-nav button[aria-current='page'] { box-shadow: 0 8px 20px rgb(40 123 111 / 20%); }
-.dashboard-card { border-color: rgb(205 220 211 / 86%); background: rgb(255 255 255 / 94%); box-shadow: var(--shadow-soft); }
+.dashboard-nav button { transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease; }
+.dashboard-nav button:hover { transform: translateX(2px); }
+.dashboard-nav button[aria-current='page'] { box-shadow: 0 1px 0 rgb(255 255 255 / 22%) inset, 0 9px 22px rgb(31 112 89 / 23%); }
+.dashboard-card { border-color: rgb(194 215 202 / 90%); background: linear-gradient(155deg, rgb(255 255 255 / 98%), rgb(249 252 249 / 94%)); box-shadow: var(--shadow-soft); transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease; }
+.dashboard-card:has(> button:hover), .dashboard-card:has(> a:hover) { border-color: rgb(154 193 170 / 90%); box-shadow: var(--shadow-raised); transform: translateY(-2px); }
+.dashboard-card button:not([role='switch']), .dashboard-card a { transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease; }
+.dashboard-card button:not(:disabled):active, .dashboard-card a:active { transform: translateY(1px); }
+.dashboard-card > :first-child { position: relative; z-index: 1; }
 .field-control { border-color: var(--input) !important; box-shadow: inset 0 1px 2px rgb(23 52 45 / 3%); transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease; }
 .field-control:hover { border-color: #a9beb2 !important; }
 .field-control:focus-visible { border-color: #287b6f !important; box-shadow: 0 0 0 4px rgb(40 123 111 / 12%); }
 .status-badge { min-height: 1.5rem; border: 1px solid rgb(40 123 111 / 9%); letter-spacing: .01em; }
+.careboard [data-slot='button'] { box-shadow: 0 1px 0 rgb(255 255 255 / 24%) inset, 0 2px 4px rgb(18 61 49 / 8%), 0 7px 16px rgb(18 61 49 / 8%); }
+.careboard [data-slot='button']:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 1px 0 rgb(255 255 255 / 28%) inset, 0 4px 8px rgb(18 61 49 / 9%), 0 11px 22px rgb(18 61 49 / 11%); }
+.careboard [data-slot='button']:not(:disabled):active { transform: translateY(1px); box-shadow: var(--shadow-pressed); }
 @media (min-width: 1024px) {
   .welcome-title { font-size: 42px; }
 }
@@ -192,13 +203,361 @@
 }
 .auth-brand { transition: color 160ms ease, transform 160ms ease; }
 .auth-brand:hover { color: #287b6f; transform: translateY(-1px); }
-.auth-panel { border-color: #d2e0d7; background: rgb(255 255 255 / 92%); box-shadow: var(--shadow-raised); backdrop-filter: blur(14px); }
+.auth-panel { position: relative; overflow: hidden; border-color: #c9dcd0; background: linear-gradient(155deg, rgb(255 255 255 / 97%), rgb(247 251 247 / 94%)); box-shadow: var(--shadow-raised); backdrop-filter: blur(14px); }
+.auth-panel::before { content: ''; position: absolute; z-index: -1; inset: 0 0 auto; height: 5rem; background: radial-gradient(circle at 90% 0%, rgb(158 207 177 / 24%), transparent 55%); pointer-events: none; }
 .auth-control { min-height: 3rem; width: 100%; border: 1px solid var(--input); border-radius: .8rem; background: white; padding: .75rem 1rem; transition: border-color 160ms ease, box-shadow 160ms ease; }
 .auth-control:hover { border-color: #a9beb2; }
 .auth-control:focus-visible { border-color: #287b6f; outline: none; box-shadow: 0 0 0 4px rgb(40 123 111 / 12%); }
 .auth-submit { min-height: 3rem; border-radius: .8rem; background: #287b6f; color: white; font-weight: 650; box-shadow: 0 8px 20px rgb(40 123 111 / 20%); transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease; }
 .auth-submit:hover { background: #216b61; box-shadow: 0 10px 24px rgb(40 123 111 / 25%); transform: translateY(-1px); }
+.auth-submit:active { transform: translateY(1px); box-shadow: var(--shadow-pressed); }
+[data-slot='dialog-content'] :is(input, textarea, select), .auth-panel :is(input, textarea, select) { scroll-margin-block: 6rem; }
+[data-slot='dialog-content'] hr, [data-slot='card'] hr { border-color: #dce7df; }
+[data-slot='table-container'] { scrollbar-color: #9bb9a7 transparent; scrollbar-width: thin; }
 @media (min-width: 768px) {
   .dashboard-main { padding-bottom: 2rem; }
   .dashboard-notice { bottom: 1.5rem; }
+}
+
+/* Role-based dashboard themes — manager command center vs. caregiver shift view. */
+.careboard[data-role='manager'],
+body[data-role='manager'] {
+  --role-primary: #1e6b5e;
+  --role-primary-hover: #16544a;
+  --role-primary-dark: #0f3f37;
+  --role-primary-light: #e3eef0;
+  --role-primary-soft: #c5e0dc;
+  --role-surface: #f3f7f7;
+  --role-warm: #f4f8f8;
+  --role-amber: #8c6b2f;
+  --role-amber-bg: #f5efe3;
+  --role-success: #25654f;
+  --role-success-bg: #e4f0ec;
+}
+.careboard[data-role='worker'],
+body[data-role='worker'] {
+  --role-primary: #347858;
+  --role-primary-hover: #285f45;
+  --role-primary-dark: #193f2e;
+  --role-primary-light: #e7f2e9;
+  --role-primary-soft: #cce1d2;
+  --role-surface: #f4f8f4;
+  --role-warm: #f9fbf6;
+  --role-amber: #8a6a31;
+  --role-amber-bg: #faf3e5;
+  --role-success: #347858;
+  --role-success-bg: #e7f2e9;
+}
+.careboard[data-role='viewer'],
+body[data-role='viewer'] {
+  --role-primary: #43735b;
+  --role-primary-hover: #345b47;
+  --role-primary-dark: #203c2f;
+  --role-primary-light: #e8f0e9;
+  --role-primary-soft: #cdddcf;
+  --role-surface: #f4f7f4;
+  --role-warm: #f8faf7;
+  --role-amber: #687d58;
+  --role-amber-bg: #edf2e9;
+  --role-success: #43735b;
+  --role-success-bg: #e8f0e9;
+}
+
+/* Manager: cooler, command-center surfaces. */
+.careboard[data-role='manager'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(151 201 201 / 30%) 0%, transparent 18rem),
+    linear-gradient(135deg, #eff5f5 0%, #e4efed 100%);
+  border-color: #c5d8d6;
+}
+.careboard[data-role='manager'] .welcome-banner::after {
+  border-color: rgb(30 107 94 / 12%);
+  box-shadow: 0 0 0 28px rgb(30 107 94 / 4%), 0 0 0 58px rgb(30 107 94 / 3%);
+}
+.careboard[data-role='manager'] .dashboard-sidebar,
+.careboard[data-role='manager'] .dashboard-mobile-header,
+.careboard[data-role='manager'] .dashboard-mobile-nav {
+  background: rgb(255 255 255 / 94%);
+}
+.careboard[data-role='manager'] .dashboard-card {
+  border-color: rgb(197 215 213 / 86%);
+}
+.careboard[data-role='manager'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 8px 20px rgb(30 107 94 / 22%);
+}
+body[data-role='manager'] [data-radix-dialog-content] {
+  border-color: rgb(197 215 213 / 86%);
+}
+
+/* Worker: approachable green shift surfaces with a quiet warm highlight. */
+.careboard[data-role='worker'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(179 216 188 / 38%) 0%, transparent 18rem),
+    linear-gradient(135deg, #f4f9f3 0%, #e9f2e9 100%);
+  border-color: #cddfce;
+}
+.careboard[data-role='worker'] .welcome-banner::after {
+  border-color: rgb(52 120 88 / 13%);
+  box-shadow: 0 0 0 28px rgb(52 120 88 / 5%), 0 0 0 58px rgb(52 120 88 / 3%);
+}
+.careboard[data-role='worker'] .dashboard-sidebar,
+.careboard[data-role='worker'] .dashboard-mobile-header,
+.careboard[data-role='worker'] .dashboard-mobile-nav {
+  background: rgb(252 255 251 / 95%);
+}
+.careboard[data-role='worker'] .dashboard-card {
+  border-color: rgb(201 220 204 / 88%);
+}
+.careboard[data-role='worker'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 22%) inset, 0 9px 22px rgb(52 120 88 / 23%);
+}
+body[data-role='worker'] [data-radix-dialog-content] {
+  border-color: rgb(201 220 204 / 88%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-nav button:hover,
+  .dashboard-card:has(> button:hover),
+  .dashboard-card:has(> a:hover),
+  .careboard [data-slot='button']:not(:disabled):hover,
+  .careboard [data-slot='button']:not(:disabled):active { transform: none; }
+}
+
+/* Viewer: calm, read-only blue-gray. */
+.careboard[data-role='viewer'] .welcome-banner {
+  background:
+    radial-gradient(circle at 88% 4%, rgb(180 202 216 / 28%) 0%, transparent 18rem),
+    linear-gradient(135deg, #f4f7f9 0%, #eef2f4 100%);
+  border-color: #cddbe3;
+}
+.careboard[data-role='viewer'] .dashboard-sidebar,
+.careboard[data-role='viewer'] .dashboard-mobile-header,
+.careboard[data-role='viewer'] .dashboard-mobile-nav {
+  background: rgb(255 255 255 / 94%);
+}
+.careboard[data-role='viewer'] .dashboard-card {
+  border-color: rgb(205 219 227 / 86%);
+}
+.careboard[data-role='viewer'] .dashboard-nav button[aria-current='page'] {
+  background-color: var(--role-primary);
+  box-shadow: 0 8px 20px rgb(74 107 124 / 18%);
+}
+body[data-role='viewer'] [data-radix-dialog-content] {
+  border-color: rgb(205 219 227 / 86%);
+}
+
+/* Shared surface and hover overrides. */
+.careboard[data-role='manager'] .bg-\[\#e6f0eb\],
+body[data-role='manager'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#f7f6f1\],
+body[data-role='manager'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='manager'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='manager'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#e6f0eb\],
+body[data-role='worker'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#f7f6f1\],
+body[data-role='worker'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='worker'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='worker'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#e6f0eb\],
+body[data-role='viewer'] .bg-\[\#e6f0eb\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#f7f6f1\],
+body[data-role='viewer'] .bg-\[\#f7f6f1\] {
+  background-color: var(--role-surface) !important;
+}
+.careboard[data-role='viewer'] .hover\:bg-\[\#f1f5f1\]\:hover,
+body[data-role='viewer'] .hover\:bg-\[\#f1f5f1\]\:hover {
+  background-color: var(--role-primary-light) !important;
+}
+
+/* Primary color swaps for the most common Tailwind arbitrary utility classes. */
+.careboard[data-role='manager'] .bg-\[\#287b6f\],
+body[data-role='manager'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='manager'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='manager'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='manager'] .text-\[\#287b6f\],
+body[data-role='manager'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#e8f1ec\],
+body[data-role='manager'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#eef4ec\],
+body[data-role='manager'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#203f36\],
+body[data-role='manager'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='manager'] .text-\[\#bcd9ca\],
+body[data-role='manager'] .text-\[\#bcd9ca\] {
+  color: var(--role-primary-soft) !important;
+}
+.careboard[data-role='manager'] .text-\[\#216b61\],
+body[data-role='manager'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+.careboard[data-role='manager'] .bg-\[\#67a193\],
+body[data-role='manager'] .bg-\[\#67a193\] {
+  background-color: #5c9a8b !important;
+}
+
+.careboard[data-role='worker'] .bg-\[\#287b6f\],
+body[data-role='worker'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='worker'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='worker'] .text-\[\#287b6f\],
+body[data-role='worker'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#e8f1ec\],
+body[data-role='worker'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#eef4ec\],
+body[data-role='worker'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#203f36\],
+body[data-role='worker'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='worker'] .text-\[\#bcd9ca\],
+body[data-role='worker'] .text-\[\#bcd9ca\],
+.careboard[data-role='worker'] .text-\[\#d8e7df\],
+body[data-role='worker'] .text-\[\#d8e7df\] {
+  color: var(--role-primary-soft) !important;
+}
+.careboard[data-role='worker'] .text-\[\#216b61\],
+body[data-role='worker'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+.careboard[data-role='worker'] .bg-\[\#67a193\],
+body[data-role='worker'] .bg-\[\#67a193\] {
+  background-color: #8ba87c !important;
+}
+
+.careboard[data-role='viewer'] .bg-\[\#287b6f\],
+body[data-role='viewer'] .bg-\[\#287b6f\] {
+  background-color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .hover\:bg-\[\#216b61\]\:hover,
+body[data-role='viewer'] .hover\:bg-\[\#216b61\]\:hover {
+  background-color: var(--role-primary-hover) !important;
+}
+.careboard[data-role='viewer'] .text-\[\#287b6f\],
+body[data-role='viewer'] .text-\[\#287b6f\] {
+  color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#e8f1ec\],
+body[data-role='viewer'] .bg-\[\#e8f1ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#eef4ec\],
+body[data-role='viewer'] .bg-\[\#eef4ec\] {
+  background-color: var(--role-primary-light) !important;
+}
+.careboard[data-role='viewer'] .bg-\[\#203f36\],
+body[data-role='viewer'] .bg-\[\#203f36\] {
+  background-color: var(--role-primary-dark) !important;
+}
+.careboard[data-role='viewer'] .text-\[\#216b61\],
+body[data-role='viewer'] .text-\[\#216b61\] {
+  color: var(--role-success) !important;
+}
+
+/* Focus rings and borders should follow the active role. */
+.careboard[data-role='manager'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='manager'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='worker'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='viewer'] .focus-visible\:outline-\[\#287b6f\]:focus-visible,
+body[data-role='viewer'] .focus-visible\:outline-\[\#287b6f\]:focus-visible {
+  outline-color: var(--role-primary) !important;
+}
+.careboard[data-role='worker'] .careboard button:focus-visible,
+body[data-role='worker'] .careboard button:focus-visible,
+.careboard[data-role='manager'] .careboard button:focus-visible,
+body[data-role='manager'] .careboard button:focus-visible,
+.careboard[data-role='viewer'] .careboard button:focus-visible,
+body[data-role='viewer'] .careboard button:focus-visible {
+  outline-color: var(--role-primary);
+}
+
+/* Role badge shown in header and sidebar. */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+.role-badge::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+.role-badge-manager {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+.role-badge-worker {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+.role-badge-viewer {
+  background: var(--role-primary-light);
+  color: var(--role-primary);
+}
+
+/* Manager command center hero card. */
+.manager-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgb(197 224 220 / 45%), transparent 22rem),
+    linear-gradient(135deg, #eef5f4 0%, #e5efed 100%);
+  border: 1px solid #c5d8d6;
+}
+
+/* Caregiver shift hero card. */
+.worker-hero {
+  background:
+    radial-gradient(circle at 90% 10%, rgb(232 205 162 / 38%), transparent 22rem),
+    linear-gradient(135deg, #fdf8f0 0%, #f5efe3 100%);
+  border: 1px solid #e6d8c0;
 }

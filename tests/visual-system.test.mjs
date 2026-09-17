@@ -37,6 +37,38 @@ test('shared buttons keep touch-friendly default and large sizes', () => {
   assert.match(button, /lg: 'h-12 gap-2 px-5/);
 });
 
+test('dashboard depth system is green-led and reduced-motion safe', () => {
+  const css = source('app/globals.css');
+  assert.match(css, /--shadow-raised:/);
+  assert.match(css, /\.dashboard-card:has\(> button:hover\)/);
+  assert.match(css, /--role-primary: #347858/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.careboard \[data-slot='button'\]/);
+});
+
+test('dashboard has accessible loading, route error, and live connection recovery states', () => {
+  const dashboard = source('app/household-app.tsx');
+  const loading = source('app/dashboard/loading.tsx');
+  const error = source('app/dashboard/error.tsx');
+  assert.match(dashboard, /function ConnectionBanner/);
+  assert.match(dashboard, /window\.addEventListener\('offline'/);
+  assert.match(dashboard, /Your last loaded information is still available/);
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(error, /role="alert"/);
+  assert.match(error, /onClick=\{reset\}/);
+});
+
+test('shared primitives carry dimensional surfaces across forms, dialogs, cards, and tables', () => {
+  const dialog = source('components/ui/dialog.tsx');
+  const card = source('components/ui/card.tsx');
+  const input = source('components/ui/input.tsx');
+  const table = source('components/ui/table.tsx');
+  assert.match(dialog, /shadow-\[var\(--shadow-raised\)\]/);
+  assert.match(dialog, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(card, /shadow-\[var\(--shadow-soft\)\]/);
+  assert.match(input, /focus-visible:ring-ring\/30/);
+  assert.match(table, /rounded-2xl/);
+});
+
 test('every dashboard form action uses explicit submit semantics', () => {
   const dashboard = source('app/household-app.tsx');
   const syntax = ts.createSourceFile('household-app.tsx', dashboard, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

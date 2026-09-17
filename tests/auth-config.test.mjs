@@ -1,6 +1,32 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { accountRoleAllowed, authenticationConfigured, memberIdForEmail, trustedMutationOrigin } from '../lib/auth-config.ts';
+import { accountRoleAllowed, authenticationConfigured, localDevMode, memberIdForEmail, trustedMutationOrigin } from '../lib/auth-config.ts';
+
+test('local development authentication cannot be enabled outside development', () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousFlag = process.env.CAREBOARD_LOCAL_DEV;
+  try {
+    for (const environment of ['production', 'test', undefined]) {
+      if (environment === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = environment;
+      for (const flag of ['true', '1', 'false', undefined]) {
+        if (flag === undefined) delete process.env.CAREBOARD_LOCAL_DEV;
+        else process.env.CAREBOARD_LOCAL_DEV = flag;
+        assert.equal(localDevMode(), false, `${environment}/${flag} must require real authentication`);
+      }
+    }
+    process.env.NODE_ENV = 'development';
+    delete process.env.CAREBOARD_LOCAL_DEV;
+    assert.equal(localDevMode(), true);
+    process.env.CAREBOARD_LOCAL_DEV = 'false';
+    assert.equal(localDevMode(), false);
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousFlag === undefined) delete process.env.CAREBOARD_LOCAL_DEV;
+    else process.env.CAREBOARD_LOCAL_DEV = previousFlag;
+  }
+});
 
 test('authentication configuration fails closed and requires the explicit owner', () => {
   process.env.AUTH_SECRET = 'x'.repeat(32); process.env.AUTH_URL = 'http://localhost:3010';
