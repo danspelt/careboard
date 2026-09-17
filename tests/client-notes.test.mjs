@@ -95,6 +95,12 @@ test('migration persists review state, messages, and original safety-triaged tex
   db.close();
 });
 
+test('standalone OCR tracing includes the explicitly loaded core and local language data', () => {
+  const config = readFileSync(new URL('../next.config.ts', import.meta.url), 'utf8');
+  assert.match(config, /node_modules\/tesseract\.js-core\/\*\*/);
+  assert.match(config, /node_modules\/@tesseract\.js-data\/eng\/4\.0\.0\/\*\*/);
+});
+
 test('upload route validates and OCRs before persisting, while review remains manager-only', () => {
   const route = readFileSync(new URL('../app/api/client-notes/route.ts', import.meta.url), 'utf8');
   const household = readFileSync(new URL('../lib/household-data.ts', import.meta.url), 'utf8');
