@@ -37,6 +37,15 @@ async function signIn({ searchParams = {}, passwordEnabled = true, googleEnabled
         SubmitButton: ({ children }) => React.createElement('button', { type: 'submit' }, children),
       };
     }
+    if (specifier === '@/components/brand-icon') {
+      return {
+        BrandIcon: ({ size = 40 }) => React.createElement('svg', {
+          'data-slot': 'brand-icon',
+          width: size,
+          height: size,
+        }),
+      };
+    }
     if (specifier === 'next/image') return { default: (props) => React.createElement('img', props) };
     if (specifier === 'next/link') return { default: ({ href, children, ...rest }) => React.createElement('a', { href, ...rest }, children) };
     return require(specifier);
@@ -45,16 +54,22 @@ async function signIn({ searchParams = {}, passwordEnabled = true, googleEnabled
   return renderToStaticMarkup(await loaded.exports.default({ searchParams: Promise.resolve(searchParams) }));
 }
 
-test('sign-in renders one h1, CSIL positioning, and care worker copy', async () => {
+test('sign-in renders one h1, landing-aligned copy, and care worker roles', async () => {
   const html = await signIn();
   assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
-  assert.match(html, /Built for CSIL employers/);
-  assert.match(html, /Run your care team with confidence/);
+  assert.match(html, /Made for families &amp; care teams|Made for families & care teams/);
+  assert.match(html, /A little less juggling/);
+  assert.match(html, /A lot more care/);
   assert.match(html, /care workers/i);
   assert.match(html, /Care worker/);
   assert.match(html, /Family viewer/);
   assert.match(html, /Household manager/);
+  assert.match(html, /Household care/);
+  assert.match(html, /data-slot="brand-icon"/);
+  assert.match(html, /auth-enter/);
+  assert.match(html, /order-1/);
   assert.match(html, /<input[^>]*type="password"[^>]*name="password"/);
+  assert.doesNotMatch(html, /CSIL|timesheets|pay-period/i);
 });
 
 test('sign-in maps error codes to specific messages', async () => {
@@ -73,9 +88,11 @@ test('sign-in shows the activation notice after joining', async () => {
   assert.match(html, /Your account is active/);
 });
 
-test('Google sign-in only appears when configured', async () => {
+test('Google sign-in is always shown and disabled when not configured', async () => {
   const withGoogle = await signIn({ googleEnabled: true });
-  assert.match(withGoogle, /Sign in with Google/);
+  assert.match(withGoogle, /Continue with Google/);
+  assert.doesNotMatch(withGoogle, /<button type="submit" disabled/);
   const withoutGoogle = await signIn();
-  assert.doesNotMatch(withoutGoogle, /Sign in with Google/);
+  assert.match(withoutGoogle, /Continue with Google/);
+  assert.match(withoutGoogle, /<button type="submit" disabled/);
 });

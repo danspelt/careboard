@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ArrowRight, BedDouble, Bell, Check, ClipboardCheck, Clock3, FileCheck2, HeartHandshake, House, LockKeyhole, LogIn, ShieldCheck, Sprout, Users } from 'lucide-react';
 import { auth } from '@/auth';
+import { BrandIcon } from '@/components/brand-icon';
 
 const focusClass = 'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]';
 const primaryClass = `inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#246f63] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_0_#194e46] transition hover:bg-[#1d5b51] active:translate-y-px sm:w-auto ${focusClass}`;
@@ -9,14 +10,6 @@ const steps = [
   { icon: HeartHandshake, title: 'Share the care', text: 'Care workers see their assignments and available work. Add progress notes, flag issues, and share photos.' },
   { icon: FileCheck2, title: 'Know what’s done', text: 'Managers review completed work, coordinate the team, and export monthly reports. Less chasing, more clarity.' },
 ];
-
-function BrandIcon({ size = 40 }: { size?: number }) {
-  return <svg data-slot="brand-icon" width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" className="shrink-0">
-    <rect width="64" height="64" rx="16" fill="#287b6f" />
-    <path d="M16 30 L32 16 L48 30 L44 30 L44 47 L20 47 L20 30 Z" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M26 36 L31 41 L39 33" stroke="#f4c95d" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>;
-}
 
 function CareIllustration() {
   return <svg viewBox="0 0 480 174" width="480" height="174" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" className="mx-auto h-auto w-full max-w-md">
@@ -106,7 +99,7 @@ export default async function Home() {
             <h1 id="hero-heading" className="mt-5 max-w-lg text-[2.6rem] font-semibold leading-[1.08] tracking-[-.045em] sm:text-5xl lg:text-[3.6rem]">A little less juggling.<br /><span className="text-[#287b6f]">A lot more care.</span></h1>
             <p className="mt-5 max-w-md text-base leading-7 text-[#53685f]">Your private household care board. Organize tasks, coordinate trusted care workers, and see what’s done—all in one calm, shared space.</p>
             <div className="mt-7 flex flex-col items-start gap-4">
-              {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : <Link href="/sign-in" className={primaryClass}>Sign in to your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
+              {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : <Link href="/sign-in" className={primaryClass}>Join your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#53685f]">
                 <span className="inline-flex items-center gap-1.5"><LockKeyhole className="size-3.5" aria-hidden="true" />Manager-approved access</span>
               </div>

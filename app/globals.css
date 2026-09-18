@@ -199,12 +199,62 @@
   background:
     radial-gradient(circle at 8% 15%, rgb(177 216 195 / 45%) 0%, transparent 28rem),
     radial-gradient(circle at 92% 85%, rgb(229 194 132 / 18%) 0%, transparent 24rem),
+    radial-gradient(circle at 50% 110%, rgb(180 210 190 / 22%) 0%, transparent 32rem),
     #f4f7f3;
+}
+.auth-shell {
+  position: relative;
+  isolation: isolate;
+}
+.auth-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 42rem 28rem at 18% 8%, rgb(255 255 255 / 55%), transparent),
+    radial-gradient(ellipse 36rem 24rem at 88% 72%, rgb(244 217 160 / 16%), transparent);
+  pointer-events: none;
+}
+.auth-enter {
+  animation: auth-rise 520ms cubic-bezier(.22, 1, .36, 1) both;
+}
+.auth-enter-delay {
+  animation-delay: 90ms;
+}
+@keyframes auth-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-enter,
+  .auth-enter-delay {
+    animation: none;
+  }
 }
 .auth-brand { transition: color 160ms ease, transform 160ms ease; }
 .auth-brand:hover { color: #287b6f; transform: translateY(-1px); }
 .auth-panel { position: relative; overflow: hidden; border-color: #c9dcd0; background: linear-gradient(155deg, rgb(255 255 255 / 97%), rgb(247 251 247 / 94%)); box-shadow: var(--shadow-raised); backdrop-filter: blur(14px); }
 .auth-panel::before { content: ''; position: absolute; z-index: -1; inset: 0 0 auto; height: 5rem; background: radial-gradient(circle at 90% 0%, rgb(158 207 177 / 24%), transparent 55%); pointer-events: none; }
+.auth-google {
+  min-height: 3rem;
+  border: 1px solid #d7dfd7;
+  border-radius: .8rem;
+  background: white;
+  font-weight: 650;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 90%) inset, 0 1px 2px rgb(18 61 49 / 4%);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+.auth-google:hover:not(:disabled) {
+  background: #f7faf7;
+  border-color: #c3d2c6;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 90%) inset, 0 4px 12px rgb(18 61 49 / 7%);
+  transform: translateY(-1px);
+}
+.auth-google:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-pressed);
+}
 .auth-control { min-height: 3rem; width: 100%; border: 1px solid var(--input); border-radius: .8rem; background: white; padding: .75rem 1rem; transition: border-color 160ms ease, box-shadow 160ms ease; }
 .auth-control:hover { border-color: #a9beb2; }
 .auth-control:focus-visible { border-color: #287b6f; outline: none; box-shadow: 0 0 0 4px rgb(40 123 111 / 12%); }

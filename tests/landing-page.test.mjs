@@ -18,6 +18,16 @@ async function landing({ signedIn = false, googleEnabled = false } = {}) {
     if (specifier === '@/auth') return { auth: async () => signedIn ? { user: { name: 'Test Member' } } : null };
     if (specifier === '@/lib/auth-config') return { googleAuthenticationConfigured: () => googleEnabled };
     if (specifier === '@/app/actions/auth') return { googleSignIn: async () => { throw new Error('Sign-in must not run during rendering'); } };
+    if (specifier === '@/components/brand-icon') {
+      const React = require('react');
+      return {
+        BrandIcon: ({ size = 40 }) => React.createElement('svg', {
+          'data-slot': 'brand-icon',
+          width: size,
+          height: size,
+        }),
+      };
+    }
     return require(specifier);
   };
   runInThisContext(`(function(require, module, exports) {${outputText}\n})`)(localRequire, loaded, loaded.exports);
@@ -58,7 +68,7 @@ test('configured Google SSO stays on the sign-in page, not the landing page', as
   const html = await landing({ googleEnabled: true });
   assert.doesNotMatch(html, /Continue with Google|<form\b/);
   assert.match(html, /href="\/sign-in"/);
-  assert.match(html, /Sign in to your care team/);
+  assert.match(html, /Join your care team/);
 });
 
 test('unconfigured Google SSO falls back to the standard sign-in page', async () => {
