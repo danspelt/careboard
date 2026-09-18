@@ -17,7 +17,12 @@ export async function googleSignIn() {
 export async function passwordSignIn(form: FormData) {
   if (!authenticationConfigured()) redirect('/sign-in?error=Configuration');
   try { await signIn('credentials', { email: form.get('email'), password: form.get('password'), redirectTo: '/dashboard' }); }
-  catch (error) { if (error instanceof AuthError) redirect('/sign-in?error=CredentialsSignin'); throw error; }
+  catch (error) {
+    if (error instanceof AuthError) {
+      redirect(`/sign-in?error=${error.type === 'CredentialsSignin' ? 'CredentialsSignin' : 'SignInFailed'}`);
+    }
+    throw error;
+  }
 }
 
 export async function changePassword(form: FormData) {

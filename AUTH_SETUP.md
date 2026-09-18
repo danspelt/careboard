@@ -15,6 +15,14 @@ CareBoard supports Google OAuth and email/password authentication. It does not s
 
 The manager identity is determined only by `CAREBOARD_OWNER_EMAIL` and its configured manager profile. Worker mappings cannot grant the manager role.
 
+## First manager email/password login
+
+Email login means an approved email address **and a password**; CareBoard does not send sign-in links or password-reset emails. Setting the owner email alone does not create a password.
+
+To provision the first manager password, an administrator may set `CAREBOARD_OWNER_PASSWORD_HASH` to a bcrypt hash (cost 10–14) generated securely from a strong temporary password. Use at least 12 characters with uppercase, lowercase, a number, and a symbol. Treat both the password and its hash as secrets: do not put them in git, chat, command-line arguments, or logs. Set the hash through the deployment secret controls over trusted HTTPS or an authenticated secure tunnel.
+
+Household initialization inserts this credential only for the configured active owner, only when no credential already exists. Existing passwords are never overwritten. The manager must replace the temporary password on first password login. Remove the bootstrap secret after successful provisioning; it is not a password-reset mechanism. Worker/viewer accounts continue to use manager-created temporary passwords or single-use invitations.
+
 ## Worker accounts
 
 The manager creates each worker with a name, approved email, and either a strong temporary password or an invite link. Invite links (`/accept-invite?token=…`) are single-use, expire in 7 days, and let the worker choose their own password; only the SHA-256 hash of the token is stored. The password is hashed with `bcryptjs`; plaintext is never stored. New workers are active immediately (invited workers activate when they accept). A credentials login with a temporary password is restricted to the protected password-change screen until the worker chooses a permanent password. Google login by the same active approved worker is not restricted by the credential-specific temporary-password state.

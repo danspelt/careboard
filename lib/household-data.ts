@@ -7,7 +7,7 @@ import { getD1 } from '@/db';
 import { canAssignTo, visibleTasks, workerCan, workerTaskGroups, type AccountStatus, type Role, type TaskStatus } from '@/lib/access-policy';
 import { ensureAccountTable, setAccountStatus } from '@/lib/account-store';
 import { memberIdForEmail, ownerEmail } from '@/lib/auth-config';
-import { credentialForEmail, setCredential } from '@/lib/credential-store';
+import { credentialForEmail, ensureOwnerCredential, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
@@ -125,6 +125,7 @@ async function seedIfEmpty() {
 
 export async function ensureHouseholdData() {
   await seedIfEmpty();
+  await ensureOwnerCredential();
 }
 
 async function inviteTokenHash(token: string) {

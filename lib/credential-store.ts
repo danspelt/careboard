@@ -1,6 +1,22 @@
 import 'server-only';
 import { getD1 } from '@/db';
 import { normalizeEmail } from '@/lib/auth-security';
+import { ownerEmail } from '@/lib/auth-config';
+import { resolveAccountMember } from '@/lib/account-store';
+
+/** Optional first-manager password provisioning; never reset an existing password. */
+export async function ensureOwnerCredential() {
+  const hash = process.env.CAREBOARD_OWNER_PASSWORD_HASH;
+  if (!hash) return;
+  const email = normalizeEmail(ownerEmail());
+  if (!email || !/^\$2[aby]\$(?:1[0-4])\$[./A-Za-z0-9]{53}$/.test(hash)) {
+    throw new Error('Owner password bootstrap requires a valid owner email and bcrypt hash (cost 10–14).');
+  }
+  if (!await resolveAccountMember(email)) return;
+  await ensureCredentialTables();
+  await getD1().prepare(`INSERT INTO auth_credentials(email, password_hash, must_change_password, updated_at) VALUES (?, ?, 1, ?)
+    ON CONFLICT(email) DO NOTHING`).bind(email, hash, new Date().toISOString()).run();
+}
 
 export async function ensureCredentialTables() {
   const db = getD1();
