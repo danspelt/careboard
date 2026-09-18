@@ -154,7 +154,7 @@ function runMigrations(database: Database.Database) {
       applied_at TEXT NOT NULL
     )
   `);
-  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message'];
+  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_shift_handovers'];
   for (const migrationId of migrationIds) {
     const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
     if (applied) continue;
@@ -175,27 +175,29 @@ function runMigrations(database: Database.Database) {
 
 async function runPostgresMigrations(pool: Pool) {
   await pool.query('CREATE TABLE IF NOT EXISTS _careboard_migrations (id TEXT PRIMARY KEY NOT NULL, applied_at TEXT NOT NULL)');
-  const migrationId = '0000_full_schema';
-  const { rows } = await pool.query('SELECT id FROM _careboard_migrations WHERE id = $1', [migrationId]);
-  if (rows.length > 0) return;
-  const migrationPath = join(process.cwd(), 'drizzle', 'pg', `${migrationId}.sql`);
-  if (!existsSync(migrationPath)) throw new Error(`PostgreSQL migration missing: ${migrationPath}`);
-  const sql = readFileSync(migrationPath, 'utf8');
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) await client.query(statement);
-    await client.query('INSERT INTO _careboard_migrations (id, applied_at) VALUES ($1, $2)', [migrationId, new Date().toISOString()]);
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+  const migrationIds = ['0000_full_schema', '0001_shift_handovers'];
+  for (const migrationId of migrationIds) {
+    const { rows } = await pool.query('SELECT id FROM _careboard_migrations WHERE id = $1', [migrationId]);
+    if (rows.length > 0) continue;
+    const migrationPath = join(process.cwd(), 'drizzle', 'pg', `${migrationId}.sql`);
+    if (!existsSync(migrationPath)) throw new Error(`PostgreSQL migration missing: ${migrationPath}`);
+    const sql = readFileSync(migrationPath, 'utf8');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const statements = sql
+        .split('--> statement-breakpoint')
+        .map((statement) => statement.trim())
+        .filter(Boolean);
+      for (const statement of statements) await client.query(statement);
+      await client.query('INSERT INTO _careboard_migrations (id, applied_at) VALUES ($1, $2)', [migrationId, new Date().toISOString()]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

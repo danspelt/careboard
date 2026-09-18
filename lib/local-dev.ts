@@ -2,6 +2,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import type { AuthenticatedAccess } from '@/lib/auth-access';
 import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem, ClientNoteSubmission } from '@/lib/household-data';
+import { handoverFieldLimit, handoverHasContent, type ShiftHandover } from '@/lib/shift-handover';
 import type { InboxItem } from '@/lib/client-notes';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
@@ -89,6 +90,7 @@ function makeChore(overrides: Partial<Chore> & Pick<Chore, 'id' | 'title' | 'are
 type RawLocalState = Omit<HouseholdState, 'clientNotes' | 'clientNoteQueue' | 'inbox' | 'safetyAlerts' | 'viewer' | 'taskGroups' | 'metrics' | 'reminders' | 'announcements'> & {
   clientNoteSubmissions: ClientNoteSubmission[];
   inboxItems: InboxItem[];
+  shiftHandovers: ShiftHandover[];
 };
 
 const mockState: RawLocalState = {
@@ -109,6 +111,7 @@ const mockState: RawLocalState = {
   messages: [],
   clientNoteSubmissions: [],
   inboxItems: [],
+  shiftHandovers: [],
 };
 
 async function localDevRole(): Promise<Role> {
@@ -168,6 +171,8 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
   const action = requiredString(input.action, 'Action');
   const actorId = typeof input.actorId === 'string' ? input.actorId : manager.id;
   const now2 = new Date().toISOString();
+  // Mirror the production rule so role previews behave like the real backend.
+  if (actorId === viewerMember.id) throw new Error('Family viewers have read-only access.');
 
   const findChore = (id: string) => {
     const chore = mockState.chores.find((c) => c.id === id);
@@ -381,6 +386,21 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       const target: Shift[] = rows.map((row, index) => ({ id: `${action}-${memberId}-${index}`, memberId, weekday: row.weekday, startTime: row.startTime, endTime: row.endTime, createdAt: now2 }));
       if (action === 'setShifts') mockState.shifts = (mockState.shifts ?? []).filter((s) => s.memberId !== memberId).concat(target);
       else mockState.availability = (mockState.availability ?? []).filter((s) => s.memberId !== memberId).concat(target);
+      break;
+    }
+    case 'saveShiftHandover': {
+      const memberId = typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
+      const shiftDate = typeof input.shiftDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.shiftDate) ? input.shiftDate : now2.slice(0, 10);
+      const draft = {
+        completedSummary: optionalString(input.completedSummary, handoverFieldLimit),
+        pendingSummary: optionalString(input.pendingSummary, handoverFieldLimit),
+        notes: optionalString(input.notes, handoverFieldLimit),
+      };
+      if (!handoverHasContent(draft)) throw new Error('Add what you finished, what is still pending, or a note for the next shift.');
+      const existing = mockState.shiftHandovers.find((item) => item.memberId === memberId && item.shiftDate === shiftDate);
+      if (existing) Object.assign(existing, draft, { createdAt: now2 });
+      else mockState.shiftHandovers = [{ id: crypto.randomUUID(), memberId, shiftDate, ...draft, createdAt: now2 }, ...mockState.shiftHandovers];
+      pushActivity('shift_handover', 'left a shift handover');
       break;
     }
     case 'addNote': {

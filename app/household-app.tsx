@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member, Message } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
+import { incomingHandover, myHandoverFor, sortHandovers, suggestedCompletedSummary, suggestedPendingSummary, type ShiftHandover } from '@/lib/shift-handover';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
@@ -439,6 +440,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   if (section === 'team') return (
     <>
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
+      <ShiftHandoverLog state={state} />
       {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><ul className="mt-4 space-y-2 text-sm text-[#687873]"><li>Invite by email — they set their own password</li><li>Set weekly shifts and availability</li><li>Track certifications and contact details</li></ul><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => {
@@ -1300,6 +1302,98 @@ function TimeClock({ member, entries, shifts, mutate, busy }: any) {
   );
 }
 
+function ShiftHandoverLog({ state }: any) {
+  const handovers = sortHandovers<ShiftHandover>(state.shiftHandovers ?? []).slice(0, 8);
+  if (!handovers.length) return null;
+  const author = (id: string) => state.members.find((item: Member) => item.id === id)?.name ?? 'A care worker';
+  return (
+    <Card className="mb-6">
+      <h2 className="flex items-center gap-2 font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />Recent shift handovers</h2>
+      <p className="mt-1 text-sm text-[#687873]">What each care worker passed to the next shift.</p>
+      <ol className="mt-4 space-y-3">
+        {handovers.map((handover) => (
+          <li key={handover.id} className="rounded-xl border border-[#dfe5dc] bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-semibold">{author(handover.memberId)}</span>
+              <time className="text-xs text-[#687873]">{new Date(handover.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+            </div>
+            <HandoverSection label="Completed" body={handover.completedSummary} />
+            <HandoverSection label="Still pending" body={handover.pendingSummary} />
+            <HandoverSection label="Notes" body={handover.notes} />
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+function HandoverSection({ label, body }: { label: string; body: string }) {
+  if (!body.trim()) return null;
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#687873]">{label}</p>
+      <p className="mt-1 whitespace-pre-line text-sm leading-6 text-[#33433e]">{body}</p>
+    </div>
+  );
+}
+
+function ShiftHandoverPanel({ state, member, mutate, busy, completed, outstanding, date }: any) {
+  const handovers: ShiftHandover[] = state.shiftHandovers ?? [];
+  const incoming = incomingHandover(handovers, member.id);
+  const mine = myHandoverFor(handovers, member.id, date);
+  const [editing, setEditing] = useState(false);
+  const author = (id: string) => state.members.find((item: Member) => item.id === id)?.name ?? 'A care worker';
+  const stamp = (value: string) => new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return (
+    <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      <Card className={incoming ? 'border-[#bcd4c9] bg-[#f2f7f1]' : ''}>
+        <h2 className="flex items-center gap-2 font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />From the last shift</h2>
+        {incoming ? (
+          <>
+            <p className="mt-1 text-sm text-[#687873]">{author(incoming.memberId)} · {stamp(incoming.createdAt)}</p>
+            <HandoverSection label="Completed" body={incoming.completedSummary} />
+            <HandoverSection label="Still pending" body={incoming.pendingSummary} />
+            <HandoverSection label="Notes for you" body={incoming.notes} />
+          </>
+        ) : (
+          <p className="mt-2 text-sm leading-6 text-[#687873]">No handover has been left yet. When another care worker finishes a shift, their summary appears here.</p>
+        )}
+      </Card>
+      <Card>
+        <h2 className="flex items-center gap-2 font-bold"><ClipboardList className="size-5 text-[#287b6f]" aria-hidden="true" />Your end-of-shift handover</h2>
+        <p className="mt-1 text-sm text-[#687873]">{mine ? `Saved ${stamp(mine.createdAt)}. You can update it until your next shift.` : 'Leave a short summary so the next care worker knows where things stand.'}</p>
+        {mine && !editing ? (
+          <>
+            <HandoverSection label="Completed" body={mine.completedSummary} />
+            <HandoverSection label="Still pending" body={mine.pendingSummary} />
+            <HandoverSection label="Notes" body={mine.notes} />
+            <Button type="button" variant="outline" className="mt-4 min-h-11" onClick={() => setEditing(true)}><Pencil className="size-4" aria-hidden="true" />Update handover</Button>
+          </>
+        ) : (
+          <form
+            className="mt-4 grid gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = Object.fromEntries(new FormData(e.currentTarget));
+              mutate({ action: 'saveShiftHandover', shiftDate: date, ...data }, 'Handover saved for the next shift.')
+                .then(() => setEditing(false))
+                .catch(() => {});
+            }}
+          >
+            <TextArea label="What got done" name="completedSummary" defaultValue={mine?.completedSummary ?? suggestedCompletedSummary(completed)} />
+            <TextArea label="What is still pending" name="pendingSummary" defaultValue={mine?.pendingSummary ?? suggestedPendingSummary(outstanding)} />
+            <TextArea label="Anything the next person should know" name="notes" defaultValue={mine?.notes ?? ''} />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" />{mine ? 'Save changes' : 'Leave handover'}</Button>
+              {mine && <Button type="button" variant="outline" className="min-h-11" onClick={() => setEditing(false)}>Cancel</Button>}
+            </div>
+          </form>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
   const date = today();
   const handoff = buildShiftHandoff<Chore>(state.chores, member.id, date);
@@ -1324,6 +1418,7 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
         <Metric label="Due today" value={outstanding.length} icon={CalendarDays} />
         <Metric label="Available to claim" value={state.chores.filter((task: Chore) => task.assignedTo === null && task.status === 'open').length} icon={ClipboardList} />
       </div>
+      <ShiftHandoverPanel state={state} member={member} mutate={mutate} busy={busy} completed={handoff.completed} outstanding={outstanding} date={date} />
       <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
         <div className="space-y-6">
           <Card className="p-0">

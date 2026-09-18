@@ -14,6 +14,7 @@ import type { Certification } from '@/lib/certifications';
 import { canSendInboxMessage, reviewClientNote, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
+import { handoverFieldLimit, handoverHasContent, incomingHandover, type ShiftHandover } from '@/lib/shift-handover';
 
 export type Member = {
   id: string;
@@ -64,6 +65,7 @@ export type Shift = { id: string; memberId: string; weekday: number; startTime: 
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
 export type Message = { id: string; memberId: string; body: string; createdAt: string };
+export type { ShiftHandover };
 export type ClientNoteSubmission = {
   id: string; clientMemberId: string; submittedBy: string; sourcePhotoId: string | null; ocrText: string;
   status: ClientNoteStatus; approvedText: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string;
@@ -101,6 +103,7 @@ export type HouseholdState = {
   clientNoteQueue?: ClientNoteSubmission[];
   inbox?: InboxItem[];
   safetyAlerts?: SafetyAlert[];
+  shiftHandovers?: ShiftHandover[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -192,7 +195,7 @@ async function rawState() {
   const db = getD1();
   const settings = await getHouseholdSettings();
   const cutoff = db.dialect === 'postgres' ? "(NOW() - INTERVAL '90 days')::TEXT" : "datetime('now', '-90 days')";
-  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems, shiftHandovers] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -225,6 +228,7 @@ async function rawState() {
     db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
     db.prepare(`SELECT id, client_member_id AS clientMemberId, submitted_by AS submittedBy, source_photo_id AS sourcePhotoId, ocr_text AS ocrText, status, approved_text AS approvedText, reviewed_by AS reviewedBy, reviewed_at AS reviewedAt, created_at AS createdAt FROM client_note_submissions ORDER BY created_at DESC`).all<ClientNoteSubmission>(),
     db.prepare(`SELECT id, worker_id AS workerId, kind, body, submission_id AS submissionId, created_by AS createdBy, safety_category AS safetyCategory, safety_reason AS safetyReason, safety_reviewed_by AS safetyReviewedBy, safety_reviewed_at AS safetyReviewedAt, created_at AS createdAt FROM worker_inbox_items ORDER BY created_at DESC LIMIT 300`).all<InboxItem>(),
+    db.prepare(`SELECT id, member_id AS memberId, shift_date AS shiftDate, completed_summary AS completedSummary, pending_summary AS pendingSummary, notes, created_at AS createdAt FROM shift_handovers ORDER BY created_at DESC LIMIT 100`).all<ShiftHandover>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -235,7 +239,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, shiftHandovers: shiftHandovers.results };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -292,7 +296,10 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox };
+  // Workers see their own handovers plus the single most recent one left by someone else — enough to pick up the shift without exposing the whole team's history.
+  const incoming = incomingHandover(state.shiftHandovers, viewer.id);
+  const shiftHandovers = [...state.shiftHandovers.filter((handover) => handover.memberId === viewer.id).slice(0, 14), ...(incoming ? [incoming] : [])];
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, shiftHandovers };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -854,6 +861,33 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const body = requiredString(input.body, 'Announcement');
     if (body.length > 500) throw new Error('Announcements are limited to 500 characters.');
     await activity(null, actorId, 'announcement', body, now).run();
+  } else if (action === 'saveShiftHandover') {
+    // Care workers write their own handover; managers may record one on a worker's behalf.
+    const memberId = typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
+    if (actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only write your own shift handover.');
+    const target = await db
+      .prepare(`SELECT m.id, m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`)
+      .bind(memberId)
+      .first<Member>();
+    if (!target || target.status !== 'active') throw new Error('Choose an active care worker.');
+    const shiftDate = typeof input.shiftDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.shiftDate) ? input.shiftDate : now.slice(0, 10);
+    const handover = {
+      completedSummary: optionalString(input.completedSummary, handoverFieldLimit),
+      pendingSummary: optionalString(input.pendingSummary, handoverFieldLimit),
+      notes: optionalString(input.notes, handoverFieldLimit),
+    };
+    if (!handoverHasContent(handover)) throw new Error('Add what you finished, what is still pending, or a note for the next shift.');
+    await db.batch([
+      db
+        .prepare(
+          `INSERT INTO shift_handovers(id, household_id, member_id, shift_date, completed_summary, pending_summary, notes, created_at, updated_at)
+           VALUES(?, 'default', ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (household_id, member_id, shift_date)
+           DO UPDATE SET completed_summary=excluded.completed_summary, pending_summary=excluded.pending_summary, notes=excluded.notes, updated_at=excluded.updated_at`,
+        )
+        .bind(crypto.randomUUID(), memberId, shiftDate, handover.completedSummary, handover.pendingSummary, handover.notes, now, now),
+      activity(null, actorId, 'shift_handover', `left a shift handover for ${target.name}`, now),
+    ]);
   } else throw new Error('Unsupported action.');
   return { ...(await getHouseholdState(actorId)), ...extras };
 
