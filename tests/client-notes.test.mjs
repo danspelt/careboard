@@ -10,6 +10,7 @@ import {
   normalizeClientNoteText,
   reviewClientNote,
   triageInboxMessage,
+  scheduleChangeRequest,
   visibleInbox,
   visibleSafetyAlerts,
 } from '../lib/client-notes.ts';
@@ -26,6 +27,14 @@ test('client-note permissions and review transitions fail closed', () => {
   assert.throws(() => reviewClientNote('rejected', 'approve', 'text'), /already been reviewed/);
   assert.throws(() => reviewClientNote('pending', 'approve', '  '), /require reviewed text/);
   assert.equal(normalizeClientNoteText('a  \r\n\n\n\nb', 20), 'a\n\nb');
+});
+
+test('schedule change requests validate a date and bounded reason', () => {
+  const shift = { id: 'shift-1', weekday: 1, startTime: '09:00', endTime: '17:00' };
+  assert.deepEqual(scheduleChangeRequest('2026-09-21', ' Need the day off ', shift), { date: '2026-09-21', reason: 'Need the day off', shift, body: 'Schedule change request for 2026-09-21 (09:00-17:00): Need the day off' });
+  assert.throws(() => scheduleChangeRequest('tomorrow', 'Day off', shift), /valid date/);
+  assert.throws(() => scheduleChangeRequest('2026-09-22', 'Day off', shift), /one of your shifts/);
+  assert.throws(() => scheduleChangeRequest('2026-09-21', '  ', shift), /Explain/);
 });
 
 test('inbox visibility includes only participants for workers and everything for manager', () => {

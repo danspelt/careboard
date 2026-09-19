@@ -1,0 +1,44 @@
+import 'server-only';
+import nodemailer from 'nodemailer';
+
+export type CoverageEmail = { recipients: string[]; date: string; startTime: string; endTime: string };
+type MailSender = (message: { from: string; to: string; bcc: string[]; subject: string; text: string }) => Promise<unknown>;
+
+export function coverageEmailMessage(input: CoverageEmail, from: string) {
+  return {
+    from,
+    to: from,
+    bcc: input.recipients,
+    subject: `CareBoard shift coverage needed — ${input.date}`,
+    text: `A care shift on ${input.date} from ${input.startTime} to ${input.endTime} may need coverage. Sign in to CareBoard and use the in-app Inbox to coordinate with the manager. The schedule has not changed yet.`,
+  };
+}
+
+export async function sendCoverageEmail(input: CoverageEmail, sender?: MailSender) {
+  const from = process.env.EMAIL_FROM?.trim();
+  if (!input.recipients.length) return { status: 'skipped' as const };
+  if (sender && from) { await sender(coverageEmailMessage(input, from)); return { status: 'sent' as const }; }
+  const host = process.env.SMTP_HOST?.trim();
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASSWORD;
+  if (!from || !host || !user || !pass) return { status: 'skipped' as const };
+  const port = Number(process.env.SMTP_PORT || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { status: 'skipped' as const };
+  const transport = nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
+  await transport.sendMail(coverageEmailMessage(input, from));
+  return { status: 'sent' as const };
+}
+
+export async function sendManagerCoverageEmail(input: CoverageEmail, sender?: MailSender) {
+  const from = process.env.EMAIL_FROM?.trim();
+  if (!input.recipients.length) return { status: 'skipped' as const };
+  const message = { ...coverageEmailMessage(input, from || ''), subject: `CareBoard coverage accepted — ${input.date}`, text: `Coverage was accepted for the ${input.date} shift from ${input.startTime} to ${input.endTime}. Sign in to CareBoard to review the resolved schedule change.` };
+  if (sender && from) { await sender(message); return { status: 'sent' as const }; }
+  const host = process.env.SMTP_HOST?.trim(); const user = process.env.SMTP_USER?.trim(); const pass = process.env.SMTP_PASSWORD;
+  if (!from || !host || !user || !pass) return { status: 'skipped' as const };
+  const port = Number(process.env.SMTP_PORT || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { status: 'skipped' as const };
+  const transport = nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
+  await transport.sendMail(message);
+  return { status: 'sent' as const };
+}

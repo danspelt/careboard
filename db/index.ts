@@ -154,7 +154,7 @@ function runMigrations(database: Database.Database) {
       applied_at TEXT NOT NULL
     )
   `);
-  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message'];
+  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_schedule_coverage', '0016_sms_consent'];
   for (const migrationId of migrationIds) {
     const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
     if (applied) continue;
@@ -177,25 +177,30 @@ async function runPostgresMigrations(pool: Pool) {
   await pool.query('CREATE TABLE IF NOT EXISTS _careboard_migrations (id TEXT PRIMARY KEY NOT NULL, applied_at TEXT NOT NULL)');
   const migrationId = '0000_full_schema';
   const { rows } = await pool.query('SELECT id FROM _careboard_migrations WHERE id = $1', [migrationId]);
-  if (rows.length > 0) return;
-  const migrationPath = join(process.cwd(), 'drizzle', 'pg', `${migrationId}.sql`);
-  if (!existsSync(migrationPath)) throw new Error(`PostgreSQL migration missing: ${migrationPath}`);
-  const sql = readFileSync(migrationPath, 'utf8');
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const statements = sql
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) await client.query(statement);
-    await client.query('INSERT INTO _careboard_migrations (id, applied_at) VALUES ($1, $2)', [migrationId, new Date().toISOString()]);
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+  if (rows.length === 0) {
+    const migrationPath = join(process.cwd(), 'drizzle', 'pg', `${migrationId}.sql`);
+    if (!existsSync(migrationPath)) throw new Error(`PostgreSQL migration missing: ${migrationPath}`);
+    const sql = readFileSync(migrationPath, 'utf8');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const statement of sql.split('--> statement-breakpoint').map((value) => value.trim()).filter(Boolean)) await client.query(statement);
+      await client.query('INSERT INTO _careboard_migrations (id, applied_at) VALUES ($1, $2)', [migrationId, new Date().toISOString()]);
+      await client.query('COMMIT');
+    } catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
+  }
+  const upgrades = [
+    { id: '0015_schedule_coverage', sql: `CREATE TABLE IF NOT EXISTS schedule_change_requests (id TEXT PRIMARY KEY NOT NULL, household_id TEXT NOT NULL DEFAULT 'default', requester_id TEXT NOT NULL REFERENCES members(id), shift_id TEXT NOT NULL REFERENCES shifts(id), requested_date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','covered')), accepted_by TEXT REFERENCES members(id), accepted_at TEXT, created_at TEXT NOT NULL, UNIQUE(requester_id, requested_date)); CREATE INDEX IF NOT EXISTS idx_schedule_change_requests_status_date ON schedule_change_requests(household_id, status, requested_date);` },
+    { id: '0016_sms_consent', sql: 'ALTER TABLE members ADD COLUMN IF NOT EXISTS sms_opt_in INTEGER NOT NULL DEFAULT 0' },
+  ];
+  for (const upgrade of upgrades) {
+    const applied = await pool.query('SELECT id FROM _careboard_migrations WHERE id=$1', [upgrade.id]);
+    if (applied.rows.length) continue;
+    const client = await pool.connect();
+    try { await client.query('BEGIN'); await client.query(upgrade.sql); await client.query('INSERT INTO _careboard_migrations(id,applied_at) VALUES($1,$2)', [upgrade.id, new Date().toISOString()]); await client.query('COMMIT'); }
+    catch (error) { await client.query('ROLLBACK'); throw error; }
+    finally { client.release(); }
   }
 }
 

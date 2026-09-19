@@ -7,7 +7,7 @@ import { createContext, createElement, useContext, useEffect, useState } from 'r
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sparkles, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,8 +32,8 @@ const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outs
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-type ManagerSection = 'home' | 'tasks' | 'client' | 'schedule' | 'team' | 'messages' | 'more';
-type WorkerSection = 'today' | 'tasks' | 'client' | 'schedule' | 'messages' | 'profile' | 'more';
+type ManagerSection = 'home' | 'assistant' | 'tasks' | 'client' | 'schedule' | 'team' | 'messages' | 'more';
+type WorkerSection = 'today' | 'assistant' | 'tasks' | 'client' | 'schedule' | 'messages' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
 function initials(name: string) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
@@ -169,10 +169,10 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
   }
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
-      : [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+      : [['today', 'Today', Home], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
 
   return (
     <RoleContext.Provider value={role}>
@@ -407,6 +407,7 @@ function StatusBadge({ status }: { status: string }) {
 function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
+  if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
   if (section === 'tasks') {
     const query = taskQuery.trim().toLowerCase();
     const filtered = state.chores.filter((task: Chore) => {
@@ -528,6 +529,9 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   const fundedOverPace = fundedConfigured && homeFunding.projectedMinutes > homeFunding.fundedMinutes;
   const safetyCount = (state.safetyAlerts ?? []).filter((alert: any) => !alert.safetyReviewedAt).length;
   const clientNoteCount = (state.clientNoteQueue ?? []).filter((note: any) => note.status === 'pending').length;
+  const scheduleRequests = state.scheduleRequests ?? [];
+  const todayScheduleRequests = scheduleRequests.filter((item: any) => item.requestedDate === today() && item.status === 'open');
+  const resolvedScheduleRequests = scheduleRequests.filter((item: any) => item.status === 'covered').slice(0, 5);
   const maxCompleted = Math.max(1, ...command.completionTrend.map((day) => day.completed));
   const proofPhotos = state.chores
     .flatMap((task: Chore) => (task.photos ?? []).map((photo: any) => ({ ...photo, task })))
@@ -552,11 +556,19 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
         <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
         <Metric label="Funded hours used" value={fundedConfigured ? `${fundedPct}%` : '—'} icon={CircleDollarSign} tone={fundedOverPace ? 'caution' : 'neutral'} />
       </div>
-      {(safetyCount + clientNoteCount + command.awaitingReview.length) > 0 && (
+      {(safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length) > 0 && (
         <Card className="mt-6">
           <h2 className="flex items-center gap-2 text-lg font-bold"><ShieldAlert className="size-5 text-[#b4532a]" aria-hidden="true" />Needs your decision</h2>
           <p className="text-sm text-[#687873]">Items only the household manager can resolve</p>
           <div className="mt-4 space-y-2">
+            {scheduleRequests.some((item: any) => item.status === 'open') && (
+              <button onClick={() => setSection('messages')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#d9c99d] bg-[#fff8e8] p-3 text-left text-[#6f5422] transition hover:border-[#c9ae6d]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fcf0dc]"><CalendarDays className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Schedule change and day-off requests</span>
+                <span className="rounded-full bg-[#fcf0dc] px-2 py-1 text-xs font-bold">{scheduleRequests.filter((item: any) => item.status === 'open').length}</span>
+                <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+              </button>
+            )}
             {safetyCount > 0 && (
               <button onClick={() => setSection('messages')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2b69f] bg-[#fff8f4] p-3 text-left text-[#8f3f25] transition hover:border-[#cf9873]">
                 <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f8e9dc]"><ShieldAlert className="size-4" aria-hidden="true" /></span>
@@ -590,7 +602,9 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
         <Card className="manager-coverage">
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s attendance</h2><p className="text-sm text-[#687873]">Shift status and workload for each active care worker</p>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s attendance</h2><p className="text-sm text-[#687873]">Scheduled and clock-in status, kept separate from reported day-off requests</p>
+          {todayScheduleRequests.length > 0 && <div className="mt-4 rounded-xl border border-[#d9c99d] bg-[#fff8e8] p-3"><p className="text-xs font-bold uppercase tracking-wide text-[#8a5a1d]">Reported not coming / day off requested</p><ul className="mt-2 space-y-2">{todayScheduleRequests.map((request: any) => { const person = state.members.find((item: Member) => item.id === request.requesterId); return <li key={request.id} className="text-sm"><span className="font-semibold">{person?.name ?? 'Care worker'}</span><span className="text-[#6f5422]"> — request received; schedule not yet changed</span></li>; })}</ul></div>}
+          {resolvedScheduleRequests.length > 0 && <div className="mt-3 rounded-xl border border-[#bcd4c9] bg-[#f2f7f1] p-3"><p className="text-xs font-bold uppercase tracking-wide text-[#287b6f]">Resolved coverage changes</p><ul className="mt-2 space-y-2">{resolvedScheduleRequests.map((request: any) => { const original = state.members.find((item: Member) => item.id === request.requesterId); const covering = state.members.find((item: Member) => item.id === request.acceptedBy); return <li key={request.id} className="text-sm"><span className="font-semibold">{request.requestedDate}</span><span className="text-[#52645f]"> — {covering?.name ?? 'Care worker'} covers for {original?.name ?? 'care worker'}</span></li>; })}</ul></div>}
           <div className="mt-4 space-y-3">{attendance.length ? attendance.map((row) => { const worker = workers.find((item: Member) => item.id === row.workerId); if (!worker) return null; const coverage = command.coverage.find((item: any) => item.workerId === row.workerId) ?? { dueToday: 0, inProgress: 0, overdue: 0 }; const pillClass = row.status === 'late' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : row.status === 'on_duty' || row.status === 'unscheduled_on_duty' ? 'bg-[#e4f0e8] text-[#25654f]' : row.status === 'upcoming' ? 'bg-[#eef2ec] text-[#52645f]' : 'bg-[#f1f5f1] text-[#687873]'; return <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]"><AvatarFor member={worker} className="size-10" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="truncate text-sm font-semibold">{worker.name}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pillClass}`}>{attendanceLabel(row)}</span></span><span className="block text-xs text-[#687873]">{coverage.dueToday} due today · {coverage.inProgress} in progress</span></span>{coverage.overdue > 0 && <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold text-[#8b4e2c]">{coverage.overdue} late</span>}</button>; }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add or reactivate a care worker to plan coverage." compact />}</div>
           <form className="mt-4 flex gap-2 border-t border-[#e5eae4] pt-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'announce', ...Object.fromEntries(new FormData(form)) }, 'Announcement posted to the team.'); form.reset(); }}>
             <Input name="body" required maxLength={500} placeholder="Broadcast to the team…" aria-label="Announcement message" className="min-h-11 flex-1" />
@@ -1020,6 +1034,96 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
   );
 }
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+function AssistantView({ state, mutate }: { state: HouseholdState; mutate: (payload: Record<string, unknown>, message?: string) => Promise<unknown> }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [requesting, setRequesting] = useState(false);
+  const suggestions = ['What tasks should I focus on today?', 'Which days do I have off?', 'How can I coordinate schedule coverage?'];
+
+  async function ask(question: string) {
+    const content = question.trim();
+    if (!content || sending) return;
+    const next = [...messages.slice(-10), { role: 'user' as const, content }];
+    setMessages(next); setDraft(''); setError(''); setSending(true);
+    try {
+      const response = await fetch('/api/assistant', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ messages: next }),
+      });
+      const result = await response.json() as { answer?: string; error?: string };
+      if (!response.ok || !result.answer) throw new Error(result.error || 'The assistant could not answer right now.');
+      setMessages((current) => [...current, { role: 'assistant', content: result.answer as string }]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The assistant could not answer right now.');
+    } finally { setSending(false); }
+  }
+
+  return (
+    <>
+      <Title title="CareBoard assistant" text="Ask about the CareBoard tasks and schedule you’re authorized to see." />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <Card className="flex min-h-[32rem] flex-col p-0">
+          <div className="flex items-start gap-3 border-b border-[#dfe5dc] bg-[#f2f7f1] px-5 py-4">
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white"><Sparkles className="size-5" aria-hidden="true" /></span>
+            <div><h2 className="font-bold">Your private AI assistant</h2><p className="mt-1 text-sm leading-5 text-[#52645f]">Separate from the team inbox. It can explain information, but it cannot change CareBoard records.</p></div>
+          </div>
+          <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5" aria-live="polite" aria-busy={sending}>
+            {!messages.length && (
+              <div className="mx-auto max-w-lg py-8 text-center">
+                <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><MessageSquareText className="size-6" aria-hidden="true" /></span>
+                <h3 className="mt-4 text-lg font-bold">How can I help?</h3>
+                <p className="mt-2 text-sm leading-6 text-[#687873]">Ask for a task summary, schedule help, an explanation of what’s on your dashboard, or a general question.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">{suggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => void ask(suggestion)} className="min-h-11 rounded-xl border border-[#cbd8cf] bg-white px-3 py-2 text-left text-sm font-semibold text-[#287b6f] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">{suggestion}</button>)}</div>
+              </div>
+            )}
+            {messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-6 sm:max-w-[75%] ${message.role === 'user' ? 'bg-[#287b6f] text-white' : 'border border-[#dfe5dc] bg-[#f8faf7] text-[#20312d]'}`}>
+                  <span className="sr-only">{message.role === 'user' ? 'You' : 'CareBoard assistant'}:</span>{message.content}
+                </div>
+              </div>
+            ))}
+            {sending && <output className="flex items-center gap-2 text-sm text-[#687873]"><RefreshCw className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />CareBoard assistant is thinking…</output>}
+            {error && <div role="alert" className="rounded-xl border border-[#e7c4b5] bg-[#fff5f0] p-3 text-sm text-[#873d27]">{error}</div>}
+          </div>
+          <form className="border-t border-[#dfe5dc] p-4" onSubmit={(event) => { event.preventDefault(); void ask(draft); }}>
+            <label htmlFor="assistant-message" className="sr-only">Message the CareBoard assistant</label>
+            <div className="flex items-end gap-2">
+              <textarea id="assistant-message" value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={2000} rows={2} placeholder="Ask about your tasks or schedule…" className={`${fieldClass} mt-0 min-h-14 resize-none`} />
+              <Button type="submit" disabled={sending || !draft.trim()} aria-label="Send message" className="min-h-14 shrink-0 bg-[#287b6f] px-4"><Send className="size-5" aria-hidden="true" /></Button>
+            </div>
+            <p className="mt-2 text-xs text-[#687873]">AI can make mistakes. Check important details in CareBoard and follow your care plan.</p>
+          </form>
+        </Card>
+        <aside className="space-y-4" aria-label="Assistant privacy information">
+          <Card><h2 className="flex items-center gap-2 font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Privacy by role</h2><p className="mt-2 text-sm leading-6 text-[#687873]">The assistant receives only a limited view of tasks and shifts already authorized for your role. It does not receive contact details, pay, reports, settings, or audit records.</p></Card>
+          <Card><h2 className="font-bold">Read-only help</h2><p className="mt-2 text-sm leading-6 text-[#687873]">To make a change, use the normal CareBoard task and schedule controls. The assistant will never make changes for you.</p></Card>
+          {state.viewer.role === 'worker' && <Card>
+            <h2 className="flex items-center gap-2 font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Request a day off</h2>
+            <p className="mt-2 text-sm leading-6 text-[#687873]">Send an explicit request to your manager through the monitored CareBoard Inbox. Your schedule will not change automatically.</p>
+            <form className="mt-4 space-y-3" onSubmit={async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); setRequesting(true); setError(''); try { await mutate({ action: 'requestScheduleChange', date: data.get('date'), shiftId: data.get('shiftId'), reason: data.get('reason') }, 'Day-off request sent to your manager and the care team.'); form.reset(); } catch { /* global notice contains the mutation error */ } finally { setRequesting(false); } }}>
+              <label htmlFor="schedule-request-date" className="block text-sm font-semibold">Requested date<Input id="schedule-request-date" name="date" type="date" required className="mt-1 h-11 rounded-xl bg-white" /></label>
+              <label htmlFor="schedule-request-shift" className="block text-sm font-semibold">Shift<select id="schedule-request-shift" name="shiftId" required className={fieldClass}><option value="">Choose a shift</option>{(state.shifts ?? []).map((shift) => <option key={shift.id} value={shift.id}>{weekdayFull[shift.weekday]} · {formatShift(shift)}</option>)}</select></label>
+              <label htmlFor="schedule-request-reason" className="block text-sm font-semibold">What do you need?<textarea id="schedule-request-reason" name="reason" required maxLength={500} rows={3} placeholder="I need this day off because…" className={fieldClass} /></label>
+              <Button type="submit" disabled={requesting} variant="outline" className="min-h-11 w-full"><Send className="size-4" aria-hidden="true" />{requesting ? 'Sending…' : 'Request a day off'}</Button>
+            </form>
+          </Card>}
+          {state.viewer.role === 'worker' && (state.scheduleRequests ?? []).some((request) => request.status === 'open' && request.requesterId !== state.viewer.id) && <Card>
+            <h2 className="flex items-center gap-2 font-bold"><UserCheck className="size-5 text-[#287b6f]" aria-hidden="true" />Shifts needing coverage</h2>
+            <p className="mt-2 text-sm leading-6 text-[#687873]">Accepting updates the schedule immediately and notifies the manager.</p>
+            <div className="mt-4 space-y-3">{(state.scheduleRequests ?? []).filter((request) => request.status === 'open' && request.requesterId !== state.viewer.id).map((request) => <div key={request.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><p className="text-sm font-semibold">{request.requestedDate} · {request.startTime}-{request.endTime}</p><Button type="button" size="sm" className="mt-3 bg-[#287b6f]" onClick={() => void mutate({ action: 'acceptScheduleCoverage', requestId: request.id }, 'Coverage accepted. The schedule and manager dashboard were updated.')}><Check className="size-4" />Accept this shift</Button></div>)}</div>
+          </Card>}
+        </aside>
+      </div>
+    </>
+  );
+}
+
 function ViewerView({ section, state, setTask }: any) {
   const workers = state.members.filter((item: Member) => item.role === 'worker' && item.status === 'active');
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} readOnly setTask={setTask} />;
@@ -1063,6 +1167,7 @@ function ViewerView({ section, state, setTask }: any) {
 function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
+  if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
@@ -1534,6 +1639,7 @@ function ProfileDialog({ profile, manager, busy, onClose, submit, upload, certs 
           <input type="hidden" name="memberId" value={profile.id} />
           {manager && <><Field label="Name" name="name" defaultValue={profile.name} required /><Field label="Email" name="email" type="email" defaultValue={profile.email} /></>}
           <Field label="Phone" name="phone" type="tel" defaultValue={profile.phone} />
+          <input type="hidden" name="smsOptIn" value="off" /><label htmlFor="sms-opt-in" className="flex items-start gap-3 rounded-xl border border-[#d7dfd7] bg-white p-3 text-sm"><input id="sms-opt-in" aria-label="Opt in to SMS schedule alerts" type="checkbox" name="smsOptIn" defaultChecked={profile.smsOptIn} className="mt-1 size-4" /><span><strong className="block">SMS schedule alerts</strong><span className="text-[#687873]">I consent to receive CareBoard coverage texts at the E.164 phone number above. Message rates may apply.</span></span></label>
           <TextArea label="Availability notes" name="availability" defaultValue={profile.availability} />
           <TextArea label="Languages" name="languages" defaultValue={profile.languages} />
           {manager && <><Field label="Hourly pay rate ($)" name="hourlyRate" type="number" step="any" defaultValue={profile.hourlyRate ?? ''} /><TextArea label="Skills notes" name="skillsNotes" defaultValue={profile.skillsNotes} /><TextArea label="Certifications" name="certifications" defaultValue={profile.certifications} /><Field label="Emergency contact" name="emergencyContact" defaultValue={profile.emergencyContact} /></>}

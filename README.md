@@ -41,6 +41,7 @@ CareBoard is a private household chore tracker for coordinating care workers. A 
    ```
 
    For Google sign-in, also add `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`.
+   To enable the dashboard AI assistant for managers and care workers, add a server-side `OPENAI_API_KEY`. You can optionally set `OPENAI_MODEL`; it defaults to `gpt-5-mini`. Never prefix the API key with `NEXT_PUBLIC_` or expose it to browser code.
    See [AUTH_SETUP.md](AUTH_SETUP.md) for the full authentication guide.
 
 3. Run the development server:
@@ -88,6 +89,10 @@ The image creates `/data/uploads` for authenticated proof photos and uses `/data
    - `AUTH_URL`: the public HTTPS origin (e.g. `https://care.example.com`)
    - `CAREBOARD_OWNER_EMAIL`: the manager's email address
    - `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` if using Google OAuth
+   - `OPENAI_API_KEY` to enable the read-only CareBoard assistant
+   - `OPENAI_MODEL` optionally (defaults to `gpt-5-mini`)
+   - SMTP settings (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`) for coverage emails
+   - Twilio settings (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`) for opted-in coverage SMS
    - `DATABASE_PATH=/data/careboard.db`
    - `UPLOAD_PATH=/data/uploads`
 4. Mount a persistent volume at `/data`.

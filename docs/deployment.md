@@ -15,9 +15,22 @@ This document explains how to deploy and operate CareBoard in production. For ar
 | `CAREBOARD_MEMBER_EMAILS` | No | JSON map of approved worker emails to existing member IDs. Example: `{"worker@example.com":"member-123"}`. |
 | `DATABASE_PATH` | No | SQLite file path. Defaults to `data/careboard.db` in development and `/data/careboard.db` in the Docker image. |
 | `UPLOAD_PATH` | No | Directory for authenticated uploads. Defaults to `/data/uploads` in the Docker image. |
+| `OPENAI_API_KEY` | For AI assistant | OpenAI API key used only by the server-side assistant route. Without it, the assistant returns a safe configuration error. |
+| `OPENAI_MODEL` | No | Responses API model for the assistant. Defaults to `gpt-5-mini`. |
+| `SMTP_HOST` | For coverage email | SMTP server hostname. Email is skipped safely when SMTP configuration is incomplete. |
+| `SMTP_PORT` | No | SMTP port; defaults to `587`. |
+| `SMTP_SECURE` | No | Set to `true` for implicit TLS. Defaults to `false` (STARTTLS-capable port). |
+| `SMTP_USER` | For coverage email | SMTP username. |
+| `SMTP_PASSWORD` | For coverage email | SMTP password, stored server-side only. |
+| `EMAIL_FROM` | For coverage email | Verified sender address used for coverage alerts. |
+| `TWILIO_ACCOUNT_SID` | For coverage SMS | Twilio Account SID, stored server-side only. |
+| `TWILIO_AUTH_TOKEN` | For coverage SMS | Twilio Auth Token, stored server-side only. |
+| `TWILIO_FROM_NUMBER` | For coverage SMS | Twilio sender in E.164 format, such as `+15551234567`. |
 | `PORT` | No | Listening port. The Docker image defaults to `3000`. |
 
-Do not commit secrets or `.env` files to version control. Rotate `AUTH_SECRET` only after invalidating existing sessions.
+Do not commit secrets or `.env` files to version control. OpenAI, SMTP, and Twilio credentials must remain server-side and must never use a `NEXT_PUBLIC_` prefix. Rotate `AUTH_SECRET` only after invalidating existing sessions.
+
+Coverage requests are always stored in CareBoard first. Email and SMS are independent best-effort channels, so a provider failure never loses or rolls back a request or accepted coverage change. SMS is sent only to active members who explicitly opt in from their profile and have an E.164 phone number. Messages include only the date/time and a prompt to sign in—never the requester's identity, reason, phone number, or client information. The implementation follows Twilio's server-side Messages API pattern with `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and a configured sender number.
 
 ## Docker
 

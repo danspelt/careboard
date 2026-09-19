@@ -11,6 +11,7 @@ CareBoard is a single-tenant Next.js application backed by SQLite. One household
 ```text
 app/                       Next.js App Router pages and server actions
   api/                     JSON API and authenticated routes
+    assistant/             Role-filtered, read-only OpenAI assistant
     auth/[...nextauth]     Auth.js endpoint
     export/                CSV report download
     health/                Liveness/readiness probe
@@ -135,3 +136,5 @@ The offline page is served when a navigation request fails and a cached shell is
 - Credentials use `bcryptjs` hashing.
 - Mutation payloads are validated with strict regexes for dates, times, and identifiers.
 - CSV export sanitizes cell values to neutralize spreadsheet formula injection.
+- The AI assistant uses the OpenAI Responses API only from the server. Its context is rebuilt from the signed-in member's authorized view on every request and is further minimized: workers receive only their own/unassigned tasks and own shifts; contact data, pay, reports, settings, and audit records are omitted for every role. Assistant history and input lengths are bounded, OpenAI response storage is disabled, and the assistant has no mutation tools.
+- A worker can explicitly submit a day-off request beside the assistant. The durable request appears in CareBoard before best-effort email and opted-in SMS coverage alerts are attempted. Another active worker can explicitly accept a non-conflicting open shift exactly once; that atomic acceptance updates the coverage record, preserves the original request and audit trail, and notifies the manager. The AI cannot trigger this mutation. The manager command center keeps pending absence requests distinct from scheduled/clock-in status and shows resolved coverage changes.

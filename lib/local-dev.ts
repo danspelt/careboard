@@ -427,6 +427,9 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       // No-op in local-dev preview mode; UI feedback is enough.
       break;
     }
+    case 'requestScheduleChange': {
+      break;
+    }
     default:
       logUnhandled(action, input);
   }

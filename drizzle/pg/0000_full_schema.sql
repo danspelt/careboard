@@ -8,6 +8,7 @@ CREATE TABLE members (
   color TEXT NOT NULL,
   created_at TEXT NOT NULL,
   phone TEXT,
+  sms_opt_in INTEGER NOT NULL DEFAULT 0,
   availability TEXT NOT NULL DEFAULT '',
   skills_notes TEXT NOT NULL DEFAULT '',
   emergency_contact TEXT,
@@ -254,3 +255,21 @@ CREATE TABLE worker_inbox_items (
 CREATE INDEX idx_worker_inbox_items_worker ON worker_inbox_items(household_id, worker_id, created_at);
 --> statement-breakpoint
 CREATE INDEX idx_worker_inbox_items_sender ON worker_inbox_items(household_id, created_by, created_at);
+--> statement-breakpoint
+CREATE TABLE schedule_change_requests (
+  id TEXT PRIMARY KEY NOT NULL,
+  household_id TEXT NOT NULL DEFAULT 'default',
+  requester_id TEXT NOT NULL REFERENCES members(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  requested_date TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'covered')),
+  accepted_by TEXT REFERENCES members(id),
+  accepted_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(requester_id, requested_date)
+);
+--> statement-breakpoint
+CREATE INDEX idx_schedule_change_requests_status_date ON schedule_change_requests(household_id, status, requested_date);
