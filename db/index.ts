@@ -154,7 +154,7 @@ function runMigrations(database: Database.Database) {
       applied_at TEXT NOT NULL
     )
   `);
-  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_schedule_coverage', '0016_sms_consent', '0017_care_safety'];
+  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_schedule_coverage', '0016_sms_consent', '0017_care_safety', '0018_employee_records'];
   for (const migrationId of migrationIds) {
     const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
     if (applied) continue;
@@ -196,6 +196,10 @@ async function runPostgresMigrations(pool: Pool) {
     {
       id: '0017_care_safety',
       sql: `CREATE TABLE IF NOT EXISTS shift_handoffs (id TEXT PRIMARY KEY NOT NULL, household_id TEXT NOT NULL DEFAULT 'default', author_id TEXT NOT NULL REFERENCES members(id), shift_date TEXT NOT NULL, completed_care TEXT NOT NULL, outstanding_tasks TEXT NOT NULL, observations TEXT NOT NULL, checklist_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_shift_handoffs_date ON shift_handoffs(household_id, shift_date, created_at); CREATE TABLE IF NOT EXISTS safety_incidents (id TEXT PRIMARY KEY NOT NULL, household_id TEXT NOT NULL DEFAULT 'default', reporter_id TEXT NOT NULL REFERENCES members(id), category TEXT NOT NULL CHECK(category IN ('hazard','injury','violence_threat','unsafe_home','near_miss')), severity TEXT NOT NULL CHECK(severity IN ('low','medium','high','urgent')), occurred_at TEXT NOT NULL, location TEXT NOT NULL, description TEXT NOT NULL, immediate_action TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','reviewing','resolved')), assigned_to TEXT REFERENCES members(id), follow_up TEXT NOT NULL DEFAULT '', resolved_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); CREATE INDEX IF NOT EXISTS idx_safety_incidents_triage ON safety_incidents(household_id, status, severity, created_at);`,
+    },
+    {
+      id: '0018_employee_records',
+      sql: `ALTER TABLE members ADD COLUMN IF NOT EXISTS date_of_birth TEXT; ALTER TABLE members ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN IF NOT EXISTS job_title TEXT NOT NULL DEFAULT 'Care worker'; ALTER TABLE members ADD COLUMN IF NOT EXISTS employment_started_on TEXT;`,
     },
   ];
   for (const upgrade of upgrades) {

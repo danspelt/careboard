@@ -44,6 +44,10 @@ const worker: Member = {
   languages: 'English, French',
   profilePhotoId: null,
   hourlyRate: 22,
+  dateOfBirth: '1990-04-12',
+  address: '123 Example St, Vancouver, BC',
+  jobTitle: 'Care worker',
+  employmentStartedOn: '2025-01-15',
 };
 
 const viewerMember: Member = {
@@ -336,6 +340,10 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.certifications === 'string') member.certifications = input.certifications;
       if (typeof input.emergencyContact === 'string') member.emergencyContact = input.emergencyContact || null;
       if (typeof input.hourlyRate === 'string' || typeof input.hourlyRate === 'number') member.hourlyRate = Number(input.hourlyRate) || null;
+      if (typeof input.dateOfBirth === 'string') member.dateOfBirth = input.dateOfBirth || null;
+      if (typeof input.address === 'string') member.address = input.address;
+      if (typeof input.jobTitle === 'string') member.jobTitle = input.jobTitle;
+      if (typeof input.employmentStartedOn === 'string') member.employmentStartedOn = input.employmentStartedOn || null;
       break;
     }
     case 'addMember':

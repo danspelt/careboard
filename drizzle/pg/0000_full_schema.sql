@@ -15,7 +15,11 @@ CREATE TABLE members (
   certifications TEXT NOT NULL DEFAULT '',
   languages TEXT NOT NULL DEFAULT '',
   profile_photo_id TEXT,
-  hourly_rate DOUBLE PRECISION
+  hourly_rate DOUBLE PRECISION,
+  date_of_birth TEXT,
+  address TEXT NOT NULL DEFAULT '',
+  job_title TEXT NOT NULL DEFAULT 'Care worker',
+  employment_started_on TEXT
 );
 --> statement-breakpoint
 CREATE TABLE chores (

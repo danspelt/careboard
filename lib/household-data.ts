@@ -36,6 +36,10 @@ export type Member = {
   profilePhotoId: string | null;
   hourlyRate?: number | null;
   smsOptIn?: boolean;
+  dateOfBirth?: string | null;
+  address?: string;
+  jobTitle?: string;
+  employmentStartedOn?: string | null;
 };
 export type ProofPhoto = { id: string; choreId?: string; profileMemberId?: string; originalName: string; mimeType: string; byteSize: number; createdAt: string };
 export type TaskNote = { id: string; choreId: string; memberId: string; kind: 'progress' | 'completion' | 'issue'; body: string; createdAt: string };
@@ -208,7 +212,8 @@ async function rawState() {
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
           m.phone, m.sms_opt_in AS smsOptIn, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
-          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate
+          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate,
+          m.date_of_birth AS dateOfBirth, m.address, m.job_title AS jobTitle, m.employment_started_on AS employmentStartedOn
         FROM members m
         LEFT JOIN account_lifecycle l ON l.member_id=m.id
         LEFT JOIN google_accounts g ON g.member_id=m.id
@@ -286,6 +291,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
     }));
     return {
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
@@ -300,6 +306,8 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     createdAt: viewer.createdAt, phone: viewer.phone, availability: viewer.availability,
     skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications, smsOptIn: viewer.smsOptIn,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
+    dateOfBirth: viewer.dateOfBirth ?? null, address: viewer.address ?? '', jobTitle: viewer.jobTitle ?? '',
+    employmentStartedOn: viewer.employmentStartedOn ?? null,
   };
   // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
   const roster: Member[] = state.members
@@ -308,6 +316,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
   return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()) };
@@ -399,6 +408,13 @@ function optionalString(value: unknown, maxLength: number): string {
 function optionalNullableString(value: unknown, maxLength: number): string | null {
   const text = typeof value === 'string' ? value.trim() : '';
   return text ? text.slice(0, maxLength) : null;
+}
+
+function optionalNullableDate(value: unknown): string | null {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T12:00:00Z`))) throw new Error('Enter a valid date.');
+  return text;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
@@ -830,6 +846,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       : undefined;
     const name = actor.role === 'manager' ? (typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 200) : undefined) : undefined;
     const email = actor.role === 'manager' ? normalizeEmail(input.email) : undefined;
+    const dateOfBirth = actor.role === 'manager' ? optionalNullableDate(input.dateOfBirth) : undefined;
+    const address = actor.role === 'manager' ? optionalString(input.address, 500) : undefined;
+    const jobTitle = actor.role === 'manager' ? optionalString(input.jobTitle, 100) : undefined;
+    const employmentStartedOn = actor.role === 'manager' ? optionalNullableDate(input.employmentStartedOn) : undefined;
     const profilePhotoId = typeof input.profilePhotoId === 'string' && input.profilePhotoId ? input.profilePhotoId : undefined;
     if (profilePhotoId) {
       const photoOwner = await db.prepare('SELECT profile_member_id FROM proof_photos WHERE id=?').bind(profilePhotoId).first<{ profileMemberId: string }>();
@@ -847,6 +867,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (name !== undefined) { sets.push('name=?'); values.push(name); }
     if (profilePhotoId !== undefined) { sets.push('profile_photo_id=?'); values.push(profilePhotoId); }
     if (hourlyRate !== undefined) { sets.push('hourly_rate=?'); values.push(hourlyRate); }
+    if (dateOfBirth !== undefined) { sets.push('date_of_birth=?'); values.push(dateOfBirth); }
+    if (address !== undefined) { sets.push('address=?'); values.push(address); }
+    if (jobTitle !== undefined) { sets.push('job_title=?'); values.push(jobTitle); }
+    if (employmentStartedOn !== undefined) { sets.push('employment_started_on=?'); values.push(employmentStartedOn); }
     if (!sets.length) throw new Error('No valid fields to update.');
     values.push(memberId);
     await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
