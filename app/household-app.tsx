@@ -22,7 +22,7 @@ import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
-import { formatShift, shiftsForDay, weekdayOf } from '@/lib/shifts';
+import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
 import { fundingSummary } from '@/lib/funding';
 import { certDaysLeft, certStatus, certificationAlerts } from '@/lib/certifications';
@@ -301,7 +301,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} mutate={mutate} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} />
       <InviteLinkDialog url={inviteUrl} onClose={() => setInviteUrl('')} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
-      {shiftWorker && <WindowDialog worker={shiftWorker} windows={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} action="setShifts" title={`Weekly shifts for ${shiftWorker.name}`} description={`Set the days and times ${shiftWorker.name.split(' ')[0]} is scheduled each week. This repeats automatically.`} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
+      {shiftWorker && <WindowDialog worker={shiftWorker} windows={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} action="setShifts" title={`Two-week shifts for ${shiftWorker.name}`} description={`Set the days and times ${shiftWorker.name.split(' ')[0]} is scheduled. The schedule repeats every two weeks — a day on in both weeks means every week, on in one week means every other week.`} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
       {availWorker && <WindowDialog worker={availWorker} windows={(state.availability ?? []).filter((shift: any) => shift.memberId === availWorker.id)} action="setAvailability" title={`Weekly availability for ${availWorker.name}`} description={`The days and times ${availWorker.name.split(' ')[0]} is generally available. Auto-assign prefers these windows.`} busy={busy} onClose={() => setAvailWorker(null)} mutate={mutate} />}
       <output aria-live="polite" aria-atomic="true" className="dashboard-notice fixed inset-x-4 z-50 ml-auto max-w-sm md:bottom-6 md:left-auto">
         {busy && <span className="sr-only">Saving your update.</span>}
@@ -458,7 +458,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
       <div className="grid gap-4 md:grid-cols-2">
         {workers.map((worker: Member) => {
           const workerShifts = (state.shifts ?? []).filter((shift: any) => shift.memberId === worker.id);
-          const shiftText = workerShifts.length ? workerShifts.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set';
+          const shiftText = workerShifts.length ? workerShifts.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}${shift.cycleWeek ? ` (wk ${'AB'[shift.cycleWeek - 1]})` : ''}`).join(' · ') : 'Not set';
           const workerAvail = (state.availability ?? []).filter((shift: any) => shift.memberId === worker.id);
           const availText = workerAvail.length ? workerAvail.map((shift: any) => `${weekdayNames[shift.weekday]} ${formatShift(shift)}`).join(' · ') : 'Not set';
           return (
@@ -473,7 +473,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             </div>
             <div className="mt-4 grid gap-2 text-sm">
               <p><span className="text-[#687873]">Availability:</span> {availText}</p>
-              <p><span className="text-[#687873]">Weekly shifts:</span> {shiftText}</p>
+              <p><span className="text-[#687873]">Two-week shifts:</span> {shiftText}</p>
               <p><span className="text-[#687873]">Languages:</span> {worker.languages || 'Not provided'}</p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -763,6 +763,8 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
 
 function MoreManager({ state, mutate, busy }: any) {
   const [weekStart] = useState(() => new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10));
+  const [payFrom, setPayFrom] = useState(() => new Date(Date.now() - 13 * 864e5).toISOString().slice(0, 10));
+  const [payTo, setPayTo] = useState(() => today());
   const settings = state.settings;
   const month = today().slice(0, 7);
   const reportWorkers = state.members.filter((item: Member) => item.role === 'worker');
@@ -933,6 +935,20 @@ function MoreManager({ state, mutate, busy }: any) {
         )}
       </Card>
       <Card className="mt-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Bookkeeper payroll report</h2>
+            <p className="mt-1 text-sm text-[#687873]">Every worker’s clock-ins by day for the pay period — ready to hand to your bookkeeper. Defaults to the last two weeks.</p>
+          </div>
+          <a href={`/api/payroll?from=${payFrom}&to=${payTo}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><FileDown className="size-4" aria-hidden="true" />Download CSV</a>
+        </div>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <label htmlFor="payroll-from" className="grid gap-1 text-sm font-semibold">From<Input id="payroll-from" type="date" value={payFrom} onChange={(e) => setPayFrom(e.target.value)} className="min-h-11 w-44" /></label>
+          <label htmlFor="payroll-to" className="grid gap-1 text-sm font-semibold">To<Input id="payroll-to" type="date" value={payTo} onChange={(e) => setPayTo(e.target.value)} className="min-h-11 w-44" /></label>
+          <button type="button" onClick={() => { const end = today(); setPayTo(end); setPayFrom(new Date(Date.now() - 13 * 864e5).toISOString().slice(0, 10)); }} className="min-h-11 rounded-xl border border-[#d7dfd7] px-3 text-xs font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]">Last 14 days</button>
+        </div>
+      </Card>
+      <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />Audit history</h2>
         <p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p>
         <div className="mt-4 max-h-[32rem] divide-y overflow-auto rounded-xl border border-[#dfe5dc]">
@@ -955,8 +971,8 @@ function MoreManager({ state, mutate, busy }: any) {
 }
 
 function ScheduleView({ state, workers, personal = false, readOnly = false, setTask, setCreateOpen, mutate, busy }: any) {
-  const schedule = buildWeekSchedule<Chore>(state.chores, workers, today());
-  const plan = personal || readOnly ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 7, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
+  const schedule = buildWeekSchedule<Chore>(state.chores, workers, today(), 14);
+  const plan = personal || readOnly ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 14, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
   const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
   const [assigning, setAssigning] = useState(false);
   async function autoAssign() {
@@ -985,7 +1001,7 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
   };
   return (
     <>
-      <Title title={personal ? 'My week' : 'Weekly schedule'} text={personal ? 'Your assignments and work you can claim for the next seven days.' : readOnly ? 'Seven days of household work and who is on shift.' : 'Seven days of household work — reschedule or reassign any task from its details.'} action={personal || readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <Title title={personal ? 'My two-week schedule' : 'Two-week schedule'} text={personal ? 'Your assignments and work you can claim for the next two weeks.' : readOnly ? 'Fourteen days of household work and who is on shift.' : 'Fourteen days of household work — reschedule or reassign any task from its details.'} action={personal || readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
@@ -1004,7 +1020,7 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
           return (
             <section key={day.date} aria-label={`Schedule for ${day.date}`} className={`flex min-h-32 flex-col rounded-2xl border p-3 ${isToday ? 'border-[#287b6f] bg-[#eef4ef]' : 'border-[#dfe5dc] bg-[#fffefa]'}`}>
               <header className="mb-2 flex items-center justify-between gap-2">
-                <div><p className={`text-xs font-bold uppercase tracking-wide ${isToday ? 'text-[#287b6f]' : 'text-[#687873]'}`}>{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</p><p className="text-sm font-semibold">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p></div>
+                <div><p className={`text-xs font-bold uppercase tracking-wide ${isToday ? 'text-[#287b6f]' : 'text-[#687873]'}`}>{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })}</p><p className="flex items-center gap-1.5 text-sm font-semibold">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}<span className="rounded bg-[#eef2ec] px-1 text-[9px] font-bold uppercase text-[#687873]" title={`Week ${'AB'[cycleWeekOf(day.date) - 1]} of the two-week cycle`}>Wk {'AB'[cycleWeekOf(day.date) - 1]}</span></p></div>
                 {isToday && <span className="rounded-full bg-[#287b6f] px-2 py-0.5 text-[10px] font-bold uppercase text-white">Today</span>}
               </header>
               {dayShifts.length > 0 && (
@@ -1028,15 +1044,15 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         {personal ? (
         <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Open to claim this week</h2>
-          <p className="text-sm text-[#687873]">Unassigned work due in the next seven days — open one to claim it</p>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Open to claim</h2>
+          <p className="text-sm text-[#687873]">Unassigned work due in the next two weeks — open one to claim it</p>
           <div className="mt-4 space-y-2">
             {claimable.length ? claimable.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing to claim" text="All scheduled work is already assigned." compact />}
           </div>
         </Card>
         ) : (
         <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Care worker load this week</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Care worker load — next two weeks</h2>
           <p className="text-sm text-[#687873]">Assigned open tasks per day for each active care worker</p>
           <div className="mt-4 space-y-3">
             {schedule.workload.length ? schedule.workload.map((load) => {
@@ -1146,7 +1162,7 @@ function AssistantView({ state, mutate }: { state: HouseholdState; mutate: (payl
             <p className="mt-2 text-sm leading-6 text-[#687873]">Send an explicit request to your manager through the monitored CareBoard Inbox. Your schedule will not change automatically.</p>
             <form className="mt-4 space-y-3" onSubmit={async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); setRequesting(true); setError(''); try { await mutate({ action: 'requestScheduleChange', date: data.get('date'), shiftId: data.get('shiftId'), reason: data.get('reason') }, 'Day-off request sent to your manager and the care team.'); form.reset(); } catch { /* global notice contains the mutation error */ } finally { setRequesting(false); } }}>
               <label htmlFor="schedule-request-date" className="block text-sm font-semibold">Requested date<Input id="schedule-request-date" name="date" type="date" required className="mt-1 h-11 rounded-xl bg-white" /></label>
-              <label htmlFor="schedule-request-shift" className="block text-sm font-semibold">Shift<select id="schedule-request-shift" name="shiftId" required className={fieldClass}><option value="">Choose a shift</option>{(state.shifts ?? []).map((shift) => <option key={shift.id} value={shift.id}>{weekdayFull[shift.weekday]} · {formatShift(shift)}</option>)}</select></label>
+              <label htmlFor="schedule-request-shift" className="block text-sm font-semibold">Shift<select id="schedule-request-shift" name="shiftId" required className={fieldClass}><option value="">Choose a shift</option>{(state.shifts ?? []).map((shift) => <option key={shift.id} value={shift.id}>{weekdayFull[shift.weekday]} · {formatShift(shift)}{shift.cycleWeek ? ` · week ${'AB'[shift.cycleWeek - 1]}` : ''}</option>)}</select></label>
               <label htmlFor="schedule-request-reason" className="block text-sm font-semibold">What do you need?<textarea id="schedule-request-reason" name="reason" required maxLength={500} rows={3} placeholder="I need this day off because…" className={fieldClass} /></label>
               <Button type="submit" disabled={requesting} variant="outline" className="min-h-11 w-full"><Send className="size-4" aria-hidden="true" />{requesting ? 'Sending…' : 'Request a day off'}</Button>
             </form>
@@ -1982,42 +1998,60 @@ function ResetDialog({ member, busy, onClose, submit }: any) {
 }
 
 function WindowDialog({ worker, windows, action, title, description, busy, onClose, mutate }: any) {
-  const [rows, setRows] = useState(() => weekdayFull.map((_, weekday) => {
-    const win = windows.find((item: any) => item.weekday === weekday);
-    return { weekday, on: Boolean(win), startTime: win?.startTime ?? '09:00', endTime: win?.endTime ?? '17:00' };
-  }));
-  function update(weekday: number, patch: Record<string, unknown>) {
-    setRows((current) => current.map((row) => (row.weekday === weekday ? { ...row, ...patch } : row)));
+  const biweekly = action === 'setShifts';
+  const [rows, setRows] = useState(() => (biweekly ? [1, 2] : [0]).flatMap((cycleWeek) => weekdayFull.map((_, weekday) => {
+    const win = windows.find((item: any) => item.weekday === weekday && ((item.cycleWeek ?? 0) === 0 || item.cycleWeek === cycleWeek));
+    return { weekday, cycleWeek, on: Boolean(win), startTime: win?.startTime ?? '09:00', endTime: win?.endTime ?? '17:00' };
+  })));
+  function update(weekday: number, cycleWeek: number, patch: Record<string, unknown>) {
+    setRows((current) => current.map((row) => (row.weekday === weekday && row.cycleWeek === cycleWeek ? { ...row, ...patch } : row)));
   }
   async function save() {
     const key = action === 'setShifts' ? 'shifts' : 'windows';
+    const on = rows.filter((row) => row.on);
+    const out: Array<Record<string, unknown>> = [];
+    for (const row of on) {
+      const pair = biweekly && on.find((other) => other.weekday === row.weekday && other.cycleWeek !== row.cycleWeek && other.startTime === row.startTime && other.endTime === row.endTime);
+      if (pair && row.cycleWeek === 2) continue;
+      out.push(biweekly ? { weekday: row.weekday, startTime: row.startTime, endTime: row.endTime, cycleWeek: pair ? 0 : row.cycleWeek } : { weekday: row.weekday, startTime: row.startTime, endTime: row.endTime });
+    }
     try {
-      await mutate({ action, memberId: worker.id, [key]: JSON.stringify(rows.filter((row) => row.on).map(({ weekday, startTime, endTime }) => ({ weekday, startTime, endTime }))) }, `Saved for ${worker.name}.`);
+      await mutate({ action, memberId: worker.id, [key]: JSON.stringify(out) }, `Saved for ${worker.name}.`);
       onClose();
     } catch { /* notice is shown */ }
   }
+  const windowRow = (row: { weekday: number; cycleWeek: number; on: boolean; startTime: string; endTime: string }) => (
+    <div key={`${row.cycleWeek}-${row.weekday}`} className={`flex items-center gap-3 rounded-xl border p-2.5 ${row.on ? 'border-[#bcd4c9] bg-[#f4f8f3]' : 'border-[#e2e8e1]'}`}>
+      <label className="flex min-h-11 w-24 shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" checked={row.on} onChange={(e) => update(row.weekday, row.cycleWeek, { on: e.target.checked })} className="size-4 accent-[#287b6f]" />
+        {weekdayFull[row.weekday].slice(0, 3)}
+      </label>
+      <div className="flex flex-1 items-center gap-2">
+        <Input type="time" aria-label={`Week ${'AB'[row.cycleWeek - 1] ?? ''} ${weekdayFull[row.weekday]} start time`} value={row.startTime} disabled={!row.on} onChange={(e) => update(row.weekday, row.cycleWeek, { startTime: e.target.value })} className="min-h-11 flex-1" />
+        <span className="text-xs font-semibold text-[#687873]">to</span>
+        <Input type="time" aria-label={`Week ${'AB'[row.cycleWeek - 1] ?? ''} ${weekdayFull[row.weekday]} end time`} value={row.endTime} disabled={!row.on} onChange={(e) => update(row.weekday, row.cycleWeek, { endTime: e.target.value })} className="min-h-11 flex-1" />
+      </div>
+    </div>
+  );
   return (
     <Dialog open onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-2">
-          {rows.map((row) => (
-            <div key={row.weekday} className={`flex items-center gap-3 rounded-xl border p-2.5 ${row.on ? 'border-[#bcd4c9] bg-[#f4f8f3]' : 'border-[#e2e8e1]'}`}>
-              <label className="flex min-h-11 w-24 shrink-0 cursor-pointer items-center gap-2 text-sm font-semibold">
-                <input type="checkbox" checked={row.on} onChange={(e) => update(row.weekday, { on: e.target.checked })} className="size-4 accent-[#287b6f]" />
-                {weekdayFull[row.weekday].slice(0, 3)}
-              </label>
-              <div className="flex flex-1 items-center gap-2">
-                <Input type="time" aria-label={`${weekdayFull[row.weekday]} start time`} value={row.startTime} disabled={!row.on} onChange={(e) => update(row.weekday, { startTime: e.target.value })} className="min-h-11 flex-1" />
-                <span className="text-xs font-semibold text-[#687873]">to</span>
-                <Input type="time" aria-label={`${weekdayFull[row.weekday]} end time`} value={row.endTime} disabled={!row.on} onChange={(e) => update(row.weekday, { endTime: e.target.value })} className="min-h-11 flex-1" />
+        {biweekly ? (
+          <div className="grid gap-4">
+            {[1, 2].map((cycleWeek) => (
+              <div key={cycleWeek} className="grid gap-2">
+                <h3 className={`flex items-center gap-2 text-sm font-bold ${cycleWeekOf(today()) === cycleWeek ? 'text-[#287b6f]' : 'text-[#52645f]'}`}>Week {'AB'[cycleWeek - 1]}{cycleWeekOf(today()) === cycleWeek && <span className="rounded-full bg-[#287b6f] px-2 py-0.5 text-[10px] font-bold uppercase text-white">this week</span>}</h3>
+                {rows.filter((row) => row.cycleWeek === cycleWeek).map(windowRow)}
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-2">{rows.map(windowRow)}</div>
+        )}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}><X className="size-4" />Cancel</Button>
           <Button disabled={busy} onClick={save} className="bg-[#287b6f]"><Check className="size-4" />Save shifts</Button>

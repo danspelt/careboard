@@ -167,6 +167,7 @@ CREATE TABLE shifts (
   weekday INTEGER NOT NULL CHECK(weekday BETWEEN 0 AND 6),
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
+  cycle_week INTEGER NOT NULL DEFAULT 0 CHECK(cycle_week BETWEEN 0 AND 2),
   created_at TEXT NOT NULL
 );
 --> statement-breakpoint

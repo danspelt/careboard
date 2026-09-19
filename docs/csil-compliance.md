@@ -24,8 +24,8 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | Residential address | Supported | `members.address` (manager-edited profile) |
 | Employment start date | Supported | `members.employment_started_on` |
 | Wage rate | Supported | `members.hourly_rate` |
-| Hours worked each day | Supported | `time_entries` clock in/out; per-worker timesheet CSV (`/api/timesheets`) |
-| Wage statement per payday (hours, rate, gross/net, deductions) | Partial | Timesheet CSV provides hours, rate, and gross amount; deductions and net pay are payroll-software scope |
+| Hours worked each day | Supported | `time_entries` clock in/out; per-worker timesheet CSV (`/api/timesheets`); all-worker payroll CSV (`/api/payroll`) |
+| Wage statement per payday (hours, rate, gross/net, deductions) | Partial | Timesheet and payroll CSVs provide daily hours, rate, and gross amount; deductions and net pay are payroll-software scope |
 | Benefits paid | Outside scope | Payroll |
 | Statutory holiday records | Not supported | — |
 | Vacation dates/pay/days owed | Not supported | — |
@@ -48,7 +48,8 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | WorkSafeBC registration and coverage | Outside scope | Employer duty |
 | Bullying and harassment policy | Outside scope | Policy document; incident reporting supports evidence |
 | Employment contract / terms and conditions | Outside scope | Legal document |
-| Monthly/quarterly reporting to the health authority | Partial | Household report CSV (`/api/export`) plus timesheet CSVs provide the underlying records |
+| Monthly/quarterly reporting to the health authority | Partial | Household report CSV (`/api/export`), per-worker timesheets, and the bookkeeper payroll CSV (`/api/payroll`, any date range) provide the underlying records |
+| Predictable pay-period scheduling | Supported | Two-week rotating shift schedule (Week A / Week B) with a 14-day calendar view |
 
 ## Privacy posture for employee records
 

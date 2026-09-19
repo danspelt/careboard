@@ -18,6 +18,7 @@ import { sendCoverageEmail, sendManagerCoverageEmail } from '@/lib/email';
 import { isE164, sendCareBoardSms } from '@/lib/sms';
 import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from '@/lib/workload-warnings';
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
+import { cycleWeekOf } from '@/lib/shifts';
 
 export type Member = {
   id: string;
@@ -69,7 +70,7 @@ export type Chore = {
   photos?: ProofPhoto[];
   notes?: TaskNote[];
 };
-export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
+export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; cycleWeek: number; createdAt: string };
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ScheduleChangeRequest = { id: string; requesterId: string; shiftId: string; requestedDate: string; startTime: string; endTime: string; reason: string; status: 'open' | 'covered'; acceptedBy: string | null; acceptedAt: string | null; createdAt: string };
 export type ShiftHandoffRecord = { id: string; authorId: string; shiftDate: string; completedCare: string; outstandingTasks: string; observations: string; checklist: string[]; createdAt: string };
@@ -234,8 +235,8 @@ async function rawState() {
       )
       .all<Chore>(),
     db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, action, detail, created_at AS createdAt FROM activity ORDER BY created_at DESC LIMIT 60`).all<ActivityItem>(),
-    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
-    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
+    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, cycle_week AS cycleWeek, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
+    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, 0 AS cycleWeek, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= ${cutoff} ORDER BY started_at DESC`).all<TimeEntry>(),
     db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
     db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
@@ -430,9 +431,9 @@ function parseWindowRows(value: unknown) {
   }
   if (!Array.isArray(parsed) || parsed.length > 14) throw new Error('Invalid shift list.');
   const timeFormat = /^([01]\d|2[0-3]):[0-5]\d$/;
-  const rows = parsed.map((row) => ({ weekday: Number(row?.weekday), startTime: String(row?.startTime ?? ''), endTime: String(row?.endTime ?? '') }));
+  const rows = parsed.map((row) => ({ weekday: Number(row?.weekday), startTime: String(row?.startTime ?? ''), endTime: String(row?.endTime ?? ''), cycleWeek: Number(row?.cycleWeek ?? 0) }));
   for (const row of rows) {
-    if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || !timeFormat.test(row.startTime) || !timeFormat.test(row.endTime) || row.startTime >= row.endTime) {
+    if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || !timeFormat.test(row.startTime) || !timeFormat.test(row.endTime) || row.startTime >= row.endTime || ![0, 1, 2].includes(row.cycleWeek)) {
       throw new Error('Each shift needs a weekday and a valid start/end time.');
     }
   }
@@ -573,7 +574,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const conflict = await db.prepare(`SELECT id FROM schedule_change_requests WHERE accepted_by=? AND requested_date=? AND status='covered' LIMIT 1`).bind(actorId, request.requestedDate).first();
     if (conflict) throw new Error('You already have accepted coverage on that date.');
     const weekday = new Date(`${request.requestedDate}T12:00:00Z`).getUTCDay();
-    const overlappingShift = await db.prepare(`SELECT id FROM shifts WHERE member_id=? AND weekday=? AND start_time<? AND end_time>? LIMIT 1`).bind(actorId, weekday, request.endTime, request.startTime).first();
+    const overlappingShift = await db.prepare(`SELECT id FROM shifts WHERE member_id=? AND weekday=? AND start_time<? AND end_time>? AND (cycle_week=0 OR cycle_week=?) LIMIT 1`).bind(actorId, weekday, request.endTime, request.startTime, cycleWeekOf(request.requestedDate)).first();
     if (overlappingShift) throw new Error('That shift conflicts with your existing schedule.');
     const result = await db.prepare(`UPDATE schedule_change_requests SET status='covered',accepted_by=?,accepted_at=? WHERE id=? AND status='open'`).bind(actorId, now, requestId).run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('That coverage request was already accepted.');
@@ -811,10 +812,15 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!worker) throw new Error('Choose a valid care worker.');
     const rows = parseWindowRows(input.shifts ?? input.windows);
     const table = action === 'setShifts' ? 'shifts' : 'availability_windows';
+    const insertSql = action === 'setShifts'
+      ? `INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, cycle_week, created_at) VALUES (?,?,?,?,?,?,?)`
+      : `INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, created_at) VALUES (?,?,?,?,?,?)`;
     await db.batch([
       db.prepare(`DELETE FROM ${table} WHERE member_id=?`).bind(memberId),
       ...rows.map((row) =>
-        db.prepare(`INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, created_at) VALUES (?,?,?,?,?,?)`).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, now),
+        action === 'setShifts'
+          ? db.prepare(insertSql).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, row.cycleWeek, now)
+          : db.prepare(insertSql).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, now),
       ),
       activity(null, actorId, action === 'setShifts' ? 'updated_shifts' : 'updated_availability', `${action === 'setShifts' ? 'updated shifts' : 'updated availability'} for ${worker.name}`, now),
     ]);

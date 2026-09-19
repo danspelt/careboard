@@ -27,8 +27,8 @@ function orderTasks<T extends ScheduleTask>(tasks: T[]) {
   );
 }
 
-export function buildWeekSchedule<T extends ScheduleTask>(tasks: T[], workers: ScheduleWorker[], startDate: string) {
-  const dates = Array.from({ length: 7 }, (_, index) => dayOffset(startDate, index));
+export function buildWeekSchedule<T extends ScheduleTask>(tasks: T[], workers: ScheduleWorker[], startDate: string, dayCount = 7) {
+  const dates = Array.from({ length: dayCount }, (_, index) => dayOffset(startDate, index));
   const open = tasks.filter((task) => task.status !== 'complete');
   const days = dates.map((date) => ({
     date,

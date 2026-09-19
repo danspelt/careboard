@@ -1,4 +1,4 @@
-export type WorkloadShift = { memberId: string; weekday: number; startTime: string; endTime: string };
+export type WorkloadShift = { memberId: string; weekday: number; startTime: string; endTime: string; cycleWeek?: number };
 export type WorkloadTask = { assignedTo: string | null; dueDate: string | null; status: string };
 export type WorkloadWarning = { memberId: string; code: 'consecutive_days' | 'short_turnaround' | 'high_task_load' | 'overdue_work'; title: string; explanation: string };
 
@@ -13,12 +13,17 @@ export function buildWorkloadWarnings(memberIds: string[], shifts: WorkloadShift
   const warnings: WorkloadWarning[] = [];
   for (const memberId of memberIds) {
     const ownShifts = shifts.filter((shift) => shift.memberId === memberId).sort((a, b) => a.weekday - b.weekday || a.startTime.localeCompare(b.startTime));
-    const days = [...new Set(ownShifts.map((shift) => shift.weekday))];
-    if (days.length > thresholds.maxConsecutiveDays) warnings.push({ memberId, code: 'consecutive_days', title: 'Long run of scheduled days', explanation: `${days.length} days are scheduled in the weekly pattern; the configured warning threshold is ${thresholds.maxConsecutiveDays}.` });
-    for (let day = 0; day < 6; day += 1) {
-      const end = Math.max(...ownShifts.filter((shift) => shift.weekday === day).map((shift) => minutes(shift.endTime)), -1);
-      const start = Math.min(...ownShifts.filter((shift) => shift.weekday === day + 1).map((shift) => minutes(shift.startTime)), 1441);
-      if (end >= 0 && start <= 1440 && (1440 - end + start) < thresholds.minTurnaroundHours * 60) { warnings.push({ memberId, code: 'short_turnaround', title: 'Short turnaround between shifts', explanation: `${Math.round((1440 - end + start) / 60 * 10) / 10} hours separate two scheduled shifts; the configured minimum is ${thresholds.minTurnaroundHours}.` }); break; }
+    const weeklyDays = Math.max(...[1, 2].map((cycleWeek) => new Set(ownShifts.filter((shift) => !shift.cycleWeek || shift.cycleWeek === cycleWeek).map((shift) => shift.weekday)).size), 0);
+    if (weeklyDays > thresholds.maxConsecutiveDays) warnings.push({ memberId, code: 'consecutive_days', title: 'Long run of scheduled days', explanation: `${weeklyDays} days are scheduled in a single week of the two-week pattern; the configured warning threshold is ${thresholds.maxConsecutiveDays}.` });
+    for (const cycleWeek of [1, 2]) {
+      const weekShifts = ownShifts.filter((shift) => !shift.cycleWeek || shift.cycleWeek === cycleWeek);
+      let warned = false;
+      for (let day = 0; day < 6; day += 1) {
+        const end = Math.max(...weekShifts.filter((shift) => shift.weekday === day).map((shift) => minutes(shift.endTime)), -1);
+        const start = Math.min(...weekShifts.filter((shift) => shift.weekday === day + 1).map((shift) => minutes(shift.startTime)), 1441);
+        if (end >= 0 && start <= 1440 && (1440 - end + start) < thresholds.minTurnaroundHours * 60) { warnings.push({ memberId, code: 'short_turnaround', title: 'Short turnaround between shifts', explanation: `${Math.round((1440 - end + start) / 60 * 10) / 10} hours separate two scheduled shifts; the configured minimum is ${thresholds.minTurnaroundHours}.` }); warned = true; break; }
+      }
+      if (warned) break;
     }
     const due = tasks.filter((task) => task.assignedTo === memberId && task.dueDate === date && task.status !== 'complete').length;
     if (due > thresholds.maxDailyTasks) warnings.push({ memberId, code: 'high_task_load', title: 'High assigned task load', explanation: `${due} unfinished tasks are due today; the configured warning threshold is ${thresholds.maxDailyTasks}.` });

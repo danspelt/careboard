@@ -5,8 +5,10 @@ export type AssignableTask = {
   assignedTo: string | null;
 };
 
+import { cycleWeekOf } from '@/lib/shifts';
+
 export type AssignableWorker = { id: string; status: string };
-export type WorkWindow = { memberId: string; weekday: number };
+export type WorkWindow = { memberId: string; weekday: number; cycleWeek?: number };
 
 function dayOffset(date: string, offset: number) {
   const value = new Date(`${date}T12:00:00Z`);
@@ -21,7 +23,8 @@ function weekdayOf(date: string) {
 // Pool preference: workers on shift that day > workers who declared that day available > workers with no declared availability > everyone.
 function eligiblePool(active: AssignableWorker[], day: string, shifts: WorkWindow[], availability: WorkWindow[]) {
   const weekday = weekdayOf(day);
-  const onShift = active.filter((worker) => shifts.some((shift) => shift.memberId === worker.id && shift.weekday === weekday));
+  const cycleWeek = cycleWeekOf(day);
+  const onShift = active.filter((worker) => shifts.some((shift) => shift.memberId === worker.id && shift.weekday === weekday && (!shift.cycleWeek || shift.cycleWeek === cycleWeek)));
   if (onShift.length) return onShift;
   const declared = active.filter((worker) => availability.some((window) => window.memberId === worker.id));
   const available = declared.filter((worker) => availability.some((window) => window.memberId === worker.id && window.weekday === weekday));

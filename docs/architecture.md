@@ -104,6 +104,9 @@ The migration runner records applied IDs in `_careboard_migrations` so each migr
 - `auth_credentials` — bcrypt-hashed credential passwords and temporary-password flag.
 - `audit_log` — immutable operational audit history visible to managers.
 - `household_settings` — recurrence horizon, reminder lead, and retention policy.
+- `shifts` — recurring shift windows per worker on a two-week cycle: `cycle_week` is 0 (every week), 1, or 2; cycle weeks follow ISO week parity (odd ISO week = week 1).
+- `availability_windows` — weekly recurring availability windows per worker.
+- `time_entries` — clock-in/clock-out records that feed attendance, timesheets, and the payroll export.
 - `shift_handoffs` — worker-authored end-of-shift summaries, outstanding tasks, observations, and checklists.
 - `safety_incidents` — safety and near-miss reports with category, severity, manager triage status, and follow-up.
 
@@ -122,6 +125,8 @@ If the database is empty, a seed manager and sample chore are inserted so the fi
 - `DELETE /api/uploads/[id]` — authenticated deletion restricted to managers or the upload/task owner.
 - `GET /api/uploads/[id]` — authenticated ownership-checked photo download.
 - `GET /api/export` — manager-only CSV export over a date range.
+- `GET /api/timesheets` — manager-only per-worker timesheet CSV (`memberId`, `from`, `to`) with daily hours, rate, and gross amount.
+- `GET /api/payroll` — manager-only all-worker payroll CSV (`from`, `to`; defaults to the last 14 days) listing who worked which day, clock-in/out times, hours, rate, gross pay, and totals — intended for the bookkeeper.
 - `GET /api/health` — container health check; returns HTTP 200 when the app is running.
 
 ## PWA

@@ -18,3 +18,16 @@ test('workers receive only their own warning rows when callers scope member ids'
   const warnings = buildWorkloadWarnings(['a'], [], [{ assignedTo: 'b', dueDate: '2026-09-18', status: 'open' }], '2026-09-19');
   assert.deepEqual(warnings, []);
 });
+
+test('two-week alternating shifts are evaluated per cycle week', () => {
+  // Seven days one week, zero the next — should still warn about the heavy week.
+  const heavyWeek = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ memberId: 'worker', weekday, startTime: '09:00', endTime: '17:00', cycleWeek: 1 }));
+  const heavyWarnings = buildWorkloadWarnings(['worker'], heavyWeek, [], '2026-09-19', { maxConsecutiveDays: 6, minTurnaroundHours: 10, maxDailyTasks: 8 });
+  assert.deepEqual(heavyWarnings.map((warning) => warning.code), ['consecutive_days']);
+
+  // Same weekdays split across the two weeks (3 + 4 days) — no long-run warning.
+  const alternating = [0, 1, 2].map((weekday) => ({ memberId: 'worker', weekday, startTime: '09:00', endTime: '17:00', cycleWeek: 1 }))
+    .concat([3, 4, 5, 6].map((weekday) => ({ memberId: 'worker', weekday, startTime: '09:00', endTime: '17:00', cycleWeek: 2 })));
+  const alternatingWarnings = buildWorkloadWarnings(['worker'], alternating, [], '2026-09-19', { maxConsecutiveDays: 6, minTurnaroundHours: 10, maxDailyTasks: 8 });
+  assert.deepEqual(alternatingWarnings, []);
+});

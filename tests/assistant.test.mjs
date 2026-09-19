@@ -44,7 +44,7 @@ test('manager context includes operational names but strips contact, pay, report
   for (const secret of ['111', '222', '25', '30', 'secret audit', '"settings"']) assert.equal(serialized.includes(secret), false);
   assert.match(assistantInstructions(context), /informational and read-only/);
   assert.match(assistantInstructions(context), /untrusted data/);
-  assert.match(assistantInstructions(context), /weekly shifts/);
+  assert.match(assistantInstructions(context), /two-week cycle/);
   assert.match(assistantInstructions(context), /in-app Inbox/);
   assert.match(assistantInstructions(context), /never suggest sharing or reveal personal phone numbers/);
 });

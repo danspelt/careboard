@@ -107,8 +107,8 @@ const mockState: RawLocalState = {
   activity: [],
   audit: [],
   settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, updatedAt: now },
-  shifts: [{ id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', createdAt: now }],
-  availability: [{ id: 'avail-1', memberId: worker.id, weekday: 1, startTime: '14:00', endTime: '20:00', createdAt: now }],
+  shifts: [{ id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', cycleWeek: 0, createdAt: now }],
+  availability: [{ id: 'avail-1', memberId: worker.id, weekday: 1, startTime: '14:00', endTime: '20:00', cycleWeek: 0, createdAt: now }],
   timeEntries: [],
   certifications: [],
   messages: [],
@@ -389,8 +389,8 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     case 'setAvailability': {
       const memberId = requiredString(input.memberId, 'Member');
       const raw = typeof input.shifts === 'string' ? input.shifts : typeof input.windows === 'string' ? input.windows : '[]';
-      const rows: Array<{ weekday: number; startTime: string; endTime: string }> = JSON.parse(raw);
-      const target: Shift[] = rows.map((row, index) => ({ id: `${action}-${memberId}-${index}`, memberId, weekday: row.weekday, startTime: row.startTime, endTime: row.endTime, createdAt: now2 }));
+      const rows: Array<{ weekday: number; startTime: string; endTime: string; cycleWeek?: number }> = JSON.parse(raw);
+      const target: Shift[] = rows.map((row, index) => ({ id: `${action}-${memberId}-${index}`, memberId, weekday: row.weekday, startTime: row.startTime, endTime: row.endTime, cycleWeek: row.cycleWeek ?? 0, createdAt: now2 }));
       if (action === 'setShifts') mockState.shifts = (mockState.shifts ?? []).filter((s) => s.memberId !== memberId).concat(target);
       else mockState.availability = (mockState.availability ?? []).filter((s) => s.memberId !== memberId).concat(target);
       break;
