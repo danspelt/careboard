@@ -16,6 +16,8 @@ import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
 import { sendCoverageEmail, sendManagerCoverageEmail } from '@/lib/email';
 import { isE164, sendCareBoardSms } from '@/lib/sms';
+import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from '@/lib/workload-warnings';
+import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
 
 export type Member = {
   id: string;
@@ -66,6 +68,8 @@ export type Chore = {
 export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
 export type ScheduleChangeRequest = { id: string; requesterId: string; shiftId: string; requestedDate: string; startTime: string; endTime: string; reason: string; status: 'open' | 'covered'; acceptedBy: string | null; acceptedAt: string | null; createdAt: string };
+export type ShiftHandoffRecord = { id: string; authorId: string; shiftDate: string; completedCare: string; outstandingTasks: string; observations: string; checklist: string[]; createdAt: string };
+export type SafetyIncident = { id: string; reporterId: string; category: 'hazard' | 'injury' | 'violence_threat' | 'unsafe_home' | 'near_miss'; severity: 'low' | 'medium' | 'high' | 'urgent'; occurredAt: string; location: string; description: string; immediateAction: string; status: 'submitted' | 'reviewing' | 'resolved'; assignedTo: string | null; followUp: string; resolvedAt: string | null; createdAt: string; updatedAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
 export type Message = { id: string; memberId: string; body: string; createdAt: string };
 export type ClientNoteSubmission = {
@@ -106,6 +110,9 @@ export type HouseholdState = {
   inbox?: InboxItem[];
   safetyAlerts?: SafetyAlert[];
   scheduleRequests?: ScheduleChangeRequest[];
+  shiftHandoffs?: ShiftHandoffRecord[];
+  safetyIncidents?: SafetyIncident[];
+  workloadWarnings?: WorkloadWarning[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -196,7 +203,7 @@ async function rawState() {
   const db = getD1();
   const settings = await getHouseholdSettings();
   const cutoff = db.dialect === 'postgres' ? "(NOW() - INTERVAL '90 days')::TEXT" : "datetime('now', '-90 days')";
-  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems, scheduleRequests] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems, scheduleRequests, shiftHandoffs, safetyIncidents] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
@@ -230,6 +237,8 @@ async function rawState() {
     db.prepare(`SELECT id, client_member_id AS clientMemberId, submitted_by AS submittedBy, source_photo_id AS sourcePhotoId, ocr_text AS ocrText, status, approved_text AS approvedText, reviewed_by AS reviewedBy, reviewed_at AS reviewedAt, created_at AS createdAt FROM client_note_submissions ORDER BY created_at DESC`).all<ClientNoteSubmission>(),
     db.prepare(`SELECT id, worker_id AS workerId, kind, body, submission_id AS submissionId, created_by AS createdBy, safety_category AS safetyCategory, safety_reason AS safetyReason, safety_reviewed_by AS safetyReviewedBy, safety_reviewed_at AS safetyReviewedAt, created_at AS createdAt FROM worker_inbox_items ORDER BY created_at DESC LIMIT 300`).all<InboxItem>(),
     db.prepare(`SELECT id, requester_id AS requesterId, shift_id AS shiftId, requested_date AS requestedDate, start_time AS startTime, end_time AS endTime, reason, status, accepted_by AS acceptedBy, accepted_at AS acceptedAt, created_at AS createdAt FROM schedule_change_requests ORDER BY created_at DESC`).all<ScheduleChangeRequest>(),
+    db.prepare(`SELECT id, author_id AS authorId, shift_date AS shiftDate, completed_care AS completedCare, outstanding_tasks AS outstandingTasks, observations, checklist_json AS checklistJson, created_at AS createdAt FROM shift_handoffs ORDER BY created_at DESC LIMIT 300`).all<ShiftHandoffRecord & { checklistJson: string }>(),
+    db.prepare(`SELECT id, reporter_id AS reporterId, category, severity, occurred_at AS occurredAt, location, description, immediate_action AS immediateAction, status, assigned_to AS assignedTo, follow_up AS followUp, resolved_at AS resolvedAt, created_at AS createdAt, updated_at AS updatedAt FROM safety_incidents ORDER BY CASE severity WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 300`).all<SafetyIncident>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -240,7 +249,7 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results };
+  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -266,6 +275,9 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     inbox: visibleInbox(viewer.role, viewer.id, state.inboxItems),
     safetyAlerts: visibleSafetyAlerts(viewer.role, state.inboxItems) as SafetyAlert[],
     scheduleRequests: state.scheduleRequests,
+    shiftHandoffs: state.shiftHandoffs ?? [],
+    safetyIncidents: state.safetyIncidents ?? [],
+    workloadWarnings: buildWorkloadWarnings(state.members.filter((item) => item.role === 'worker' && item.status === 'active').map((item) => item.id), state.shifts, state.chores, today, workloadThresholds()),
     metrics: metrics(state.chores, today), reminders: remindersFor(state.chores),
   };
   if (viewer.role === 'viewer') {
@@ -298,7 +310,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()) };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -448,6 +460,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'deleteCertification',
     'reviewClientNote',
     'acknowledgeSafetyAlert',
+    'triageSafetyIncident',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -554,6 +567,50 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     catch (error) { console.error('Manager coverage email failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
     try { await sendCareBoardSms(managers.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: Coverage was accepted for ${request.requestedDate}, ${request.startTime}-${request.endTime}. Review the manager dashboard.`); }
     catch (error) { console.error('Manager coverage SMS failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
+  } else if (action === 'recordShiftHandoff') {
+    const handoff = validateShiftHandoff(input, now.slice(0, 10));
+    await db.batch([
+      db.prepare(`INSERT INTO shift_handoffs(id,household_id,author_id,shift_date,completed_care,outstanding_tasks,observations,checklist_json,created_at) VALUES(?,'default',?,?,?,?,?,?,?)`)
+        .bind(crypto.randomUUID(), actorId, handoff.shiftDate, handoff.completedCare, handoff.outstandingTasks, handoff.observations, JSON.stringify(handoff.checklist), now),
+      activity(null, actorId, 'recorded_handoff', `${actor.name} recorded a shift handoff for ${handoff.shiftDate}`, now),
+    ]);
+  } else if (action === 'reportSafetyIncident') {
+    const incident = validateSafetyIncident(input, now);
+    const incidentId = crypto.randomUUID();
+    const statements = [
+      db.prepare(`INSERT INTO safety_incidents(id,household_id,reporter_id,category,severity,occurred_at,location,description,immediate_action,status,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,?,?,'submitted',?,?)`)
+        .bind(incidentId, actorId, incident.category, incident.severity, incident.occurredAt, incident.location, incident.description, incident.immediateAction, now, now),
+      activity(null, actorId, 'safety_incident_reported', `${actor.name} reported a ${incident.severity} safety concern`, now),
+    ];
+    if (incident.severity === 'high' || incident.severity === 'urgent') {
+      const managers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ id: string }>();
+      for (const manager of managers.results) {
+        statements.push(
+          db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+            .bind(crypto.randomUUID(), manager.id, `${incident.severity === 'urgent' ? 'Urgent' : 'High-severity'} safety report from ${actor.name}: ${incident.description.slice(0, 300)} — open the command center to triage.`, actorId, now),
+        );
+      }
+    }
+    await db.batch(statements);
+  } else if (action === 'triageSafetyIncident') {
+    const incidentId = requiredString(input.incidentId, 'Safety report');
+    const incident = await db.prepare(`SELECT id, reporter_id AS reporterId, category, severity, occurred_at AS occurredAt, status FROM safety_incidents WHERE id=? AND household_id='default'`).bind(incidentId).first<SafetyIncident>();
+    if (!incident) throw new Error('That safety report no longer exists.');
+    const triage = triageSafetyIncident({ status: incident.status }, input);
+    if (triage.assignedTo) {
+      const assignee = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role IN ('worker','manager') AND COALESCE(l.status,'active')='active'`).bind(triage.assignedTo).first<{ id: string }>();
+      if (!assignee) throw new Error('Choose an active care team member for follow-up.');
+    }
+    const result = await db
+      .prepare(`UPDATE safety_incidents SET status=?, assigned_to=?, follow_up=?, resolved_at=?, updated_at=? WHERE id=? AND status!='resolved'`)
+      .bind(triage.status, triage.assignedTo, triage.followUp, triage.resolved ? now : null, now, incidentId)
+      .run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That safety report is already resolved.');
+    await db.batch([
+      activity(null, actorId, 'safety_incident_triaged', `${triage.status} safety report from ${incident.occurredAt.slice(0, 10)}`, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'manager_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), incident.reporterId, `Your safety report (${incident.category.replace('_', ' ')}, ${incident.occurredAt.slice(0, 10)}) is now ${triage.status === 'resolved' ? 'resolved' : 'being reviewed'}.${triage.followUp ? ` ${triage.followUp.slice(0, 300)}` : ''}`, actorId, now),
+    ]);
   } else if (action === 'sendInboxMessage') {
     const recipientId = requiredString(input.recipientId, 'Recipient');
     const body = requiredString(input.body, 'Message').slice(0, 1000);

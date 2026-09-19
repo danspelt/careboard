@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import type { AuthenticatedAccess } from '@/lib/auth-access';
 import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem, ClientNoteSubmission } from '@/lib/household-data';
 import type { InboxItem } from '@/lib/client-notes';
+import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff } from '@/lib/care-safety';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
 
@@ -109,6 +110,9 @@ const mockState: RawLocalState = {
   messages: [],
   clientNoteSubmissions: [],
   inboxItems: [],
+  shiftHandoffs: [],
+  safetyIncidents: [],
+  scheduleRequests: [],
 };
 
 async function localDevRole(): Promise<Role> {
@@ -428,6 +432,37 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       break;
     }
     case 'requestScheduleChange': {
+      break;
+    }
+    case 'recordShiftHandoff': {
+      const handoff = validateShiftHandoff(input, now2.slice(0, 10));
+      mockState.shiftHandoffs = [
+        { id: crypto.randomUUID(), authorId: actorId, shiftDate: handoff.shiftDate, completedCare: handoff.completedCare, outstandingTasks: handoff.outstandingTasks, observations: handoff.observations, checklist: handoff.checklist, createdAt: now2 },
+        ...(mockState.shiftHandoffs ?? []),
+      ];
+      pushActivity('recorded_handoff', `recorded a shift handoff for ${handoff.shiftDate}`);
+      break;
+    }
+    case 'reportSafetyIncident': {
+      const incident = validateSafetyIncident(input, now2);
+      mockState.safetyIncidents = [
+        { id: crypto.randomUUID(), reporterId: actorId, category: incident.category, severity: incident.severity, occurredAt: incident.occurredAt, location: incident.location, description: incident.description, immediateAction: incident.immediateAction, status: 'submitted', assignedTo: null, followUp: '', resolvedAt: null, createdAt: now2, updatedAt: now2 },
+        ...(mockState.safetyIncidents ?? []),
+      ];
+      pushActivity('safety_incident_reported', `reported a ${incident.severity} safety concern`);
+      break;
+    }
+    case 'triageSafetyIncident': {
+      const incidentId = requiredString(input.incidentId, 'Safety report');
+      const incident = (mockState.safetyIncidents ?? []).find((item) => item.id === incidentId);
+      if (!incident) throw new Error('That safety report no longer exists.');
+      const triage = triageSafetyIncident({ status: incident.status }, input);
+      incident.status = triage.status;
+      incident.assignedTo = triage.assignedTo;
+      incident.followUp = triage.followUp;
+      incident.resolvedAt = triage.resolved ? now2 : null;
+      incident.updatedAt = now2;
+      pushActivity('safety_incident_triaged', `${triage.status} safety report`);
       break;
     }
     default:

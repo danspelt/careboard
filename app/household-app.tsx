@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import type { Chore, HouseholdState, Member, Message } from '@/lib/household-data';
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
+import { incidentCategoryLabels, incidentSeverityLabels } from '@/lib/care-safety';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
@@ -46,8 +47,8 @@ const fieldClass = 'field-control mt-1 min-h-11 w-full rounded-xl border border-
 function Field({ label, name, defaultValue, type = 'text', required = false, readOnly = false, step }: { label: string; name: string; defaultValue?: string | number | null; type?: string; required?: boolean; readOnly?: boolean; step?: string }) {
   return <label className="block text-sm font-semibold">{label}<Input name={name} type={type} required={required} readOnly={readOnly} step={step} defaultValue={defaultValue ?? ''} className="field-control mt-1 h-11 rounded-xl bg-white" /></label>;
 }
-function TextArea({ label, name, defaultValue }: { label: string; name: string; defaultValue?: string }) {
-  return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} rows={3} className={fieldClass} /></label>;
+function TextArea({ label, name, defaultValue, required = false, placeholder }: { label: string; name: string; defaultValue?: string; required?: boolean; placeholder?: string }) {
+  return <label className="block text-sm font-semibold">{label}<textarea name={name} defaultValue={defaultValue} required={required} placeholder={placeholder} rows={3} className={fieldClass} /></label>;
 }
 
 export function HouseholdApp({ initialState, authenticatedId, localDev = false }: { initialState: HouseholdState; authenticatedId: string; localDev?: boolean }) {
@@ -400,6 +401,18 @@ function StatusBadge({ status }: { status: string }) {
     threat: 'bg-[#f8e4dc] text-[#873d27]',
     medication: 'bg-[#fcf0dc] text-[#80531b]',
     emergency: 'bg-[#f8e4dc] text-[#873d27]',
+    submitted: 'bg-[#fcf0dc] text-[#80531b]',
+    reviewing: 'bg-[#e7eef8] text-[#3f5f92]',
+    resolved: 'bg-[#e6f0eb] text-[#216b61]',
+    low: 'bg-[#f0f0f0] text-[#687873]',
+    medium: 'bg-[#fcf4e9] text-[#9e6b2e]',
+    high: 'bg-[#f8e9dc] text-[#8b4e2c]',
+    urgent: 'bg-[#f8e4dc] text-[#873d27]',
+    hazard: 'bg-[#fcf4e9] text-[#9e6b2e]',
+    injury: 'bg-[#f8e4dc] text-[#873d27]',
+    violence_threat: 'bg-[#f8e4dc] text-[#873d27]',
+    unsafe_home: 'bg-[#fcf0dc] text-[#80531b]',
+    near_miss: 'bg-[#e7eef8] text-[#3f5f92]',
   };
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
@@ -528,6 +541,8 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   const fundedPct = fundedConfigured ? Math.min(999, Math.round((homeFunding.usedMinutes / homeFunding.fundedMinutes) * 100)) : 0;
   const fundedOverPace = fundedConfigured && homeFunding.projectedMinutes > homeFunding.fundedMinutes;
   const safetyCount = (state.safetyAlerts ?? []).filter((alert: any) => !alert.safetyReviewedAt).length;
+  const openIncidents = (state.safetyIncidents ?? []).filter((incident: any) => incident.status !== 'resolved').length;
+  const workloadWarningCount = (state.workloadWarnings ?? []).length;
   const clientNoteCount = (state.clientNoteQueue ?? []).filter((note: any) => note.status === 'pending').length;
   const scheduleRequests = state.scheduleRequests ?? [];
   const todayScheduleRequests = scheduleRequests.filter((item: any) => item.requestedDate === today() && item.status === 'open');
@@ -556,7 +571,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
         <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
         <Metric label="Funded hours used" value={fundedConfigured ? `${fundedPct}%` : '—'} icon={CircleDollarSign} tone={fundedOverPace ? 'caution' : 'neutral'} />
       </div>
-      {(safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length) > 0 && (
+      {(safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length + openIncidents + workloadWarningCount) > 0 && (
         <Card className="mt-6">
           <h2 className="flex items-center gap-2 text-lg font-bold"><ShieldAlert className="size-5 text-[#b4532a]" aria-hidden="true" />Needs your decision</h2>
           <p className="text-sm text-[#687873]">Items only the household manager can resolve</p>
@@ -574,6 +589,22 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
                 <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f8e9dc]"><ShieldAlert className="size-4" aria-hidden="true" /></span>
                 <span className="min-w-0 flex-1 text-sm font-semibold">Safety alerts to review</span>
                 <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold">{safetyCount}</span>
+                <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+              </button>
+            )}
+            {openIncidents > 0 && (
+              <button onClick={() => document.getElementById('safety-reports')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2b69f] bg-[#fff8f4] p-3 text-left text-[#8f3f25] transition hover:border-[#cf9873]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f8e9dc]"><ShieldAlert className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Safety reports to triage</span>
+                <span className="rounded-full bg-[#f8e9dc] px-2 py-1 text-xs font-bold">{openIncidents}</span>
+                <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+              </button>
+            )}
+            {workloadWarningCount > 0 && (
+              <button onClick={() => document.getElementById('workload-signals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#d9c99d] bg-[#fff8e8] p-3 text-left text-[#6f5422] transition hover:border-[#c9ae6d]">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fcf0dc]"><AlertTriangle className="size-4" aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 text-sm font-semibold">Workload signals on the team</span>
+                <span className="rounded-full bg-[#fcf0dc] px-2 py-1 text-xs font-bold">{workloadWarningCount}</span>
                 <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
               </button>
             )}
@@ -611,6 +642,13 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             <Button type="submit" disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
           </form>
         </Card>
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div id="safety-reports" className="scroll-mt-20"><SafetyTriageCard state={state} mutate={mutate} busy={busy} /></div>
+        <div className="space-y-6">
+          <div id="workload-signals" className="scroll-mt-20"><WorkloadWarnings warnings={state.workloadWarnings ?? []} members={state.members} /></div>
+          <ShiftHandoffLog state={state} />
+        </div>
       </div>
       <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />CSIL funding — this month</h2>
@@ -1430,6 +1468,7 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
         <Metric label="Due today" value={outstanding.length} icon={CalendarDays} />
         <Metric label="Available to claim" value={state.chores.filter((task: Chore) => task.assignedTo === null && task.status === 'open').length} icon={ClipboardList} />
       </div>
+      {(state.workloadWarnings ?? []).length > 0 && <div className="mb-6"><WorkloadWarnings warnings={state.workloadWarnings} members={state.members} /></div>}
       <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
         <div className="space-y-6">
           <Card className="p-0">
@@ -1455,6 +1494,16 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
           </Card>
         </aside>
       </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
+          <ShiftHandoffComposer mutate={mutate} busy={busy} />
+          <ShiftHandoffLog state={state} personal />
+        </div>
+        <div className="space-y-6">
+          <SafetyReportForm mutate={mutate} busy={busy} />
+          <SafetyReportList state={state} />
+        </div>
+      </div>
     </>
   );
 }
@@ -1462,6 +1511,144 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
 function HandoffTask({ task, member, reasons, setTask, busy, runAction }: any) {
   const AreaIcon = areaIcons.get(task.area) ?? Home;
   return <article className="rounded-2xl border border-[#dfe5dc] bg-white p-4 shadow-sm"><button onClick={() => setTask(task)} className="w-full text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]" aria-label={`Open ${task.title}`}><span className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]">{createElement(AreaIcon, { className: 'size-5', 'aria-hidden': true })}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-start justify-between gap-2"><span className="font-semibold">{task.title}</span><StatusBadge status={task.status} /></span><span className="mt-1 block text-xs text-[#52645f]">{task.area} · {dateLabel(task.dueDate)}{task.dueTime ? ` at ${task.dueTime}` : ''}</span></span></span>{reasons.length > 0 && <span className="mt-3 flex flex-wrap gap-1.5">{reasons.map((reason: string) => <span key={reason} className="rounded-full bg-[#f8e9dc] px-2.5 py-1 text-xs font-semibold text-[#8b4e2c]">{reason}</span>)}</span>}{(task.issueReport || task.progressNotes || task.instructions) && <span className="mt-3 line-clamp-2 block text-sm leading-5 text-[#52645f]">{task.issueReport || task.progressNotes || task.instructions}</span>}</button><div className="mt-3 flex flex-wrap gap-2 border-t border-[#edf0eb] pt-3">{task.status === 'open' && task.assignedTo === member.id && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'start')}><Play className="size-4" />Start task</Button>}{task.status === 'in_progress' && <Button size="sm" disabled={busy} onClick={(event) => runAction(event, task, 'complete')} className="bg-[#287b6f]"><Check className="size-4" />Mark complete</Button>}<Button size="sm" variant="outline" onClick={() => setTask(task)}><MessageSquareText className="size-4" />Add handoff note</Button></div></article>;
+}
+
+function WorkloadWarnings({ warnings, members, className = '' }: { warnings: Array<{ memberId: string; code: string; title: string; explanation: string }>; members: Member[]; className?: string }) {
+  const nameFor = (id: string) => members.find((item) => item.id === id)?.name ?? 'Care worker';
+  return (
+    <Card className={`border-[#eadbc6] ${className}`}>
+      <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#b4532a]" aria-hidden="true" />Workload signals</h2>
+      <p className="text-sm text-[#687873]">Warnings derived from schedules and task load — a prompt to rebalance work, not a medical judgment</p>
+      {warnings.length ? (
+        <ul className="mt-4 space-y-2">
+          {warnings.map((warning, index) => (
+            <li key={`${warning.memberId}-${warning.code}-${index}`} className="rounded-xl border border-[#eadbc6] bg-[#fcf8f0] p-3">
+              <p className="text-sm font-semibold">{warning.title} <span className="font-normal text-[#687873]">· {nameFor(warning.memberId)}</span></p>
+              <p className="mt-1 text-xs leading-5 text-[#6d5a3f]">{warning.explanation}</p>
+            </li>
+          ))}
+        </ul>
+      ) : <EmptyHandoff icon={CheckCircle2} title="No workload signals" text="Schedules and task load are within the configured thresholds." compact />}
+    </Card>
+  );
+}
+
+function ShiftHandoffComposer({ mutate, busy }: any) {
+  return (
+    <Card>
+      <h2 className="flex items-center gap-2 font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Share an end-of-shift handoff</h2>
+      <p className="mt-1 text-sm leading-6 text-[#687873]">Summarize the shift so the next caregiver knows where things stand. Your manager can read every handoff; a worker who covers this shift date can read it too.</p>
+      <form className="mt-4 grid gap-3" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'recordShiftHandoff', ...Object.fromEntries(new FormData(form)) }, 'Shift handoff shared.').then(() => form.reset()).catch(() => {}); }}>
+        <Field label="Shift date" name="shiftDate" type="date" defaultValue={today()} required />
+        <TextArea label="Care completed" name="completedCare" required placeholder="What you finished during the shift" />
+        <TextArea label="Outstanding tasks for the next shift" name="outstandingTasks" placeholder="Anything left to pick up" />
+        <TextArea label="Observations or concerns" name="observations" placeholder="Changes in condition, mood, or the home" />
+        <TextArea label="Handoff checklist — one item per line" name="checklist" placeholder={'Medication given\nMeals documented\nIssues flagged'} />
+        <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" />Share handoff</Button>
+      </form>
+    </Card>
+  );
+}
+
+function ShiftHandoffLog({ state, personal = false }: any) {
+  const handoffs = (state.shiftHandoffs ?? []).slice(0, 10);
+  const nameFor = (id: string) => state.members.find((item: Member) => item.id === id)?.name ?? 'Care worker';
+  return (
+    <Card>
+      <h2 className="flex items-center gap-2 font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />End-of-shift handoffs</h2>
+      <p className="mt-1 text-sm text-[#687873]">{personal ? 'Your handoffs, plus handoffs for shift dates you covered' : 'End-of-shift notes from the care team'}</p>
+      {handoffs.length ? <ol className="mt-4 space-y-3">{handoffs.map((handoff: any) => (
+        <li key={handoff.id} className="rounded-xl border border-[#e2e8e1] bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold">{nameFor(handoff.authorId)} · {dateLabel(handoff.shiftDate)}</p>
+            <time className="text-xs text-[#687873]">{new Date(handoff.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{handoff.completedCare}</p>
+          {handoff.outstandingTasks ? <p className="mt-2 break-words text-sm leading-6 text-[#52645f]"><strong>Still to do:</strong> {handoff.outstandingTasks}</p> : null}
+          {handoff.observations ? <p className="mt-2 break-words text-sm leading-6 text-[#52645f]"><strong>Observations:</strong> {handoff.observations}</p> : null}
+          {handoff.checklist?.length ? <ul className="mt-2 space-y-1">{handoff.checklist.map((item: string, index: number) => <li key={index} className="flex items-start gap-2 break-words text-sm text-[#52645f]"><Check className="mt-0.5 size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />{item}</li>)}</ul> : null}
+        </li>
+      ))}</ol> : <EmptyHandoff icon={History} title="No handoffs yet" text="End-of-shift notes shared by the care team will appear here." compact />}
+    </Card>
+  );
+}
+
+function SafetyReportForm({ mutate, busy }: any) {
+  return (
+    <Card className="border-[#e2b69f]">
+      <h2 className="flex items-center gap-2 font-bold"><ShieldAlert className="size-5 text-[#8f3f25]" aria-hidden="true" />Report a safety concern</h2>
+      <p className="mt-1 text-sm leading-6 text-[#687873]">Report hazards, injuries, threats, unsafe conditions, or near misses. Only you and the household manager can see your reports, and the manager reviews every one.</p>
+      <form className="mt-4 grid gap-3" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'reportSafetyIncident', ...Object.fromEntries(new FormData(form)) }, 'Safety report sent to your manager.').then(() => form.reset()).catch(() => {}); }}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-semibold">Type of concern<select name="category" required className={fieldClass}>{Object.entries(incidentCategoryLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label className="block text-sm font-semibold">Severity<select name="severity" required className={fieldClass}>{Object.entries(incidentSeverityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="When it happened" name="occurredAt" type="datetime-local" required />
+          <Field label="Where it happened" name="location" required />
+        </div>
+        <TextArea label="What happened" name="description" required />
+        <TextArea label="Immediate action taken" name="immediateAction" placeholder="First aid given, area made safe, manager called…" />
+        <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><ShieldAlert className="size-4" aria-hidden="true" />Submit safety report</Button>
+      </form>
+    </Card>
+  );
+}
+
+function SafetyReportList({ state }: any) {
+  const incidents = state.safetyIncidents ?? [];
+  return (
+    <Card>
+      <h2 className="flex items-center gap-2 font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Your safety reports</h2>
+      <p className="mt-1 text-sm text-[#687873]">Private to you and the household manager</p>
+      {incidents.length ? <ol className="mt-4 space-y-3">{incidents.slice(0, 10).map((incident: any) => (
+        <li key={incident.id} className="rounded-xl border border-[#e2e8e1] bg-white p-4">
+          <div className="flex flex-wrap items-center gap-2"><StatusBadge status={incident.category} /><StatusBadge status={incident.severity} /><StatusBadge status={incident.status} /></div>
+          <p className="mt-2 text-sm font-semibold">{incident.location} · {new Date(incident.occurredAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+          <p className="mt-1 break-words text-sm leading-6 text-[#52645f]">{incident.description}</p>
+          {incident.followUp ? <p className="mt-2 break-words rounded-lg bg-[#f2f7f1] p-2.5 text-sm leading-6 text-[#4d6b5e]"><strong>Manager follow-up:</strong> {incident.followUp}</p> : null}
+        </li>
+      ))}</ol> : <EmptyHandoff icon={Shield} title="No safety reports" text="If something unsafe happens on shift, report it with the form above." compact />}
+    </Card>
+  );
+}
+
+function SafetyTriageCard({ state, mutate, busy }: any) {
+  const incidents = state.safetyIncidents ?? [];
+  const nameFor = (id: string | null) => state.members.find((item: Member) => item.id === id)?.name ?? 'Care team';
+  const assignable = state.members.filter((item: Member) => item.status === 'active' && item.role !== 'viewer');
+  const triage = (incidentId: string, status: 'reviewing' | 'resolved', form: HTMLFormElement | null) => {
+    if (!form) return;
+    void mutate({ action: 'triageSafetyIncident', incidentId, status, ...Object.fromEntries(new FormData(form)) }, status === 'resolved' ? 'Safety report resolved.' : 'Safety report moved to review.').catch(() => {});
+  };
+  return (
+    <Card className="h-fit">
+      <h2 className="flex items-center gap-2 text-lg font-bold"><ShieldAlert className="size-5 text-[#8f3f25]" aria-hidden="true" />Safety reports</h2>
+      <p className="text-sm text-[#687873]">Worker-submitted hazards, injuries, threats, and near misses — assign follow-up and resolve</p>
+      {incidents.length ? <ol className="mt-4 space-y-3">{incidents.slice(0, 12).map((incident: any) => (
+        <li key={incident.id} className="rounded-xl border border-[#e2e8e1] bg-white p-4">
+          <div className="flex flex-wrap items-center gap-2"><StatusBadge status={incident.category} /><StatusBadge status={incident.severity} /><StatusBadge status={incident.status} /><span className="ml-auto text-xs text-[#687873]">{nameFor(incident.reporterId)} · {new Date(incident.occurredAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></div>
+          <p className="mt-2 text-sm font-semibold">{incident.location}</p>
+          <p className="mt-1 break-words text-sm leading-6 text-[#52645f]">{incident.description}</p>
+          {incident.immediateAction ? <p className="mt-1 break-words text-sm leading-6 text-[#52645f]"><strong>Immediate action:</strong> {incident.immediateAction}</p> : null}
+          {incident.status === 'resolved' ? (
+            <p className="mt-2 break-words rounded-lg bg-[#f2f7f1] p-2.5 text-sm leading-6 text-[#4d6b5e]">Resolved {incident.resolvedAt ? new Date(incident.resolvedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}{incident.assignedTo ? ` · follow-up with ${nameFor(incident.assignedTo)}` : ''}{incident.followUp ? ` — ${incident.followUp}` : ''}</p>
+          ) : (
+            <form className="mt-3 grid gap-2 border-t border-[#edf0eb] pt-3" onSubmit={(e) => e.preventDefault()}>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs font-semibold">Follow-up owner<select name="assignedTo" defaultValue={incident.assignedTo ?? ''} className={`${fieldClass} min-h-10`}><option value="">Unassigned</option>{assignable.map((person: Member) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+                <label className="block text-xs font-semibold">Follow-up note<input name="followUp" defaultValue={incident.followUp} maxLength={2000} placeholder="What happens next" className={`${fieldClass} min-h-10`} /></label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={(e) => triage(incident.id, 'reviewing', e.currentTarget.form)}>Mark reviewing</Button>
+                <Button type="button" size="sm" disabled={busy} onClick={(e) => triage(incident.id, 'resolved', e.currentTarget.form)} className="bg-[#287b6f]"><Check className="size-4" />Resolve</Button>
+              </div>
+            </form>
+          )}
+        </li>
+      ))}</ol> : <EmptyHandoff icon={Shield} title="No safety reports" text="Worker safety reports will appear here for triage." compact />}
+    </Card>
+  );
 }
 
 function AnnouncementBanner({ items }: { items: Array<{ id: string; detail: string; createdAt: string }> }) {

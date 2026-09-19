@@ -75,6 +75,9 @@ Key access rules:
 | Start own assigned open task | No | Yes |
 | Complete own in-progress task | No | Yes |
 | Add notes to own tasks | No | Yes |
+| Record end-of-shift handoffs | Yes | Yes |
+| Report safety incidents | Yes | Yes |
+| Triage safety incidents | Yes | No |
 
 Disabled workers are checked on every protected request. A disabled account immediately loses access even if it holds a valid session cookie.
 
@@ -101,6 +104,8 @@ The migration runner records applied IDs in `_careboard_migrations` so each migr
 - `auth_credentials` — bcrypt-hashed credential passwords and temporary-password flag.
 - `audit_log` — immutable operational audit history visible to managers.
 - `household_settings` — recurrence horizon, reminder lead, and retention policy.
+- `shift_handoffs` — worker-authored end-of-shift summaries, outstanding tasks, observations, and checklists.
+- `safety_incidents` — safety and near-miss reports with category, severity, manager triage status, and follow-up.
 
 If the database is empty, a seed manager and sample chore are inserted so the first sign-in succeeds.
 
@@ -138,3 +143,8 @@ The offline page is served when a navigation request fails and a cached shell is
 - CSV export sanitizes cell values to neutralize spreadsheet formula injection.
 - The AI assistant uses the OpenAI Responses API only from the server. Its context is rebuilt from the signed-in member's authorized view on every request and is further minimized: workers receive only their own/unassigned tasks and own shifts; contact data, pay, reports, settings, and audit records are omitted for every role. Assistant history and input lengths are bounded, OpenAI response storage is disabled, and the assistant has no mutation tools.
 - A worker can explicitly submit a day-off request beside the assistant. The durable request appears in CareBoard before best-effort email and opted-in SMS coverage alerts are attempted. Another active worker can explicitly accept a non-conflicting open shift exactly once; that atomic acceptance updates the coverage record, preserves the original request and audit trail, and notifies the manager. The AI cannot trigger this mutation. The manager command center keeps pending absence requests distinct from scheduled/clock-in status and shows resolved coverage changes.
+- Shift handoffs are private: managers see all records; a worker sees only their own handoffs plus handoffs authored by a worker whose shift date they accepted coverage for. Family viewers never see them.
+- Safety incidents are restricted to the reporter and the manager. Reporters receive a private inbox follow-up when the manager reviews or resolves a report. High and urgent severity reports notify active managers through the monitored inbox.
+- Workload warnings (`lib/workload-warnings.ts`) are computed from schedule and task data only — bounded thresholds configurable via `WORKLOAD_MAX_CONSECUTIVE_DAYS`, `WORKLOAD_MIN_TURNAROUND_HOURS`, and `WORKLOAD_MAX_DAILY_TASKS`. They never make health or performance claims.
+
+The product rationale for these care-worker features is documented in [care-worker-needs.md](care-worker-needs.md).

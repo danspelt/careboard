@@ -5,7 +5,8 @@ CareBoard is a private household chore tracker for coordinating care workers. A 
 ## Features
 
 - **Manager dashboard**: create, assign, edit, and complete household tasks; manage workers; export monthly CSV reports; review an append-only audit log.
-- **Worker dashboard**: claim open tasks, start assigned work, complete in-progress tasks, upload proof photos, and edit a limited self-service profile.
+- **Worker dashboard**: claim open tasks, start assigned work, complete in-progress tasks, upload proof photos, share end-of-shift handoffs, report safety concerns, and edit a limited self-service profile.
+- **Care-team wellbeing**: manager triage for safety incidents and near misses, plus workload signals that flag long shift runs, short turnarounds, and heavy task loads. See [docs/care-worker-needs.md](docs/care-worker-needs.md) for the research behind these features.
 - **Security-first roles**: workers cannot see other workers' profiles, tasks, reports, or audit data. Disabled workers are blocked on every request, so an existing session cannot retain access.
 - **Privacy by default**: profile photos and task proof photos are retained for a fixed 90-day period, served only through authenticated ownership-checked routes, and never exposed as static files.
 - **Progressive Web App**: installable manifest and service worker support for offline shell pages.
