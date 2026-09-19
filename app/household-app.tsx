@@ -7,7 +7,7 @@ import { createContext, createElement, useContext, useEffect, useState } from 'r
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sparkles, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sparkles, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -793,6 +793,7 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
+            <Field label="Bookkeeper email — receives the payroll report every two weeks" name="bookkeeperEmail" type="email" defaultValue={settings?.bookkeeperEmail ?? ''} />
             <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
           </form>
         </Card>
@@ -940,7 +941,10 @@ function MoreManager({ state, mutate, busy }: any) {
             <h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Bookkeeper payroll report</h2>
             <p className="mt-1 text-sm text-[#687873]">Every worker’s clock-ins by day for the pay period — ready to hand to your bookkeeper. Defaults to the last two weeks.</p>
           </div>
-          <a href={`/api/payroll?from=${payFrom}&to=${payTo}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><FileDown className="size-4" aria-hidden="true" />Download CSV</a>
+          <div className="flex flex-wrap gap-2">
+            <a href={`/api/payroll?from=${payFrom}&to=${payTo}`} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><FileDown className="size-4" aria-hidden="true" />Download CSV</a>
+            <button type="button" disabled={busy} onClick={() => mutate({ action: 'sendPayrollReport', from: payFrom, to: payTo }, 'Payroll report emailed to the bookkeeper.')} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#d7dfd7] px-4 text-sm font-semibold text-[#52645f] transition hover:bg-[#f1f5f1] disabled:opacity-60"><Mail className="size-4" aria-hidden="true" />Email to bookkeeper</button>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label htmlFor="payroll-from" className="grid gap-1 text-sm font-semibold">From<Input id="payroll-from" type="date" value={payFrom} onChange={(e) => setPayFrom(e.target.value)} className="min-h-11 w-44" /></label>

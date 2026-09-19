@@ -9,16 +9,17 @@ import { ensureAccountTable, setAccountStatus } from '@/lib/account-store';
 import { memberIdForEmail, ownerEmail } from '@/lib/auth-config';
 import { credentialForEmail, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
-import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
+import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, toCsv, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
 import { canSendInboxMessage, reviewClientNote, scheduleChangeRequest, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
-import { sendCoverageEmail, sendManagerCoverageEmail } from '@/lib/email';
+import { sendCoverageEmail, sendManagerCoverageEmail, sendPayrollReportEmail } from '@/lib/email';
 import { isE164, sendCareBoardSms } from '@/lib/sms';
 import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from '@/lib/workload-warnings';
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
 import { cycleWeekOf } from '@/lib/shifts';
+import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
 
 export type Member = {
   id: string;
@@ -92,6 +93,8 @@ export type HouseholdSettings = {
   retentionDays: number;
   fundedHoursMonthly: number;
   fundingHourlyRate: number;
+  bookkeeperEmail?: string;
+  payrollLastSent?: string;
   updatedAt: string;
 };
 export type HouseholdState = {
@@ -186,7 +189,7 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
@@ -196,6 +199,8 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
     fundingHourlyRate: 0,
     reminderDefaultLeadDays: 1,
     retentionDays: 90,
+    bookkeeperEmail: '',
+    payrollLastSent: '',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -204,6 +209,7 @@ async function rawState() {
   await ensureHouseholdData();
   await ensureAccountTable();
   await cleanupExpiredUploads();
+  await maybeSendPayrollReport();
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
@@ -372,6 +378,39 @@ async function generateRecurringTasks() {
   }
 }
 
+export async function payrollCsvFor(from: string, to: string): Promise<string> {
+  const db = getD1();
+  const workers = await db
+    .prepare("SELECT id, name, hourly_rate AS hourlyRate FROM members WHERE role='worker' ORDER BY name")
+    .all<{ id: string; name: string; hourlyRate: number | null }>();
+  const data: PayrollWorker[] = [];
+  for (const worker of workers.results) {
+    const entries = await db
+      .prepare(`SELECT started_at AS startedAt, ended_at AS endedAt FROM time_entries WHERE member_id=? AND started_at >= ? AND started_at <= ? ORDER BY started_at`)
+      .bind(worker.id, `${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`)
+      .all<{ startedAt: string; endedAt: string | null }>();
+    data.push({ name: worker.name, hourlyRate: worker.hourlyRate, entries: entries.results });
+  }
+  return `\uFEFF${toCsv(payrollRows(data, from, to))}\r\n`;
+}
+
+async function maybeSendPayrollReport() {
+  try {
+    const settings = await getHouseholdSettings();
+    const recipient = settings.bookkeeperEmail?.trim();
+    if (!recipient) return;
+    const period = lastCompletePeriod(new Date().toISOString().slice(0, 10));
+    if (settings.payrollLastSent === period.start) return;
+    const csv = await payrollCsvFor(period.start, period.end);
+    const result = await sendPayrollReportEmail({ recipient, from: period.start, to: period.end, csv, filename: `payroll-${period.start}-to-${period.end}.csv` });
+    if (result.status === 'sent') {
+      await getD1().prepare(`UPDATE household_settings SET payroll_last_sent=? WHERE household_id='default'`).bind(period.start).run();
+    }
+  } catch (error) {
+    console.error('Payroll report email failed.', error instanceof Error ? error.message : error);
+  }
+}
+
 async function cleanupExpiredUploads() {
   const settings = await getHouseholdSettings();
   const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
@@ -478,6 +517,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'reviewClientNote',
     'acknowledgeSafetyAlert',
     'triageSafetyIncident',
+    'sendPayrollReport',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -547,8 +587,9 @@ export async function mutateHousehold(input: Record<string, unknown>) {
   } else if (action === 'requestScheduleChange') {
     if (actor.role !== 'worker') throw new Error('Only care workers can request a schedule change.');
     const shiftId = requiredString(input.shiftId, 'Shift');
-    const shift = await db.prepare(`SELECT id, weekday, start_time AS startTime, end_time AS endTime FROM shifts WHERE id=? AND member_id=?`).bind(shiftId, actorId).first<{ id: string; weekday: number; startTime: string; endTime: string }>();
+    const shift = await db.prepare(`SELECT id, weekday, start_time AS startTime, end_time AS endTime, cycle_week AS cycleWeek FROM shifts WHERE id=? AND member_id=?`).bind(shiftId, actorId).first<{ id: string; weekday: number; startTime: string; endTime: string; cycleWeek: number }>();
     const request = scheduleChangeRequest(input.date, input.reason, shift ?? null);
+    if (shift?.cycleWeek && cycleWeekOf(request.date) !== shift.cycleWeek) throw new Error('That shift does not run on that date — check the two-week schedule.');
     const manager = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active' LIMIT 1`).first<{ id: string }>();
     if (!manager) throw new Error('No active manager is available to receive this request.');
     const duplicate = await db.prepare(`SELECT id FROM schedule_change_requests WHERE requester_id=? AND requested_date=? LIMIT 1`).bind(actorId, request.date).first();
@@ -901,13 +942,26 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const retentionDays = 90;
     const fundedHoursMonthly = clampNumber(input.fundedHoursMonthly, 0, 10000, 0);
     const fundingHourlyRate = clampNumber(input.fundingHourlyRate, 0, 1000, 0);
+    const bookkeeperEmail = optionalString(input.bookkeeperEmail, 200);
+    if (bookkeeperEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookkeeperEmail)) throw new Error('Enter a valid bookkeeper email.');
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
+  } else if (action === 'sendPayrollReport') {
+    const settings = await getHouseholdSettings();
+    const recipient = settings.bookkeeperEmail?.trim();
+    if (!recipient) throw new Error('Set the bookkeeper email in Settings first.');
+    const period = lastCompletePeriod(now.slice(0, 10));
+    const from = typeof input.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.from) ? input.from : period.start;
+    const to = typeof input.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.to) ? input.to : period.end;
+    const csv = await payrollCsvFor(from, to);
+    const result = await sendPayrollReportEmail({ recipient, from, to, csv, filename: `payroll-${from}-to-${to}.csv` });
+    if (result.status !== 'sent') throw new Error('Email is not configured — set EMAIL_FROM and the SMTP settings.');
+    await activity(null, actorId, 'payroll_report_sent', `emailed the payroll report for ${from} to ${to}`, now).run();
   } else if (action === 'saveCertification') {
     const memberId = requiredString(input.memberId, 'Care worker');
     const worker = await db.prepare("SELECT name FROM members WHERE id=? AND role='worker'").bind(memberId).first<Member>();

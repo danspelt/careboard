@@ -4,6 +4,8 @@ import type { AuthenticatedAccess } from '@/lib/auth-access';
 import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem, ClientNoteSubmission } from '@/lib/household-data';
 import type { InboxItem } from '@/lib/client-notes';
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff } from '@/lib/care-safety';
+import { scheduleChangeRequest } from '@/lib/client-notes';
+import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
 
@@ -106,7 +108,7 @@ const mockState: RawLocalState = {
   ],
   activity: [],
   audit: [],
-  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, updatedAt: now },
+  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', updatedAt: now },
   shifts: [{ id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', cycleWeek: 0, createdAt: now }],
   availability: [{ id: 'avail-1', memberId: worker.id, weekday: 1, startTime: '14:00', endTime: '20:00', cycleWeek: 0, createdAt: now }],
   timeEntries: [],
@@ -324,6 +326,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.reminderDefaultLeadDays === 'string' || typeof input.reminderDefaultLeadDays === 'number') settings.reminderDefaultLeadDays = Math.max(0, Math.min(30, Number(input.reminderDefaultLeadDays))) || 1;
       if (typeof input.fundedHoursMonthly === 'string' || typeof input.fundedHoursMonthly === 'number') settings.fundedHoursMonthly = Math.max(0, Number(input.fundedHoursMonthly));
       if (typeof input.fundingHourlyRate === 'string' || typeof input.fundingHourlyRate === 'number') settings.fundingHourlyRate = Math.max(0, Number(input.fundingHourlyRate));
+      if (typeof input.bookkeeperEmail === 'string') settings.bookkeeperEmail = input.bookkeeperEmail;
       settings.updatedAt = now2;
       pushAudit('update_settings', 'Updated household settings');
       break;
@@ -435,11 +438,26 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     case 'reinviteMember':
     case 'reviewClientNote':
     case 'acknowledgeSafetyAlert':
-    case 'sendInboxMessage': {
+    case 'sendInboxMessage':
+    case 'sendPayrollReport': {
       // No-op in local-dev preview mode; UI feedback is enough.
       break;
     }
     case 'requestScheduleChange': {
+      const shift = (mockState.shifts ?? []).find((item) => item.id === input.shiftId && item.memberId === actorId) ?? null;
+      const request = scheduleChangeRequest(input.date, input.reason, shift);
+      if (shift?.cycleWeek && cycleWeekOf(request.date) !== shift.cycleWeek) throw new Error('That shift does not run on that date — check the two-week schedule.');
+      if ((mockState.scheduleRequests ?? []).some((item) => item.requesterId === actorId && item.requestedDate === request.date)) throw new Error('You already requested a schedule change for that date.');
+      mockState.scheduleRequests = [{ id: crypto.randomUUID(), requesterId: actorId, shiftId: request.shift.id, requestedDate: request.date, startTime: request.shift.startTime, endTime: request.shift.endTime, reason: request.reason, status: 'open', acceptedBy: null, acceptedAt: null, createdAt: now2 }, ...(mockState.scheduleRequests ?? [])];
+      break;
+    }
+    case 'acceptScheduleCoverage': {
+      const request = (mockState.scheduleRequests ?? []).find((item) => item.id === input.requestId);
+      if (!request || request.status !== 'open') throw new Error('That coverage request is no longer available.');
+      if (request.requesterId === actorId) throw new Error('You cannot accept your own coverage request.');
+      request.status = 'covered';
+      request.acceptedBy = actorId;
+      request.acceptedAt = now2;
       break;
     }
     case 'recordShiftHandoff': {

@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 
 export type CoverageEmail = { recipients: string[]; date: string; startTime: string; endTime: string };
 type MailSender = (message: { from: string; to: string; bcc: string[]; subject: string; text: string }) => Promise<unknown>;
+type PayrollMailSender = (message: { from: string; to: string; subject: string; text: string; attachments: { filename: string; content: string }[] }) => Promise<unknown>;
 
 export function coverageEmailMessage(input: CoverageEmail, from: string) {
   return {
@@ -33,6 +34,31 @@ export async function sendManagerCoverageEmail(input: CoverageEmail, sender?: Ma
   const from = process.env.EMAIL_FROM?.trim();
   if (!input.recipients.length) return { status: 'skipped' as const };
   const message = { ...coverageEmailMessage(input, from || ''), subject: `CareBoard coverage accepted — ${input.date}`, text: `Coverage was accepted for the ${input.date} shift from ${input.startTime} to ${input.endTime}. Sign in to CareBoard to review the resolved schedule change.` };
+  if (sender && from) { await sender(message); return { status: 'sent' as const }; }
+  const host = process.env.SMTP_HOST?.trim(); const user = process.env.SMTP_USER?.trim(); const pass = process.env.SMTP_PASSWORD;
+  if (!from || !host || !user || !pass) return { status: 'skipped' as const };
+  const port = Number(process.env.SMTP_PORT || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { status: 'skipped' as const };
+  const transport = nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
+  await transport.sendMail(message);
+  return { status: 'sent' as const };
+}
+
+export type PayrollReportEmail = { recipient: string; from: string; to: string; csv: string; filename: string };
+
+export function payrollReportMessage(input: PayrollReportEmail, from: string) {
+  return {
+    from,
+    to: input.recipient,
+    subject: `CareBoard payroll report — ${input.from} to ${input.to}`,
+    text: `Attached is the CareBoard payroll report for ${input.from} to ${input.to}: each care worker's clock-in and clock-out times, daily hours, hourly rate, gross pay, and period totals.`,
+    attachments: [{ filename: input.filename, content: input.csv }],
+  };
+}
+
+export async function sendPayrollReportEmail(input: PayrollReportEmail, sender?: PayrollMailSender) {
+  const from = process.env.EMAIL_FROM?.trim();
+  const message = payrollReportMessage(input, from || '');
   if (sender && from) { await sender(message); return { status: 'sent' as const }; }
   const host = process.env.SMTP_HOST?.trim(); const user = process.env.SMTP_USER?.trim(); const pass = process.env.SMTP_PASSWORD;
   if (!from || !host || !user || !pass) return { status: 'skipped' as const };

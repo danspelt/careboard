@@ -154,7 +154,9 @@ CREATE TABLE household_settings (
   retention_days INTEGER NOT NULL DEFAULT 90 CHECK(retention_days BETWEEN 1 AND 365),
   updated_at TEXT NOT NULL DEFAULT (NOW()::TEXT),
   funded_hours_monthly DOUBLE PRECISION NOT NULL DEFAULT 0,
-  funding_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0
+  funding_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  bookkeeper_email TEXT NOT NULL DEFAULT '',
+  payroll_last_sent TEXT NOT NULL DEFAULT ''
 );
 --> statement-breakpoint
 INSERT INTO household_settings (household_id, recurrence_horizon_days, reminder_default_lead_days, retention_days, updated_at)
