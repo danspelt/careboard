@@ -95,7 +95,11 @@ function ExampleBoard() {
             </li>
           ))}
         </ul>
-        <div className="flex items-center gap-2 rounded-xl bg-[#f2f5ee] px-3 py-2 text-[11px] text-[#466457]"><Bell className="size-4" aria-hidden="true" />The next task, the right person, a little less worry.</div>
+        <div className="mt-4 rounded-xl border border-[#e5e9e0] bg-white p-3">
+          <div className="flex items-center justify-between text-[11px] font-semibold"><span className="text-[#466457]">Today’s progress</span><span className="tabular-nums text-[#287b6f]">3 of 5 tasks</span></div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf1ec]"><div className="lp-fill-x h-full w-3/5 rounded-full bg-gradient-to-r from-[#287b6f] to-[#8abf6e]" /></div>
+        </div>
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#f2f5ee] px-3 py-2 text-[11px] text-[#466457]"><Bell className="size-4" aria-hidden="true" />The next task, the right person, a little less worry.</div>
       </div>
       <figcaption className="mt-3 text-center text-[10px] text-[#53685f]">Example board · Not live household data.</figcaption>
     </div>
@@ -170,7 +174,7 @@ export default async function Home() {
         <section id="how-it-works" aria-labelledby="steps-heading" className="mx-auto w-full max-w-screen-2xl scroll-mt-48 px-5 py-12 sm:px-10 lg:scroll-mt-28 lg:py-16">
           <div className="mb-7 flex flex-wrap items-baseline justify-between gap-2"><h2 id="steps-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">Good care. Less coordination.</h2><p className="text-xs text-[#53685f]">A simple rhythm for every household.</p></div>
           <ol className="grid gap-4 md:grid-cols-3 lg:gap-6">
-            {steps.map(({ icon: Icon, title, text }, index) => <li key={title} className="lp-card-lift lp-fade-up rounded-2xl border border-[#e0e7dc] bg-white p-6" style={{ '--d': `${0.1 * (index + 1)}s` } as React.CSSProperties}>
+            {steps.map(({ icon: Icon, title, text }, index) => <li key={title} className="lp-card-lift lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-6">
               <div className="mb-3 flex items-center justify-between"><span className="grid size-11 place-items-center rounded-xl bg-[#edf3e9] text-[#287b6f]"><Icon className="size-5" aria-hidden="true" /></span><span className="text-[11px] font-semibold tracking-widest text-[#6a7d71]">0{index + 1}</span></div>
               <h3 className="text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-[#53685f]">{text}</p>
             </li>)}
@@ -182,11 +186,69 @@ export default async function Home() {
           <div className="mx-auto w-full max-w-screen-2xl px-5 py-12 sm:px-10 lg:py-16">
             <div className="mb-7 flex flex-wrap items-baseline justify-between gap-2"><h2 id="features-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">Built for real care work</h2><p className="text-xs text-[#53685f]">Every feature below is a dashboard widget — arrange them your way.</p></div>
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-              {features.map(({ icon: Icon, title, text, tint }, index) => <li key={title} className="lp-card-lift lp-fade-up rounded-2xl border border-[#e0e7dc] bg-white p-6" style={{ '--d': `${0.06 * index}s` } as React.CSSProperties}>
+              {features.map(({ icon: Icon, title, text, tint }) => <li key={title} className="lp-card-lift lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-6">
                 <span className={`mb-4 grid size-11 place-items-center rounded-xl ${tint}`}><Icon className="size-5" aria-hidden="true" /></span>
                 <h3 className="text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-[#53685f]">{text}</p>
               </li>)}
             </ul>
+          </div>
+        </section>
+
+        {/* Everyday data — real-feeling live widgets */}
+        <section aria-labelledby="data-heading" className="border-t border-[#e0e7dc]">
+          <div className="mx-auto grid w-full max-w-screen-2xl items-center gap-10 px-5 py-12 sm:px-10 lg:grid-cols-[1fr_1.25fr] lg:py-16">
+            <div className="lp-reveal">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551]"><Sparkles className="size-3.5 text-[#287b6f]" aria-hidden="true" />Everyday data, beautifully alive</p>
+              <h2 id="data-heading" className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">The little things add up — and now you can see them.</h2>
+              <p className="mt-4 max-w-md text-sm leading-7 text-[#53685f]">Every clock-in, handoff, and finished task becomes a record your whole team can see. No spreadsheets, no guessing — the work speaks for itself.</p>
+              <ul className="mt-5 space-y-2.5 text-sm text-[#466457]">
+                <li className="flex items-center gap-2.5"><Clock3 className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Hours clocked become payroll for the bookkeeper</li>
+                <li className="flex items-center gap-2.5"><MessageSquareText className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Shift notes become the next caregiver’s briefing</li>
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Finished tasks become proof the day went well</li>
+              </ul>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Seven-day pulse — bars grow as you scroll them into view */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)]">
+                <p className="flex items-center gap-2 text-xs font-bold"><LayoutGrid className="size-4 text-[#287b6f]" aria-hidden="true" />Seven-day pulse</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">Tasks completed each day</p>
+                <div className="mt-4 flex h-24 items-end gap-2" aria-hidden="true">
+                  {[45, 68, 52, 86, 74, 95, 60].map((height, index) => (
+                    <div key={index} className="flex h-full flex-1 flex-col justify-end"><div className="lp-bar w-full rounded-t-md bg-gradient-to-t from-[#287b6f] to-[#8abf6e]" style={{ height: `${height}%` }} /></div>
+                  ))}
+                </div>
+                <p className="mt-3 flex items-center justify-between rounded-lg bg-[#f4f8f2] px-3 py-1.5 text-[11px] text-[#466457]"><span>Household momentum</span><strong className="text-[#287b6f]">up this week</strong></p>
+              </div>
+              {/* Hours ring — fills as it scrolls in */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)]">
+                <p className="flex items-center gap-2 text-xs font-bold"><Timer className="size-4 text-[#287b6f]" aria-hidden="true" />Hours this week</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">Clocked care time, live</p>
+                <div className="mt-4 flex items-center justify-center" aria-hidden="true">
+                  <svg viewBox="0 0 120 120" className="size-28">
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="#edf1ec" strokeWidth="10" />
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="#287b6f" strokeWidth="10" strokeLinecap="round" strokeDasharray="339.3" strokeDashoffset="108.6" transform="rotate(-90 60 60)" className="lp-ring-scroll" style={{ '--ring-from': '339.3', '--ring-to': '108.6' } as React.CSSProperties} />
+                    <text x="60" y="57" textAnchor="middle" className="fill-[#203c34] text-xl font-bold">32.5h</text>
+                    <text x="60" y="74" textAnchor="middle" className="fill-[#53685f] text-[9px]">of ~48 planned</text>
+                  </svg>
+                </div>
+                <p className="mt-3 text-center text-[11px] text-[#466457]"><span className="lp-tick inline-block size-1.5 rounded-full bg-[#398264]" /> Updating as the team works</p>
+              </div>
+              {/* Live activity feed — items pop in on a loop */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)] sm:col-span-2">
+                <p className="flex items-center gap-2 text-xs font-bold"><Bell className="size-4 text-[#287b6f]" aria-hidden="true" />Happening right now</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">What a live feed feels like</p>
+                <ul className="mt-4 grid gap-2 sm:grid-cols-2" aria-hidden="true">
+                  {[
+                    { icon: Clock3, text: 'Maya clocked in · 7:02 AM', delay: '0s' },
+                    { icon: Check, text: 'Alex finished “Fresh linens”', delay: '3.5s' },
+                    { icon: MessageSquareText, text: 'Jordan left a handoff note', delay: '7s' },
+                    { icon: ShieldAlert, text: 'Near-miss reported & triaged', delay: '10.5s' },
+                  ].map(({ icon: Icon, text, delay }) => (
+                    <li key={text} className="lp-feed-item flex items-center gap-2.5 rounded-xl border border-[#edf1ec] bg-[#fafbf7] px-3 py-2.5 text-xs font-medium text-[#466457]" style={{ '--d': delay } as React.CSSProperties}><Icon className="size-4 shrink-0 text-[#287b6f]" />{text}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         </section>
 

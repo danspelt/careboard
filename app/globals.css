@@ -291,6 +291,64 @@
   to { background-position: 100% 50%; }
 }
 
+/* Live-data moments — everyday care data performing itself. */
+@keyframes lp-grow-bar {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+@keyframes lp-fill-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.lp-fill-x { transform-origin: left; animation: lp-fill-x 1.4s cubic-bezier(0.22, 0.9, 0.3, 1) both; animation-delay: var(--d, 0.5s); }
+
+@keyframes lp-ring {
+  from { stroke-dashoffset: var(--ring-from); }
+  to { stroke-dashoffset: var(--ring-to); }
+}
+@keyframes lp-feed-item {
+  0%, 12% { opacity: 0; transform: translateY(12px); }
+  20%, 78% { opacity: 1; transform: translateY(0); }
+  90%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+.lp-feed-item { opacity: 0; animation: lp-feed-item 14s ease-in-out infinite; animation-delay: var(--d, 0s); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-feed-item { opacity: 1; transform: none; animation: none; }
+  .lp-bar { transform: none !important; animation: none !important; }
+}
+
+@keyframes lp-tick {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.lp-tick { animation: lp-tick 1s step-end infinite; }
+
+/* Scroll-driven reveals — progressive enhancement, compositor-thread. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .lp-reveal {
+      animation: lp-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 32%;
+    }
+    .lp-bar {
+      transform-origin: bottom;
+      animation: lp-grow-bar linear both;
+      animation-timeline: view();
+      animation-range: entry 15% entry 95%;
+    }
+    .lp-ring-scroll {
+      animation: lp-ring linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 45%;
+    }
+  }
+}
+@keyframes lp-reveal {
+  from { opacity: 0; transform: translateY(34px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* Role-based dashboard themes — manager command center vs. caregiver shift view. */
 .careboard[data-role='manager'],
 body[data-role='manager'] {
