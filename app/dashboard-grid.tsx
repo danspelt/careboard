@@ -49,13 +49,14 @@ export function DashboardGrid({
   return (
     <>
       <div className="mb-5 flex flex-wrap items-center justify-end gap-2">
+        {!editing && <p className="mr-auto hidden text-xs text-[#8a9a92] sm:block">Each card is a widget — arrange them however you like.</p>}
         {editing && (
           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => save(defaultLayout(audience))}>
             <RotateCcw className="size-4" aria-hidden="true" />Reset layout
           </Button>
         )}
-        <Button type="button" size="sm" variant={editing ? 'default' : 'outline'} disabled={busy} onClick={() => setEditing((value) => !value)} className={editing ? 'bg-[#287b6f]' : ''} aria-pressed={editing}>
-          {editing ? <><Check className="size-4" aria-hidden="true" />Done</> : <><LayoutGrid className="size-4" aria-hidden="true" />Customize</>}
+        <Button type="button" size={editing ? 'sm' : 'default'} variant={editing ? 'default' : 'outline'} disabled={busy} onClick={() => setEditing((value) => !value)} className={`min-h-11 ${editing ? 'bg-[#287b6f]' : 'border-[#aac3b3] bg-white font-semibold text-[#287b6f]'}`} aria-pressed={editing}>
+          {editing ? <><Check className="size-4" aria-hidden="true" />Done</> : <><LayoutGrid className="size-4" aria-hidden="true" />Customize dashboard</>}
         </Button>
       </div>
 
