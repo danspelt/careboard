@@ -154,7 +154,7 @@ function runMigrations(database: Database.Database) {
       applied_at TEXT NOT NULL
     )
   `);
-  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_schedule_coverage', '0016_sms_consent', '0017_care_safety', '0018_employee_records', '0019_biweekly_shifts', '0020_bookkeeper_payroll'];
+  const migrationIds = ['0000_narrow_madrox', '0001_role_lifecycle', '0002_operations_pwa', '0003_enhancements', '0004_shifts', '0005_availability', '0006_review', '0007_invites', '0008_time_entries', '0009_funding', '0010_certifications', '0011_messages', '0012_client_notes', '0013_inbox_safety', '0014_inbox_direct_message', '0015_schedule_coverage', '0016_sms_consent', '0017_care_safety', '0018_employee_records', '0019_biweekly_shifts', '0020_bookkeeper_payroll', '0021_dashboard_prefs'];
   for (const migrationId of migrationIds) {
     const applied = database.prepare('SELECT id FROM _careboard_migrations WHERE id = ?').get(migrationId);
     if (applied) continue;
@@ -208,6 +208,10 @@ async function runPostgresMigrations(pool: Pool) {
     {
       id: '0020_bookkeeper_payroll',
       sql: `ALTER TABLE household_settings ADD COLUMN IF NOT EXISTS bookkeeper_email TEXT NOT NULL DEFAULT ''; ALTER TABLE household_settings ADD COLUMN IF NOT EXISTS payroll_last_sent TEXT NOT NULL DEFAULT '';`,
+    },
+    {
+      id: '0021_dashboard_prefs',
+      sql: `ALTER TABLE members ADD COLUMN IF NOT EXISTS theme TEXT; ALTER TABLE members ADD COLUMN IF NOT EXISTS dashboard_layout TEXT;`,
     },
   ];
   for (const upgrade of upgrades) {

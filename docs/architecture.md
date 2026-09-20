@@ -110,6 +110,10 @@ The migration runner records applied IDs in `_careboard_migrations` so each migr
 - `shift_handoffs` — worker-authored end-of-shift summaries, outstanding tasks, observations, and checklists.
 - `safety_incidents` — safety and near-miss reports with category, severity, manager triage status, and follow-up.
 
+### Customizable dashboards
+
+Each member's Overview/Today screen is a widget dashboard. `lib/dashboard-widgets.ts` is the pure catalog: widget definitions per role, layout helpers (`normalizeLayout`, `moveWidget`, `setWidgetSize`, `addWidget`, `removeWidget`), and `DASHBOARD_THEMES` color presets. `members.theme` stores the chosen palette (a stable pseudo-random one is assigned at member creation; `themeFor` resolves a deterministic pick when unset) and `members.dashboard_layout` stores the ordered `[{id, size}]` JSON — both are stripped from every other member's view of the roster. The `saveDashboard` mutation validates the theme against the catalog and normalizes the layout server-side. `app/dashboard-grid.tsx` renders the two-column grid (single column on mobile) with a Customize mode exposing move, resize, remove, a grouped widget library, and theme swatches — no drag-and-drop, so it works by touch.
+
 If the database is empty, a seed manager and sample chore are inserted so the first sign-in succeeds.
 
 ## Recurring tasks and cleanup

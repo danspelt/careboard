@@ -8,6 +8,7 @@ import { scheduleChangeRequest } from '@/lib/client-notes';
 import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
+import { normalizeLayout, randomThemeId, themeById } from '@/lib/dashboard-widgets';
 
 const now = new Date().toISOString();
 const today = now.slice(0, 10);
@@ -28,6 +29,8 @@ const manager: Member = {
   languages: 'English',
   profilePhotoId: null,
   hourlyRate: null,
+  theme: 'teal',
+  dashboardLayout: null,
 };
 
 const worker: Member = {
@@ -50,6 +53,8 @@ const worker: Member = {
   address: '123 Example St, Vancouver, BC',
   jobTitle: 'Care worker',
   employmentStartedOn: '2025-01-15',
+  theme: 'forest',
+  dashboardLayout: null,
 };
 
 const viewerMember: Member = {
@@ -68,6 +73,8 @@ const viewerMember: Member = {
   languages: '',
   profilePhotoId: null,
   hourlyRate: null,
+  theme: 'plum',
+  dashboardLayout: null,
 };
 
 function makeChore(overrides: Partial<Chore> & Pick<Chore, 'id' | 'title' | 'area' | 'dueDate' | 'priority' | 'status' | 'assignedTo'>): Chore {
@@ -349,6 +356,16 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.employmentStartedOn === 'string') member.employmentStartedOn = input.employmentStartedOn || null;
       break;
     }
+    case 'saveDashboard': {
+      const member = findMember(actorId);
+      if (input.theme !== undefined) {
+        const theme = input.theme === null || input.theme === '' ? null : requiredString(input.theme, 'Theme');
+        if (theme && !themeById(theme)) throw new Error('Choose a theme from the gallery.');
+        member.theme = theme;
+      }
+      if (input.layout !== undefined) member.dashboardLayout = normalizeLayout(member.role as 'manager' | 'worker' | 'viewer', input.layout);
+      break;
+    }
     case 'addMember':
     case 'inviteMember': {
       const name = requiredString(input.name, 'Full name');
@@ -370,6 +387,8 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
         languages: '',
         profilePhotoId: null,
         hourlyRate: null,
+        theme: randomThemeId(),
+        dashboardLayout: null,
       };
       mockState.members.push(newMember);
       pushActivity('added_member', `added ${name}`);

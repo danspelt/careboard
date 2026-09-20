@@ -20,6 +20,7 @@ import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from 
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
 import { cycleWeekOf } from '@/lib/shifts';
 import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
+import { normalizeLayout, randomThemeId, themeById, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
 
 export type Member = {
   id: string;
@@ -42,6 +43,8 @@ export type Member = {
   address?: string;
   jobTitle?: string;
   employmentStartedOn?: string | null;
+  theme?: string | null;
+  dashboardLayout?: WidgetItem[] | null;
 };
 export type ProofPhoto = { id: string; choreId?: string; profileMemberId?: string; originalName: string; mimeType: string; byteSize: number; createdAt: string };
 export type TaskNote = { id: string; choreId: string; memberId: string; kind: 'progress' | 'completion' | 'issue'; body: string; createdAt: string };
@@ -220,7 +223,8 @@ async function rawState() {
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
           m.phone, m.sms_opt_in AS smsOptIn, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
           m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate,
-          m.date_of_birth AS dateOfBirth, m.address, m.job_title AS jobTitle, m.employment_started_on AS employmentStartedOn
+          m.date_of_birth AS dateOfBirth, m.address, m.job_title AS jobTitle, m.employment_started_on AS employmentStartedOn,
+          m.theme, m.dashboard_layout AS dashboardLayoutJson
         FROM members m
         LEFT JOIN account_lifecycle l ON l.member_id=m.id
         LEFT JOIN google_accounts g ON g.member_id=m.id
@@ -261,7 +265,12 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results };
+  const parsedMembers = members.results.map(({ dashboardLayoutJson, ...member }: Member & { dashboardLayoutJson?: string | null }) => {
+    let stored: unknown = null;
+    try { stored = dashboardLayoutJson ? JSON.parse(dashboardLayoutJson) : null; } catch { stored = null; }
+    return { ...member, dashboardLayout: stored === null ? null : normalizeLayout(member.role as DashboardRole, stored) };
+  });
+  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -282,6 +291,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     });
   if (viewer.role === 'manager') return {
     viewer: { id: viewer.id, role: viewer.role }, ...state,
+    members: state.members.map((item) => (item.id === viewer.id ? item : { ...item, theme: null, dashboardLayout: null })),
     clientNotes,
     clientNoteQueue: state.clientNoteSubmissions.filter((note) => note.status === 'pending'),
     inbox: visibleInbox(viewer.role, viewer.id, state.inboxItems),
@@ -299,6 +309,8 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
       dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
+      theme: item.id === viewer.id ? (item.theme ?? null) : null,
+      dashboardLayout: item.id === viewer.id ? (item.dashboardLayout ?? null) : null,
     }));
     return {
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
@@ -315,6 +327,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
     dateOfBirth: viewer.dateOfBirth ?? null, address: viewer.address ?? '', jobTitle: viewer.jobTitle ?? '',
     employmentStartedOn: viewer.employmentStartedOn ?? null,
+    theme: viewer.theme ?? null, dashboardLayout: viewer.dashboardLayout ?? null,
   };
   // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
   const roster: Member[] = state.members
@@ -323,7 +336,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
-      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
   return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()) };
@@ -810,7 +823,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const count = await db.prepare('SELECT COUNT(*) AS count FROM members').first<{ count: number }>();
     const passwordHash = await hashPassword(temporaryPassword as string);
     await db.batch([
-      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,"worker",?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO members(id,name,role,color,created_at,theme) VALUES (?,?,"worker",?,?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now, randomThemeId()),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,activated_at,updated_at) VALUES (?,'default','active',?,?)").bind(id, now, now),
       activity(null, actorId, 'created_worker', `created care worker ${name}`, now),
@@ -829,7 +842,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     extras.inviteToken = token;
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     await db.batch([
-      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,?,?)').bind(id, name, role, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO members(id,name,role,color,created_at,theme) VALUES (?,?,?,?,?,?)').bind(id, name, role, palette[(count?.count ?? 0) % palette.length], now, randomThemeId()),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,updated_at) VALUES (?,'default','invited',?)").bind(id, now),
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
@@ -935,6 +948,22 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       }
     }
     await activity(null, actorId, 'updated_profile', `updated profile for ${name ?? target.id}`, now).run();
+  } else if (action === 'saveDashboard') {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    if (input.theme !== undefined) {
+      const theme = input.theme === null || input.theme === '' ? null : requiredString(input.theme, 'Theme');
+      if (theme && !themeById(theme)) throw new Error('Choose a theme from the gallery.');
+      sets.push('theme=?');
+      values.push(theme);
+    }
+    if (input.layout !== undefined) {
+      sets.push('dashboard_layout=?');
+      values.push(JSON.stringify(normalizeLayout(actor.role as DashboardRole, input.layout)));
+    }
+    if (!sets.length) throw new Error('Nothing to update.');
+    values.push(actorId);
+    await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
   } else if (action === 'updateHouseholdSettings') {
     const recurrenceHorizonDays = clampInteger(input.recurrenceHorizonDays, 1, 365, 30);
     const reminderDefaultLeadDays = clampInteger(input.reminderDefaultLeadDays, 0, 90, 1);

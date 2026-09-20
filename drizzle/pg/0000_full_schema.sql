@@ -19,7 +19,9 @@ CREATE TABLE members (
   date_of_birth TEXT,
   address TEXT NOT NULL DEFAULT '',
   job_title TEXT NOT NULL DEFAULT 'Care worker',
-  employment_started_on TEXT
+  employment_started_on TEXT,
+  theme TEXT,
+  dashboard_layout TEXT
 );
 --> statement-breakpoint
 CREATE TABLE chores (

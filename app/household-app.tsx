@@ -28,6 +28,8 @@ import { fundingSummary } from '@/lib/funding';
 import { certDaysLeft, certStatus, certificationAlerts } from '@/lib/certifications';
 import { addDaysISO } from '@/lib/operations';
 import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
+import { DashboardGrid } from '@/app/dashboard-grid';
+import { layoutFor, themeFor, type WidgetItem } from '@/lib/dashboard-widgets';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
@@ -169,6 +171,13 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     setTourDone(true);
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
   }
+  const theme = themeFor(member.id, member.theme ?? null);
+  const dashboard = {
+    layout: layoutFor(role, member.dashboardLayout ?? null),
+    themeId: theme.id,
+    saveLayout: (layout: WidgetItem[]) => { void mutate({ action: 'saveDashboard', layout }, 'Dashboard updated.').catch(() => {}); },
+    saveTheme: (themeId: string | null) => { void mutate({ action: 'saveDashboard', theme: themeId }, 'Colour scheme updated.').catch(() => {}); },
+  };
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Client', FileText], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
@@ -177,7 +186,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
 
   return (
     <RoleContext.Provider value={role}>
-    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]" data-role={role}>
+    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]" data-role={role} style={theme.vars as React.CSSProperties}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[#287b6f] focus:px-4 focus:py-2 focus:text-white">
         Skip to dashboard content
       </a>
@@ -240,11 +249,11 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} />
+            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} dashboard={dashboard} />
           ) : viewer ? (
-            <ViewerView section={section} state={state} setTask={setTask} />
+            <ViewerView section={section} state={state} setTask={setTask} dashboard={dashboard} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} dashboard={dashboard} />
           )}
         </div>
       </main>
@@ -417,7 +426,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy }: any) {
+function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy, dashboard }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
@@ -552,10 +561,11 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
     .flatMap((task: Chore) => (task.photos ?? []).map((photo: any) => ({ ...photo, task })))
     .sort((a: any, b: any) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 8);
-  return (
-    <>
-      <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
-      <section className="manager-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+  const decisionCount = safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length + openIncidents + workloadWarningCount;
+  const certAlerts = certificationAlerts(state.certifications ?? [], state.members, today());
+  const cells: Record<string, React.ReactNode> = {
+    hero: (
+      <section className="manager-hero overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
@@ -565,14 +575,17 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
         </div>
       </section>
+    ),
+    metrics: (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="On duty now" value={onDutyCount} icon={Clock} tone={lateCount > 0 ? 'caution' : 'neutral'} />
         <Metric label="Due today" value={state.metrics?.dueToday ?? dueToday.length} icon={CalendarDays} />
         <Metric label="Needs attention" value={command.attention.length} icon={AlertTriangle} tone="caution" />
         <Metric label="Funded hours used" value={fundedConfigured ? `${fundedPct}%` : '—'} icon={CircleDollarSign} tone={fundedOverPace ? 'caution' : 'neutral'} />
       </div>
-      {(safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length + openIncidents + workloadWarningCount) > 0 && (
-        <Card className="mt-6">
+    ),
+    decisions: decisionCount > 0 ? (
+        <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><ShieldAlert className="size-5 text-[#b4532a]" aria-hidden="true" />Needs your decision</h2>
           <p className="text-sm text-[#687873]">Items only the household manager can resolve</p>
           <div className="mt-4 space-y-2">
@@ -625,13 +638,15 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             )}
           </div>
         </Card>
-      )}
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.85fr)]">
+    ) : null,
+    priorities: (
         <Card className="p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dfe5dc] px-5 py-4"><div><h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#287b6f]" aria-hidden="true" />Operational priorities</h2><p className="text-sm text-[#687873]">Ranked by open issue, overdue date, urgency, and assignment</p></div>{command.unassignedDueToday > 0 && <span className="rounded-full bg-[#f8e9dc] px-3 py-1 text-xs font-semibold text-[#8b4e2c]">{command.unassignedDueToday} unassigned today</span>}</div>
           <TaskList tasks={command.attention.slice(0, 8)} members={state.members} onOpen={setTask} />
           {command.attention.length > 8 && <p className="px-5 pb-5 text-center text-xs text-[#687873]">Showing 8 of {command.attention.length} priorities. Open Tasks for the full list.</p>}
         </Card>
+    ),
+    attendance: (
         <Card className="manager-coverage">
           <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Today’s attendance</h2><p className="text-sm text-[#687873]">Scheduled and clock-in status, kept separate from reported day-off requests</p>
           {todayScheduleRequests.length > 0 && <div className="mt-4 rounded-xl border border-[#d9c99d] bg-[#fff8e8] p-3"><p className="text-xs font-bold uppercase tracking-wide text-[#8a5a1d]">Reported not coming / day off requested</p><ul className="mt-2 space-y-2">{todayScheduleRequests.map((request: any) => { const person = state.members.find((item: Member) => item.id === request.requesterId); return <li key={request.id} className="text-sm"><span className="font-semibold">{person?.name ?? 'Care worker'}</span><span className="text-[#6f5422]"> — request received; schedule not yet changed</span></li>; })}</ul></div>}
@@ -642,15 +657,12 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             <Button type="submit" disabled={busy} aria-label="Post announcement" className="bg-[#287b6f]"><Megaphone className="size-4" /></Button>
           </form>
         </Card>
-      </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div id="safety-reports" className="scroll-mt-20"><SafetyTriageCard state={state} mutate={mutate} busy={busy} /></div>
-        <div className="space-y-6">
-          <div id="workload-signals" className="scroll-mt-20"><WorkloadWarnings warnings={state.workloadWarnings ?? []} members={state.members} /></div>
-          <ShiftHandoffLog state={state} />
-        </div>
-      </div>
-      <Card className="mt-6">
+    ),
+    safety: <div id="safety-reports" className="scroll-mt-20"><SafetyTriageCard state={state} mutate={mutate} busy={busy} /></div>,
+    workload: <div id="workload-signals" className="scroll-mt-20"><WorkloadWarnings warnings={state.workloadWarnings ?? []} members={state.members} /></div>,
+    handofflog: <ShiftHandoffLog state={state} />,
+    funding: (
+      <Card>
         <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />CSIL funding — this month</h2>
         {fundedConfigured ? (
           <>
@@ -670,8 +682,9 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           </>
         )}
       </Card>
-      {command.awaitingReview.length > 0 && (
-        <Card className="mt-6 border-[#bcd4c9]">
+    ),
+    review: command.awaitingReview.length > 0 ? (
+        <Card className="border-[#bcd4c9]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Awaiting your review</h2>
           <p className="text-sm text-[#687873]">Work the care team marked complete — approve it or send it back</p>
           <div className="mt-4 space-y-2">
@@ -690,11 +703,9 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             })}
           </div>
         </Card>
-      )}
-      {(() => {
-        const certAlerts = certificationAlerts(state.certifications ?? [], state.members, today());
-        return certAlerts.length > 0 && (
-          <Card className="mt-6 border-[#eadbc6]">
+    ) : null,
+    certs: certAlerts.length > 0 ? (
+          <Card className="border-[#eadbc6]">
             <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#b4532a]" aria-hidden="true" />Certification alerts</h2>
             <p className="text-sm text-[#687873]">Care worker certifications that are expired or expiring within 30 days — open a profile to update them</p>
             <div className="mt-4 space-y-2">
@@ -714,14 +725,11 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
               })}
             </div>
           </Card>
-        );
-      })()}
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Care worker notes will appear here as the team shares progress." compact />}</Card>
-        <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>
-      </div>
-      {proofPhotos.length > 0 && (
-        <Card className="mt-6">
+    ) : null,
+    handoffs: <Card><h2 className="flex items-center gap-2 text-lg font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Recent handoffs</h2><p className="text-sm text-[#687873]">Latest progress, completion, and issue notes</p>{command.recentHandoffs.length ? <ol className="mt-4 divide-y divide-[#e5eae4]">{command.recentHandoffs.map(({ task, ...note }) => { const author = state.members.find((item: Member) => item.id === note.memberId)?.name ?? 'Team member'; return <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl px-2 py-3 text-left transition hover:bg-[#f1f5f1]"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-1 line-clamp-2 block text-sm text-[#52645f]">{note.body}</span><span className="mt-2 block text-xs text-[#687873]">{author} · {new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span></button></li>; })}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoffs yet" text="Care worker notes will appear here as the team shares progress." compact />}</Card>,
+    pulse: <Card><h2 className="flex items-center gap-2 text-lg font-bold"><CheckCircle2 className="size-5 text-[#287b6f]" aria-hidden="true" />Seven-day completion pulse</h2><p className="text-sm text-[#687873]">Completed household tasks by day</p><p className="sr-only">Seven-day completions: {command.completionTrend.map((day) => `${day.date}, ${day.completed}`).join('; ')}</p><div className="mt-6 grid h-40 grid-cols-7 items-end gap-2" aria-hidden="true">{command.completionTrend.map((day) => <div key={day.date} className="flex h-full min-w-0 flex-col items-center justify-end gap-2"><span className="text-xs font-semibold tabular-nums">{day.completed}</span><span className="w-full max-w-10 rounded-t-lg bg-[#67a193]" style={{ height: `${Math.max(8, (day.completed / maxCompleted) * 96)}px` }} /><span className="text-[11px] text-[#687873]">{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'narrow' })}</span></div>)}</div><div className="mt-5 flex items-center justify-between rounded-xl bg-[#f1f5f1] p-3 text-sm"><span className="text-[#52645f]">Unresolved issues</span><strong className="tabular-nums text-[#8b4e2c]">{command.issues.length}</strong></div></Card>,
+    photos: proofPhotos.length > 0 ? (
+        <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Upload className="size-5 text-[#287b6f]" aria-hidden="true" />Latest proof photos</h2>
           <p className="text-sm text-[#687873]">Recent uploads from the care team — open one to review the task</p>
           <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
@@ -737,8 +745,9 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             })}
           </div>
         </Card>
-      )}
-      <Card className="mt-6">
+    ) : null,
+    activity: (
+      <Card>
         <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Recent activity</h2>
         <p className="text-sm text-[#687873]">Latest household actions across tasks, team, and settings</p>
         <ol className="mt-4 divide-y divide-[#e5eae4]">
@@ -757,6 +766,26 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           }) : <li><EmptyHandoff icon={Clock} title="No activity yet" text="Household actions will appear here as your team works." compact /></li>}
         </ol>
       </Card>
+    ),
+    quickactions: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles className="size-5 text-[#287b6f]" aria-hidden="true" />Quick actions</h2>
+        <p className="text-sm text-[#687873]">Common manager jobs, one tap away</p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setCreateOpen(true)}><Plus className="size-4" />Add task</Button>
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button>
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('schedule')}><CalendarDays className="size-4" />Two-week schedule</Button>
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('team')}><Users className="size-4" />Team directory</Button>
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('messages')}><Inbox className="size-4" />Team inbox</Button>
+          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('more')}><FileDown className="size-4" />Reports &amp; payroll</Button>
+        </div>
+      </Card>
+    ),
+  };
+  return (
+    <>
+      <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <DashboardGrid audience="manager" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />
     </>
   );
 }
@@ -1182,7 +1211,7 @@ function AssistantView({ state, mutate }: { state: HouseholdState; mutate: (payl
   );
 }
 
-function ViewerView({ section, state, setTask }: any) {
+function ViewerView({ section, state, setTask, dashboard }: any) {
   const workers = state.members.filter((item: Member) => item.role === 'worker' && item.status === 'active');
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} readOnly setTask={setTask} />;
   if (section === 'tasks') return (
@@ -1194,35 +1223,42 @@ function ViewerView({ section, state, setTask }: any) {
   const onShiftToday = shiftsForDay(state.shifts ?? [], today());
   const dueToday = state.chores.filter((chore: Chore) => chore.status !== 'complete' && chore.dueDate === today());
   const doneToday = state.chores.filter((chore: Chore) => chore.completedAt?.slice(0, 10) === today());
-  return (
-    <>
-      <AnnouncementBanner items={state.announcements ?? []} />
-      <Title title="Household overview" text="A read-only look at today’s care plan." />
+  const cells: Record<string, React.ReactNode> = {
+    announcements: <AnnouncementBanner items={state.announcements ?? []} />,
+    metrics: (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Metric label="Due today" value={dueToday.length} icon={CalendarDays} />
         <Metric label="Completed today" value={doneToday.length} icon={Check} tone="success" />
         <Metric label="On shift today" value={onShiftToday.length} icon={Clock} />
       </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />On shift today</h2>
-          <div className="mt-4 space-y-2">
-            {onShiftToday.length ? onShiftToday.map((shift: any) => {
-              const person = state.members.find((item: Member) => item.id === shift.memberId);
-              return person ? <div key={shift.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3"><AvatarFor member={person} className="size-9" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">{person.name}</span><span className="text-xs tabular-nums text-[#687873]">{formatShift(shift)}</span></div> : null;
-            }) : <EmptyHandoff icon={Clock} title="No one on shift" text="No care worker is scheduled today." compact />}
-          </div>
-        </Card>
-        <Card className="p-0">
-          <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays className="size-4 text-[#287b6f]" aria-hidden="true" />Due today</h2></div>
-          <TaskList tasks={dueToday} members={state.members} onOpen={setTask} compact />
-        </Card>
-      </div>
+    ),
+    onshift: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />On shift today</h2>
+        <div className="mt-4 space-y-2">
+          {onShiftToday.length ? onShiftToday.map((shift: any) => {
+            const person = state.members.find((item: Member) => item.id === shift.memberId);
+            return person ? <div key={shift.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3"><AvatarFor member={person} className="size-9" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">{person.name}</span><span className="text-xs tabular-nums text-[#687873]">{formatShift(shift)}</span></div> : null;
+          }) : <EmptyHandoff icon={Clock} title="No one on shift" text="No care worker is scheduled today." compact />}
+        </div>
+      </Card>
+    ),
+    duetoday: (
+      <Card className="p-0">
+        <div className="border-b border-[#dfe5dc] px-5 py-4"><h2 className="flex items-center gap-2 font-semibold"><CalendarDays className="size-4 text-[#287b6f]" aria-hidden="true" />Due today</h2></div>
+        <TaskList tasks={dueToday} members={state.members} onOpen={setTask} compact />
+      </Card>
+    ),
+  };
+  return (
+    <>
+      <Title title="Household overview" text="A read-only look at today’s care plan." />
+      <DashboardGrid audience="viewer" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={false} />
     </>
   );
 }
 
-function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy }: any) {
+function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
@@ -1312,21 +1348,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'today') return (
-    <>
-      <AnnouncementBanner items={state.announcements ?? []} />
-      <section className="worker-hero mb-6 overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
-          </div>
-          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
-        </div>
-      </section>
-      <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />
-      <ShiftHandoff state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />
-    </>
+    <WorkerDashboard state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} dashboard={dashboard} />
   );
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
@@ -1449,7 +1471,7 @@ function TimeClock({ member, entries, shifts, mutate, busy }: any) {
   const weekMinutes = minutesInRange(entries, member.id, mondayISO, today(), now);
   const attendanceRow = buildAttendance({ workers: [member], shifts, entries, date: today(), nowTime: new Date(now).toTimeString().slice(0, 5), now })[0];
   return (
-    <Card className="mb-6 flex flex-wrap items-center justify-between gap-4">
+    <Card className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3">
         <span className={`grid size-11 shrink-0 place-items-center rounded-2xl ${open ? 'bg-[#287b6f] text-white' : 'bg-[#e8f1ec] text-[#287b6f]'}`}><Clock className="size-5" aria-hidden="true" /></span>
         <div>
@@ -1464,47 +1486,66 @@ function TimeClock({ member, entries, shifts, mutate, busy }: any) {
   );
 }
 
-function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
+function WorkerDashboard({ state, member, setTask, mutate, busy, dashboard }: any) {
   const date = today();
   const handoff = buildShiftHandoff<Chore>(state.chores, member.id, date);
-  const firstName = member.name.split(/\s+/)[0];
   const outstanding = handoff.assigned.filter((task: Chore) => task.status !== 'complete');
+  const warnings = state.workloadWarnings ?? [];
   const runAction = async (event: React.MouseEvent, task: Chore, action: 'start' | 'complete') => {
     event.stopPropagation();
     try { await mutate({ action, choreId: task.id }, action === 'start' ? `${task.title} started.` : `${task.title} completed.`); } catch { /* live notice reports the error */ }
   };
-  return (
-    <>
-      <Title title={`Shift handoff for ${firstName}`} text="Your assignments, important updates, and next actions in one place." />
-      <section aria-labelledby="shift-summary" className="mb-6 overflow-hidden rounded-3xl bg-[#203f36] p-5 text-white shadow-lg sm:p-6">
+  const cells: Record<string, React.ReactNode> = {
+    hero: (
+      <section className="worker-hero overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
+          </div>
+          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
+        </div>
+      </section>
+    ),
+    announcements: <AnnouncementBanner items={state.announcements ?? []} />,
+    timeclock: <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />,
+    shiftbrief: (
+      <>
+      <section aria-labelledby="shift-summary" className="overflow-hidden rounded-3xl bg-[#203f36] p-5 text-white shadow-lg sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#bcd9ca]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 id="shift-summary" className="mt-2 text-2xl font-semibold">{handoff.attention.length ? `${handoff.attention.length} ${handoff.attention.length === 1 ? 'item needs' : 'items need'} attention` : 'You’re ready for the shift'}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-[#d8e7df]">{handoff.attention.length ? 'Prioritized from due dates, task priority, and open issues already recorded by your care team.' : outstanding.length ? 'No urgent or overdue work. Continue with today’s plan.' : 'No assigned work is due today. Available work remains in Tasks.'}</p></div>
           <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-2xl bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[#bcd9ca]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-[#d8e7df]">completed today</p></div>
         </div>
       </section>
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="Completed today" value={handoff.completed.length} icon={CheckCircle2} tone="success" />
         <Metric label="In progress" value={state.chores.filter((task: Chore) => task.assignedTo === member.id && task.status === 'in_progress').length} icon={CircleDot} />
         <Metric label="Due today" value={outstanding.length} icon={CalendarDays} />
         <Metric label="Available to claim" value={state.chores.filter((task: Chore) => task.assignedTo === null && task.status === 'open').length} icon={ClipboardList} />
       </div>
-      {(state.workloadWarnings ?? []).length > 0 && <div className="mb-6"><WorkloadWarnings warnings={state.workloadWarnings} members={state.members} /></div>}
-      <div className="grid gap-6 lg:grid-cols-[1.45fr_.85fr]">
-        <div className="space-y-6">
+      </>
+    ),
+    workload: warnings.length ? <WorkloadWarnings warnings={warnings} members={state.members} /> : null,
+    priorities: (
           <Card className="p-0">
             <div className="flex items-start gap-3 border-b border-[#dfe5dc] px-5 py-4"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#f8e9dc] text-[#98552e]"><AlertTriangle className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Priority briefing</h2><p className="text-sm text-[#687873]">Why these tasks should come first</p></div></div>
             {handoff.attention.length ? <div className="grid gap-3 p-4">{handoff.attention.map((task: Chore) => <HandoffTask key={task.id} task={task} member={member} reasons={attentionReasons(task, date)} setTask={setTask} busy={busy} runAction={runAction} />)}</div> : <EmptyHandoff icon={CheckCircle2} title="Nothing needs immediate attention" text="Urgent, overdue, and issue-flagged assignments will appear here." />}
           </Card>
+    ),
+    mytasks: (
           <Card className="p-0">
             <div className="flex items-start gap-3 border-b border-[#dfe5dc] px-5 py-4"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><CalendarDays className="size-5" aria-hidden="true" /></span><div><h2 className="font-bold">Today’s assignments</h2><p className="text-sm text-[#687873]">{handoff.assigned.length} open {handoff.assigned.length === 1 ? 'task' : 'tasks'} due today</p></div></div>
             {handoff.assigned.length ? <div className="grid gap-3 p-4">{handoff.assigned.map((task: Chore) => <HandoffTask key={task.id} task={task} member={member} reasons={[]} setTask={setTask} busy={busy} runAction={runAction} />)}</div> : <EmptyHandoff icon={CalendarDays} title="No assigned tasks due today" text="You’re caught up. Check Tasks if you want to claim available work." />}
           </Card>
-        </div>
-        <aside className="space-y-6" aria-label="Shift updates and progress">
+    ),
+    notes: (
           <Card>
             <h2 className="flex items-center gap-2 font-bold"><MessageSquareText className="size-5 text-[#287b6f]" aria-hidden="true" />Latest handoff notes</h2><p className="mt-1 text-sm text-[#687873]">Recent updates on your assigned work</p>
             {handoff.latestNotes.length ? <ol className="mt-4 space-y-3">{handoff.latestNotes.map(({ task, ...note }: any) => <li key={note.id}><button onClick={() => setTask(task)} className="w-full rounded-xl border border-[#dfe5dc] bg-white p-3 text-left transition hover:border-[#aac3b3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{task.title}</span><Badge>{note.kind}</Badge></span><span className="mt-2 line-clamp-3 block text-sm leading-5 text-[#52645f]">{note.body}</span><time className="mt-2 block text-xs text-[#687873]">{new Date(note.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</time></button></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No handoff notes yet" text="Progress and issue notes from your assigned tasks will collect here." compact />}
           </Card>
+    ),
+    snapshot: (
           <Card>
             <h2 className="flex items-center gap-2 font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Shift snapshot</h2><div className="mt-4 space-y-4">
               <ProgressRow label="Completed today" value={handoff.completed.length} icon={CheckCircle2} />
@@ -1512,20 +1553,13 @@ function ShiftHandoff({ state, member, setTask, mutate, busy }: any) {
               <ProgressRow label="Still due today" value={outstanding.length} icon={CalendarDays} />
             </div>
           </Card>
-        </aside>
-      </div>
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="space-y-6">
-          <ShiftHandoffComposer mutate={mutate} busy={busy} />
-          <ShiftHandoffLog state={state} personal />
-        </div>
-        <div className="space-y-6">
-          <SafetyReportForm mutate={mutate} busy={busy} />
-          <SafetyReportList state={state} />
-        </div>
-      </div>
-    </>
-  );
+    ),
+    handoffform: <ShiftHandoffComposer mutate={mutate} busy={busy} />,
+    handofflog: <ShiftHandoffLog state={state} personal />,
+    safetyform: <SafetyReportForm mutate={mutate} busy={busy} />,
+    safetylog: <SafetyReportList state={state} />,
+  };
+  return <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />;
 }
 
 function HandoffTask({ task, member, reasons, setTask, busy, runAction }: any) {
@@ -1674,7 +1708,7 @@ function SafetyTriageCard({ state, mutate, busy }: any) {
 function AnnouncementBanner({ items }: { items: Array<{ id: string; detail: string; createdAt: string }> }) {
   if (!items.length) return null;
   return (
-    <Card className="mb-6 border-[#bcd4c9] bg-[#eef4ec]">
+    <Card className="border-[#bcd4c9] bg-[#eef4ec]">
       <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-[#287b6f]"><Megaphone className="size-4" aria-hidden="true" />From your manager</h2>
       <ul className="mt-3 space-y-2">
         {items.map((item) => (
