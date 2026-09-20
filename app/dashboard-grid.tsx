@@ -133,13 +133,13 @@ export function DashboardGrid({
           <p className="mt-1 text-sm text-[#687873]">Tap Customize to add widgets back.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5 xl:grid-cols-3 2xl:grid-cols-4">
           {items.map((item, index) => {
             const def = widgetDef(item.id);
             const content = renderWidget(item.id);
             if (!editing && content === null) return null;
             return (
-              <div key={item.id} className={item.size === 'full' ? 'md:col-span-2 xl:col-span-3' : ''}>
+              <div key={item.id} className={item.size === 'full' ? 'md:col-span-2 xl:col-span-3 2xl:col-span-4' : ''}>
                 {editing && (
                   <div className="mb-2 flex items-center gap-1 rounded-xl border border-dashed border-[#aac3b3] bg-[#f4f8f4] px-2 py-1">
                     <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#e8f1ec] text-[#287b6f]">

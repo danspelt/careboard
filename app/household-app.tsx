@@ -244,7 +244,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
 
       {/* Main content */}
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-7 sm:py-7">
+        <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-7 sm:py-7">
           {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
