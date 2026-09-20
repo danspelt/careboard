@@ -22,10 +22,10 @@ import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
-import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf } from '@/lib/shifts';
+import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
 import { fundingSummary } from '@/lib/funding';
-import { certDaysLeft, certStatus, certificationAlerts } from '@/lib/certifications';
+import { certDaysLeft, certStatus, certificationAlerts, type Certification } from '@/lib/certifications';
 import { addDaysISO } from '@/lib/operations';
 import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
 import { DashboardGrid } from '@/app/dashboard-grid';
@@ -253,7 +253,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} dashboard={dashboard} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} dashboard={dashboard} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setSection={setSection} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} dashboard={dashboard} />
           )}
         </div>
       </main>
@@ -767,6 +767,68 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
         </ol>
       </Card>
     ),
+    payroll: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Payroll &amp; bookkeeper</h2>
+        <p className="mt-1 text-sm leading-6 text-[#687873]">Two-week payroll CSV with who worked, when, hours, rates, and totals.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a href="/api/payroll" download className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><FileDown className="size-4" aria-hidden="true" />Download CSV</a>
+          <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setSection('more')}><Settings className="size-4" aria-hidden="true" />Report settings</Button>
+        </div>
+      </Card>
+    ),
+    team: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Care team</h2>
+        <p className="text-sm text-[#687873]">Open a profile to manage shifts, records, and certifications</p>
+        <div className="mt-4 space-y-2">
+          {workers.length ? workers.map((worker: Member) => (
+            <button key={worker.id} onClick={() => setProfile(worker)} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]">
+              <AvatarFor member={worker} className="size-10" />
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{worker.name}</span><span className="block text-xs text-[#687873]">{worker.jobTitle || 'Care worker'}</span></span>
+              <StatusBadge status={worker.status} />
+            </button>
+          )) : <EmptyHandoff icon={Users} title="No care workers" text="Add a care worker to build the team." compact />}
+        </div>
+      </Card>
+    ),
+    inboxpreview: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Inbox className="size-5 text-[#287b6f]" aria-hidden="true" />Latest inbox items</h2>
+        <p className="text-sm text-[#687873]">Newest care-team messages and note updates</p>
+        {(state.inbox ?? []).length ? (
+          <>
+            <ol className="mt-4 space-y-2">
+              {(state.inbox ?? []).slice(0, 5).map((item: any) => {
+                const sender = state.members.find((item2: Member) => item2.id === item.createdBy)?.name ?? 'Team member';
+                return <li key={item.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><p className="line-clamp-2 text-sm leading-5">{item.body}</p><p className="mt-1 text-xs text-[#687873]">{sender} · {new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p></li>;
+              })}
+            </ol>
+            <div className="mt-4"><Button variant="outline" size="sm" onClick={() => setSection('messages')}>Open inbox</Button></div>
+          </>
+        ) : <EmptyHandoff icon={Inbox} title="Inbox is clear" text="Team messages will appear here." compact />}
+      </Card>
+    ),
+    schedulepreview: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Next few days</h2>
+        <p className="text-sm text-[#687873]">Scheduled coverage today and the next two days</p>
+        <div className="mt-4 space-y-3">
+          {[0, 1, 2].map((offset) => {
+            const day = addDaysISO(today(), offset);
+            const dayShifts = shiftsForDay(state.shifts ?? [], day);
+            return (
+              <div key={day} className="rounded-xl border border-[#e2e8e1] bg-white p-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#687873]">{offset === 0 ? 'Today' : dateLabel(day)}</p>
+                {dayShifts.length ? (
+                  <ul className="mt-2 space-y-1.5">{dayShifts.map((shift: any) => { const person = state.members.find((item: Member) => item.id === shift.memberId); return <li key={shift.id} className="flex items-center gap-2 text-sm"><span className="size-2 rounded-full" style={{ backgroundColor: person?.color ?? '#287b6f' }} /><span className="min-w-0 flex-1 truncate font-semibold">{person?.name ?? 'Care worker'}</span><span className="tabular-nums text-xs text-[#687873]">{formatShift(shift)}</span></li>; })}</ul>
+                ) : <p className="mt-1 text-sm text-[#687873]">No shifts scheduled</p>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    ),
     quickactions: (
       <Card>
         <h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles className="size-5 text-[#287b6f]" aria-hidden="true" />Quick actions</h2>
@@ -1258,7 +1320,7 @@ function ViewerView({ section, state, setTask, dashboard }: any) {
   );
 }
 
-function WorkerView({ section, state, member, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard }: any) {
+function WorkerView({ section, state, member, setSection, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
@@ -1348,7 +1410,7 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   if (section === 'client') return <ClientRecordView state={state} uploadClientNote={uploadClientNote} busy={busy} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'today') return (
-    <WorkerDashboard state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} dashboard={dashboard} />
+    <WorkerDashboard state={state} member={member} setSection={setSection} setTask={setTask} setAvailWorker={setAvailWorker} mutate={mutate} busy={busy} dashboard={dashboard} />
   );
   const tasks = state.chores;
   const query = taskQuery.trim().toLowerCase();
@@ -1486,11 +1548,18 @@ function TimeClock({ member, entries, shifts, mutate, busy }: any) {
   );
 }
 
-function WorkerDashboard({ state, member, setTask, mutate, busy, dashboard }: any) {
+function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, mutate, busy, dashboard }: any) {
   const date = today();
   const handoff = buildShiftHandoff<Chore>(state.chores, member.id, date);
   const outstanding = handoff.assigned.filter((task: Chore) => task.status !== 'complete');
   const warnings = state.workloadWarnings ?? [];
+  const mondayISO = addDaysISO(date, -((weekdayOf(date) + 6) % 7));
+  const weekMinutes = minutesInRange(state.timeEntries ?? [], member.id, mondayISO, date, new Date().toISOString());
+  const todayMinutes = minutesInRange(state.timeEntries ?? [], member.id, date, date, new Date().toISOString());
+  const myCerts = (state.certifications ?? []).filter((cert: Certification) => cert.memberId === member.id);
+  const myShifts = (state.shifts ?? []) as Shift[];
+  const shiftsByWeek: Record<number, Shift[]> = { 0: [], 1: [], 2: [] };
+  for (const shift of myShifts) shiftsByWeek[shift.cycleWeek ?? 0].push(shift);
   const runAction = async (event: React.MouseEvent, task: Chore, action: 'start' | 'complete') => {
     event.stopPropagation();
     try { await mutate({ action, choreId: task.id }, action === 'start' ? `${task.title} started.` : `${task.title} completed.`); } catch { /* live notice reports the error */ }
@@ -1558,6 +1627,74 @@ function WorkerDashboard({ state, member, setTask, mutate, busy, dashboard }: an
     handofflog: <ShiftHandoffLog state={state} personal />,
     safetyform: <SafetyReportForm mutate={mutate} busy={busy} />,
     safetylog: <SafetyReportList state={state} />,
+    schedule: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Your shifts</h2>
+        <p className="mt-1 text-sm text-[#687873]">Your two-week recurring schedule</p>
+        <div className="mt-4 space-y-3">
+          {([0, 1, 2] as const).map((week) => {
+            const list = shiftsByWeek[week].sort((a, b) => a.weekday - b.weekday || a.startTime.localeCompare(b.startTime));
+            return list.length ? (
+              <div key={week}>
+                <p className="text-xs font-bold uppercase tracking-wide text-[#687873]">{week === 0 ? 'Every week' : week === 1 ? 'Week A' : 'Week B'}</p>
+                <ul className="mt-1.5 space-y-1.5">{list.map((shift) => <li key={shift.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#edf0eb] bg-white px-3 py-2 text-sm"><span className="font-semibold">{weekdayFull[shift.weekday]}</span><span className="tabular-nums text-[#687873]">{formatShift(shift)}</span></li>)}</ul>
+              </div>
+            ) : null;
+          })}
+          {!myShifts.length && <EmptyHandoff icon={CalendarDays} title="No shifts yet" text="Your manager sets your recurring schedule — update your availability to help them plan." compact />}
+        </div>
+        <div className="mt-4"><Button variant="outline" size="sm" onClick={() => setAvailWorker(member)}><Pencil className="size-4" />Edit my availability</Button></div>
+      </Card>
+    ),
+    weektime: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Your hours this week</h2>
+        <p className="mt-1 text-sm text-[#687873]">Clocked time since Monday</p>
+        <p className="mt-3 text-3xl font-semibold tabular-nums">{formatMinutes(weekMinutes)}</p>
+        <p className="mt-1 text-sm text-[#687873]">{formatMinutes(todayMinutes)} clocked today</p>
+      </Card>
+    ),
+    certs: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Your certifications</h2>
+        <p className="mt-1 text-sm text-[#687873]">Expiry status for your recorded certifications</p>
+        {myCerts.length ? (
+          <ul className="mt-4 space-y-2">{myCerts.map((cert: Certification) => {
+            const status = certStatus(cert.expiresOn, date);
+            const pill = status === 'expired' ? 'bg-[#f8e9dc] text-[#8b4e2c]' : status === 'expiring' ? 'bg-[#fcf0dc] text-[#8b5e1f]' : 'bg-[#e4f0e8] text-[#25654f]';
+            return <li key={cert.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#edf0eb] bg-white px-3 py-2 text-sm"><span className="min-w-0 flex-1 truncate font-semibold">{cert.name}</span><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${pill}`}>{status === 'expired' ? `Expired ${Math.abs(certDaysLeft(cert.expiresOn, date))}d ago` : status === 'expiring' ? `${certDaysLeft(cert.expiresOn, date)}d left` : `Valid until ${dateLabel(cert.expiresOn)}`}</span></li>;
+          })}</ul>
+        ) : <EmptyHandoff icon={Shield} title="No certifications recorded" text="Your manager can record certifications in your profile." compact />}
+      </Card>
+    ),
+    inboxpreview: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Inbox className="size-5 text-[#287b6f]" aria-hidden="true" />Latest inbox items</h2>
+        <p className="mt-1 text-sm text-[#687873]">Newest direct messages and note updates for you</p>
+        {(state.inbox ?? []).length ? (
+          <>
+            <ol className="mt-4 space-y-2">
+              {(state.inbox ?? []).slice(0, 5).map((item: any) => {
+                const sender = state.members.find((item2: Member) => item2.id === item.createdBy)?.name ?? 'Team member';
+                return <li key={item.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><p className="line-clamp-2 text-sm leading-5">{item.body}</p><p className="mt-1 text-xs text-[#687873]">{sender} · {new Date(item.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p></li>;
+              })}
+            </ol>
+            <div className="mt-4"><Button variant="outline" size="sm" onClick={() => setSection('messages')}>Open inbox</Button></div>
+          </>
+        ) : <EmptyHandoff icon={Inbox} title="Nothing new" text="Direct messages and note updates will appear here." compact />}
+      </Card>
+    ),
+    quicklinks: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles className="size-5 text-[#287b6f]" aria-hidden="true" />Quick links</h2>
+        <p className="mt-1 text-sm text-[#687873]">Jump straight to what you need</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {([['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays], ['client', 'Client notes', FileText], ['profile', 'My profile', User]] as const).map(([target, label, LinkIcon]) => (
+            <Button key={target} type="button" variant="outline" size="sm" className="min-h-11 justify-start" onClick={() => setSection(target)}><LinkIcon className="size-4" aria-hidden="true" />{label}</Button>
+          ))}
+        </div>
+      </Card>
+    ),
   };
   return <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />;
 }

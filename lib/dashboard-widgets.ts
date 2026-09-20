@@ -31,6 +31,10 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'photos', title: 'Proof photos', description: 'Latest task photo uploads from the care team.', category: 'Activity', roles: ['manager'], defaultSize: 'full' },
   { id: 'activity', title: 'Recent activity', description: 'Latest household actions across tasks, team, and settings.', category: 'Activity', roles: ['manager'], defaultSize: 'half' },
   { id: 'quickactions', title: 'Quick actions', description: 'Jump straight to common manager tasks.', category: 'At a glance', roles: ['manager'], defaultSize: 'half' },
+  { id: 'payroll', title: 'Payroll & bookkeeper', description: 'Download the payroll CSV or jump to report settings.', category: 'Time & pay', roles: ['manager'], defaultSize: 'half' },
+  { id: 'team', title: 'Care team', description: 'Roster status at a glance — open a profile to manage.', category: 'Team', roles: ['manager'], defaultSize: 'half' },
+  { id: 'inboxpreview', title: 'Latest inbox items', description: 'Newest care-team messages and note updates.', category: 'Activity', roles: ['manager'], defaultSize: 'half' },
+  { id: 'schedulepreview', title: 'Next few days', description: 'Who is scheduled today, tomorrow, and the day after.', category: 'Team', roles: ['manager'], defaultSize: 'half' },
 
   // Worker widgets
   { id: 'hero', title: 'Your shift today', description: 'Welcome banner with today’s date and shift readiness.', category: 'At a glance', roles: ['worker'], defaultSize: 'full' },
@@ -46,6 +50,11 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'handofflog', title: 'Your handoff log', description: 'Handoffs you have recorded, visible to you and the manager.', category: 'Activity', roles: ['worker'], defaultSize: 'half' },
   { id: 'safetyform', title: 'Report a safety issue', description: 'Incident or near-miss report, shared only with the manager.', category: 'Safety', roles: ['worker'], defaultSize: 'half' },
   { id: 'safetylog', title: 'Your safety reports', description: 'Status of incidents and near-misses you reported.', category: 'Safety', roles: ['worker'], defaultSize: 'half' },
+  { id: 'schedule', title: 'Your shifts', description: 'Your two-week recurring schedule and availability.', category: 'Time & pay', roles: ['worker'], defaultSize: 'half' },
+  { id: 'weektime', title: 'Your hours this week', description: 'Clocked time so far this week, with today’s total.', category: 'Time & pay', roles: ['worker'], defaultSize: 'half' },
+  { id: 'certs', title: 'Your certifications', description: 'Expiry status for your recorded certifications.', category: 'Safety', roles: ['worker'], defaultSize: 'half' },
+  { id: 'inboxpreview', title: 'Latest inbox items', description: 'Newest direct messages and note updates for you.', category: 'Activity', roles: ['worker'], defaultSize: 'half' },
+  { id: 'quicklinks', title: 'Quick links', description: 'Jump to tasks, schedule, client notes, or your profile.', category: 'At a glance', roles: ['worker'], defaultSize: 'half' },
 
   // Viewer widgets
   { id: 'metrics', title: 'Today’s numbers', description: 'Due today, completed today, and who is on shift.', category: 'At a glance', roles: ['viewer'], defaultSize: 'full' },
