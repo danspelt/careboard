@@ -121,7 +121,7 @@ export function DashboardGrid({
           <p className="mt-1 text-sm text-[#687873]">Tap Customize to add widgets back.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
           {items.map((item, index) => {
             const def = widgetDef(item.id);
             const content = renderWidget(item.id);
