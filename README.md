@@ -94,7 +94,7 @@ The image creates `/data/uploads` for authenticated proof photos and uses `/data
    - `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` if using Google OAuth
    - `OPENAI_API_KEY` to enable the read-only CareBoard assistant
    - `OPENAI_MODEL` optionally (defaults to `gpt-5-mini`)
-   - SMTP settings (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`) for coverage emails
+   - SMTP settings (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`) for invite, coverage, and payroll emails
    - Twilio settings (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`) for opted-in coverage SMS
    - `DATABASE_PATH=/data/careboard.db`
    - `UPLOAD_PATH=/data/uploads`

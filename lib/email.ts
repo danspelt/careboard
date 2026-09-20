@@ -44,6 +44,31 @@ export async function sendManagerCoverageEmail(input: CoverageEmail, sender?: Ma
   return { status: 'sent' as const };
 }
 
+export type InviteEmail = { recipient: string; name: string; role: 'worker' | 'viewer'; inviteUrl: string };
+
+export function inviteEmailMessage(input: InviteEmail, from: string) {
+  const roleLabel = input.role === 'viewer' ? 'family viewer' : 'care worker';
+  return {
+    from,
+    to: input.recipient,
+    subject: `You're invited to CareBoard`,
+    text: `Hi ${input.name},\n\nYou've been invited to join CareBoard as a ${roleLabel}. Open this link within 7 days to set your password and sign in:\n\n${input.inviteUrl}\n\nIf you weren't expecting this invitation, you can ignore this email.`,
+  };
+}
+
+export async function sendInviteEmail(input: InviteEmail, sender?: (message: { from: string; to: string; subject: string; text: string }) => Promise<unknown>) {
+  const from = process.env.EMAIL_FROM?.trim();
+  const message = inviteEmailMessage(input, from || '');
+  if (sender && from) { await sender(message); return { status: 'sent' as const }; }
+  const host = process.env.SMTP_HOST?.trim(); const user = process.env.SMTP_USER?.trim(); const pass = process.env.SMTP_PASSWORD;
+  if (!from || !host || !user || !pass) return { status: 'skipped' as const };
+  const port = Number(process.env.SMTP_PORT || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return { status: 'skipped' as const };
+  const transport = nodemailer.createTransport({ host, port, secure: process.env.SMTP_SECURE === 'true', auth: { user, pass } });
+  await transport.sendMail(message);
+  return { status: 'sent' as const };
+}
+
 export type PayrollReportEmail = { recipient: string; from: string; to: string; csv: string; filename: string };
 
 export function payrollReportMessage(input: PayrollReportEmail, from: string) {

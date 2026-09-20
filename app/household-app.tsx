@@ -68,6 +68,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [shiftWorker, setShiftWorker] = useState<Member | null>(null);
   const [availWorker, setAvailWorker] = useState<Member | null>(null);
   const [inviteUrl, setInviteUrl] = useState('');
+  const [inviteEmailed, setInviteEmailed] = useState(false);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState<'online' | 'refreshing' | 'offline' | 'error'>('online');
@@ -249,7 +250,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} mutate={mutate} busy={busy} dashboard={dashboard} />
+            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} mutate={mutate} busy={busy} dashboard={dashboard} />
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} dashboard={dashboard} />
           ) : (
@@ -307,8 +308,8 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       </Dialog>
       <ProfileDialog profile={profile} manager={manager} busy={busy} onClose={() => setProfile(null)} submit={submit} upload={upload} certs={(state.certifications ?? []).filter((cert: any) => cert.memberId === profile?.id)} mutate={mutate} />
       <CreateDialog open={createOpen} workers={workers} busy={busy} onClose={() => setCreateOpen(false)} submit={submit} />
-      <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} mutate={mutate} onInvited={(token: string) => setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`)} />
-      <InviteLinkDialog url={inviteUrl} onClose={() => setInviteUrl('')} />
+      <AddWorkerDialog open={addOpen} busy={busy} onClose={() => setAddOpen(false)} mutate={mutate} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} />
+      <InviteLinkDialog url={inviteUrl} emailed={inviteEmailed} onClose={() => setInviteUrl('')} />
       <ResetDialog member={resetMember} busy={busy} onClose={() => setResetMember(null)} submit={submit} />
       {shiftWorker && <WindowDialog worker={shiftWorker} windows={(state.shifts ?? []).filter((shift: any) => shift.memberId === shiftWorker.id)} action="setShifts" title={`Two-week shifts for ${shiftWorker.name}`} description={`Set the days and times ${shiftWorker.name.split(' ')[0]} is scheduled. The schedule repeats every two weeks — a day on in both weeks means every week, on in one week means every other week.`} busy={busy} onClose={() => setShiftWorker(null)} mutate={mutate} />}
       {availWorker && <WindowDialog worker={availWorker} windows={(state.availability ?? []).filter((shift: any) => shift.memberId === availWorker.id)} action="setAvailability" title={`Weekly availability for ${availWorker.name}`} description={`The days and times ${availWorker.name.split(' ')[0]} is generally available. Auto-assign prefers these windows.`} busy={busy} onClose={() => setAvailWorker(null)} mutate={mutate} />}
@@ -489,7 +490,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
               <Button variant="outline" size="sm" onClick={() => setProfile(worker)}><Pencil className="size-4" />Profile</Button>
               <Button variant="outline" size="sm" onClick={() => setShiftWorker(worker)}><Clock className="size-4" />Shifts</Button>
               <Button variant="outline" size="sm" onClick={() => setAvailWorker(worker)}><CalendarDays className="size-4" />Availability</Button>
-              {worker.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: worker.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
+              {worker.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: worker.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken, result?.inviteEmail === 'sent'); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
               {worker.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(worker)}><KeyRound className="size-4" />Reset password</Button>}
               <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: worker.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: worker.id }, worker.status === 'disabled' ? 'Care worker reactivated.' : 'Care worker disabled.')}>
                 {worker.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
@@ -515,7 +516,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {viewer.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: viewer.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
+                  {viewer.status === 'invited' && <Button variant="outline" size="sm" disabled={busy} onClick={async () => { try { const result = await mutate({ action: 'reinviteMember', memberId: viewer.id }, 'Invite link created.'); if (result?.inviteToken) onInvited(result.inviteToken, result?.inviteEmail === 'sent'); } catch { /* notice is shown */ } }}><UserCheck className="size-4" />Invite link</Button>}
                   {viewer.status !== 'invited' && <Button variant="outline" size="sm" onClick={() => setResetMember(viewer)}><KeyRound className="size-4" />Reset password</Button>}
                   <Button variant="outline" size="sm" disabled={busy} onClick={() => mutate({ action: viewer.status === 'disabled' ? 'reactivateMember' : 'disableMember', memberId: viewer.id }, viewer.status === 'disabled' ? 'Family viewer reactivated.' : 'Family viewer disabled.')}>
                     {viewer.status === 'disabled' ? <><UserCheck className="size-4" />Reactivate</> : <><UserX className="size-4" />Disable</>}
@@ -2090,7 +2091,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
     try {
       if (method === 'invite') {
         const result = await mutate({ action: 'inviteMember', ...values }, 'Invite link created.');
-        if (result?.inviteToken) onInvited(result.inviteToken);
+        if (result?.inviteToken) onInvited(result.inviteToken, result?.inviteEmail === 'sent');
       } else {
         await mutate({ action: 'addMember', ...values }, 'Care worker added.');
       }
@@ -2115,7 +2116,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
           {method === 'invite' ? (
             <>
               <label className="text-sm font-semibold">Role<select name="role" defaultValue="worker" className={fieldClass}><option value="worker">Care worker</option><option value="viewer">Family viewer (read-only)</option></select></label>
-              <p className="text-xs leading-5 text-[#687873]">You’ll get a link to share — text, email, or read it out. It expires in 7 days and they pick their own password.</p>
+              <p className="text-xs leading-5 text-[#687873]">If email is set up, we send the invite straight to their inbox — you’ll also get a copyable link as a backup. It expires in 7 days and they pick their own password.</p>
             </>
           ) : (
             <>
@@ -2130,7 +2131,7 @@ function AddWorkerDialog({ open, busy, onClose, mutate, onInvited }: any) {
   );
 }
 
-function InviteLinkDialog({ url, onClose }: any) {
+function InviteLinkDialog({ url, emailed, onClose }: any) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     try { await navigator.clipboard.writeText(url); setCopied(true); } catch { /* select the field instead */ }
@@ -2139,8 +2140,8 @@ function InviteLinkDialog({ url, onClose }: any) {
     <Dialog open={Boolean(url)} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Invite link ready</DialogTitle>
-          <DialogDescription>Share this link with the care worker — by text, email, or in person. It expires in 7 days.</DialogDescription>
+          <DialogTitle>{emailed ? 'Invite emailed' : 'Invite link ready'}</DialogTitle>
+          <DialogDescription>{emailed ? 'We emailed this link to them — they have 7 days to accept. You can also copy it to share another way.' : 'Email isn’t configured, so no message was sent. Share this link with the care worker — by text, email, or in person. It expires in 7 days.'}</DialogDescription>
         </DialogHeader>
         <Input readOnly value={url} aria-label="Invite link" onFocus={(e) => e.target.select()} className="min-h-11 text-xs" />
         <DialogFooter>

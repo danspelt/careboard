@@ -26,6 +26,23 @@ test('coverage acceptance is explicit, atomic, authorized, conflict checked, and
   assert.match(household, /schedule_coverage_accepted/);
 });
 
+test('invites send a best-effort email after the invite row is saved', () => {
+  const email = readFileSync(new URL('../lib/email.ts', import.meta.url), 'utf8');
+  const household = readFileSync(new URL('../lib/household-data.ts', import.meta.url), 'utf8');
+  assert.match(email, /export function inviteEmailMessage/);
+  assert.match(email, /export async function sendInviteEmail/);
+  assert.match(household, /accept-invite\?token=/);
+  // invite row is persisted before the email attempt in both paths
+  for (const marker of ["'invited_member'", "'reinvited_worker'"]) {
+    const markerAt = household.indexOf(marker);
+    const insertAt = household.lastIndexOf('INSERT INTO worker_invites', markerAt);
+    const sendAt = household.indexOf('trySendInviteEmail', markerAt);
+    assert.ok(insertAt > 0 && sendAt > markerAt, `email must follow invite insert near ${marker}`);
+  }
+  // email is best-effort: a skipped/failed send must not fail the mutation
+  assert.match(household, /catch \{\s*return 'skipped';/);
+});
+
 test('request is durable before independent email and SMS attempts', () => {
   const household = readFileSync(new URL('../lib/household-data.ts', import.meta.url), 'utf8');
   const insertAt = household.indexOf('INSERT INTO schedule_change_requests');

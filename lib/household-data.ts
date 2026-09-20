@@ -14,7 +14,7 @@ import type { Certification } from '@/lib/certifications';
 import { canSendInboxMessage, reviewClientNote, scheduleChangeRequest, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
-import { sendCoverageEmail, sendManagerCoverageEmail, sendPayrollReportEmail } from '@/lib/email';
+import { sendCoverageEmail, sendInviteEmail, sendManagerCoverageEmail, sendPayrollReportEmail } from '@/lib/email';
 import { isE164, sendCareBoardSms } from '@/lib/sms';
 import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from '@/lib/workload-warnings';
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
@@ -148,6 +148,18 @@ async function seedIfEmpty() {
 
 export async function ensureHouseholdData() {
   await seedIfEmpty();
+}
+
+/** Best-effort invite email — never fails the mutation; returns 'sent' or 'skipped'. */
+async function trySendInviteEmail(email: string, name: string, role: 'worker' | 'viewer', token: string): Promise<'sent' | 'skipped'> {
+  const base = process.env.AUTH_URL?.trim().replace(/\/$/, '');
+  if (!base) return 'skipped';
+  try {
+    const result = await sendInviteEmail({ recipient: email, name, role, inviteUrl: `${base}/accept-invite?token=${token}` });
+    return result.status;
+  } catch {
+    return 'skipped';
+  }
 }
 
 async function inviteTokenHash(token: string) {
@@ -848,9 +860,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
       activity(null, actorId, 'invited_member', `invited ${role === 'viewer' ? 'family viewer' : 'care worker'} ${name}`, now),
     ]);
+    extras.inviteEmail = await trySendInviteEmail(email, name, role, token);
   } else if (action === 'reinviteMember') {
     const memberId = requiredString(input.memberId, 'Member');
-    const member = await db.prepare(`SELECT m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<Member>();
+    const member = await db.prepare(`SELECT m.name, m.role, g.email, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id LEFT JOIN google_accounts g ON g.member_id=m.id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<Member & { email?: string }>();
     if (!member || member.status !== 'invited') throw new Error('Only pending invites can be renewed.');
     const token = newInviteToken();
     extras.inviteToken = token;
@@ -859,6 +872,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), memberId, await inviteTokenHash(token), expires, now),
       activity(null, actorId, 'reinvited_worker', `created a new invite link for ${member.name}`, now),
     ]);
+    if (member.email) extras.inviteEmail = await trySendInviteEmail(member.email, member.name, member.role === 'viewer' ? 'viewer' : 'worker', token);
   } else if (action === 'setShifts' || action === 'setAvailability') {
     const memberId = requiredString(input.memberId, 'Care worker');
     if (action === 'setAvailability' && actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only update your own availability.');

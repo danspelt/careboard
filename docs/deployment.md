@@ -17,12 +17,12 @@ This document explains how to deploy and operate CareBoard in production. For ar
 | `UPLOAD_PATH` | No | Directory for authenticated uploads. Defaults to `/data/uploads` in the Docker image. |
 | `OPENAI_API_KEY` | For AI assistant | OpenAI API key used only by the server-side assistant route. Without it, the assistant returns a safe configuration error. |
 | `OPENAI_MODEL` | No | Responses API model for the assistant. Defaults to `gpt-5-mini`. |
-| `SMTP_HOST` | For coverage email | SMTP server hostname. Email is skipped safely when SMTP configuration is incomplete. |
+| `SMTP_HOST` | For outbound email | SMTP server hostname. Email is skipped safely when SMTP configuration is incomplete. |
 | `SMTP_PORT` | No | SMTP port; defaults to `587`. |
 | `SMTP_SECURE` | No | Set to `true` for implicit TLS. Defaults to `false` (STARTTLS-capable port). |
-| `SMTP_USER` | For coverage email | SMTP username. |
-| `SMTP_PASSWORD` | For coverage email | SMTP password, stored server-side only. |
-| `EMAIL_FROM` | For coverage email | Verified sender address used for coverage alerts. |
+| `SMTP_USER` | For outbound email | SMTP username. |
+| `SMTP_PASSWORD` | For outbound email | SMTP password, stored server-side only. |
+| `EMAIL_FROM` | For outbound email | Verified sender address used for invite, coverage, and payroll email. |
 | `TWILIO_ACCOUNT_SID` | For coverage SMS | Twilio Account SID, stored server-side only. |
 | `TWILIO_AUTH_TOKEN` | For coverage SMS | Twilio Auth Token, stored server-side only. |
 | `TWILIO_FROM_NUMBER` | For coverage SMS | Twilio sender in E.164 format, such as `+15551234567`. |
