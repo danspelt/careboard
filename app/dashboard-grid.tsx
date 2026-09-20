@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { ArrowDown, ArrowUp, Check, LayoutGrid, Maximize2, Minimize2, Plus, RotateCcw, Shuffle, X } from 'lucide-react';
+import { createElement, useState } from 'react';
+import { ArrowDown, ArrowUp, Check, CheckCircle2, LayoutGrid, Maximize2, Minimize2, Plus, RotateCcw, Shuffle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { widgetIcon } from '@/lib/widget-icons';
 import {
   DASHBOARD_THEMES,
   addWidget,
@@ -38,8 +39,8 @@ export function DashboardGrid({
 }) {
   const [editing, setEditing] = useState(false);
   const catalog = widgetsForRole(audience);
-  const missing = catalog.filter((widget) => !items.some((item) => item.id === widget.id));
-  const categories = [...new Set(missing.map((widget) => widget.category))];
+  const active = new Set(items.map((item) => item.id));
+  const categories = [...new Set(catalog.map((widget) => widget.category))];
   const save = (layout: WidgetItem[]) => onSaveLayout(layout);
   const surprise = () => {
     const others = DASHBOARD_THEMES.filter((theme) => theme.id !== themeId);
@@ -87,30 +88,40 @@ export function DashboardGrid({
           </section>
           <section aria-label="Widget library">
             <h2 className="text-sm font-bold">Widget library</h2>
-            {missing.length === 0 ? (
-              <p className="mt-2 text-sm text-[#687873]">Every widget is on your dashboard. Remove one to see it here again.</p>
-            ) : (
-              categories.map((category) => (
-                <div key={category} className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#687873]">{category}</p>
-                  <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {missing
-                      .filter((widget) => widget.category === category)
-                      .map((widget) => (
-                        <li key={widget.id} className="flex items-center gap-3 rounded-xl border border-[#dfe5dc] bg-white p-3">
+            <p className="mt-1 text-xs text-[#687873]">{active.size} of {catalog.length} widgets on your dashboard</p>
+            {categories.map((category) => (
+              <div key={category} className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#687873]">{category}</p>
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {catalog
+                    .filter((widget) => widget.category === category)
+                    .map((widget) => {
+                      const Icon = widgetIcon(widget.id);
+                      const onDashboard = active.has(widget.id);
+                      return (
+                        <li key={widget.id} className={`flex items-center gap-3 rounded-xl border p-3 ${onDashboard ? 'border-[#bcd9ca] bg-[#eef5f0]' : 'border-[#dfe5dc] bg-white'}`}>
+                          <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${onDashboard ? 'bg-[#287b6f] text-white' : 'bg-[#e8f1ec] text-[#287b6f]'}`}>
+                            <Icon className="size-4" aria-hidden="true" />
+                          </span>
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-semibold">{widget.title}</span>
                             <span className="block text-xs leading-4 text-[#687873]">{widget.description}</span>
                           </span>
-                          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => save(addWidget(items, audience, widget.id))} aria-label={`Add ${widget.title}`}>
-                            <Plus className="size-4" aria-hidden="true" />Add
-                          </Button>
+                          {onDashboard ? (
+                            <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-[#287b6f]" aria-label={`${widget.title} is on your dashboard`}>
+                              <CheckCircle2 className="size-4" aria-hidden="true" />Added
+                            </span>
+                          ) : (
+                            <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => save(addWidget(items, audience, widget.id))} aria-label={`Add ${widget.title}`}>
+                              <Plus className="size-4" aria-hidden="true" />Add
+                            </Button>
+                          )}
                         </li>
-                      ))}
-                  </ul>
-                </div>
-              ))
-            )}
+                      );
+                    })}
+                </ul>
+              </div>
+            ))}
           </section>
         </div>
       )}
@@ -131,7 +142,10 @@ export function DashboardGrid({
               <div key={item.id} className={item.size === 'full' ? 'md:col-span-2' : ''}>
                 {editing && (
                   <div className="mb-2 flex items-center gap-1 rounded-xl border border-dashed border-[#aac3b3] bg-[#f4f8f4] px-2 py-1">
-                    <span className="min-w-0 flex-1 truncate px-2 text-sm font-semibold">{def?.title ?? item.id}</span>
+                    <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#e8f1ec] text-[#287b6f]">
+                      {createElement(widgetIcon(item.id), { className: 'size-3.5', 'aria-hidden': true })}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate px-1 text-sm font-semibold">{def?.title ?? item.id}</span>
                     <button type="button" className={controlButton} disabled={busy || index === 0} onClick={() => save(moveWidget(items, item.id, 'up'))} aria-label={`Move ${def?.title ?? item.id} up`}>
                       <ArrowUp className="size-4" aria-hidden="true" />
                     </button>

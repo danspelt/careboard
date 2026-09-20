@@ -14,6 +14,7 @@ import {
   widgetDef,
   widgetsForRole,
 } from '../lib/dashboard-widgets.ts';
+import { WIDGET_ICONS } from '../lib/widget-icons.ts';
 
 test('every role has a non-empty default layout drawn from the catalog', () => {
   for (const role of ['manager', 'worker', 'viewer']) {
@@ -95,6 +96,14 @@ test('removeWidget and addWidget manage membership', () => {
   assert.equal(added[1].size, widgetDef('safetyform').defaultSize);
   assert.deepEqual(addWidget(added, 'worker', 'safetyform'), added, 'no duplicates');
   assert.deepEqual(addWidget(items, 'worker', 'funding'), items, 'cannot add a manager widget to a worker layout');
+});
+
+test('every widget id has a professional icon', () => {
+  for (const role of ['manager', 'worker', 'viewer']) {
+    for (const widget of widgetsForRole(role)) {
+      assert.ok(WIDGET_ICONS[widget.id], `${widget.id} (${role}) needs an icon`);
+    }
+  }
 });
 
 test('themeFor returns saved theme, else a stable per-member pick', () => {

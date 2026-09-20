@@ -1,0 +1,83 @@
+// Professional icon mapping for dashboard widgets. Keyed by widget id;
+// ids shared across roles reuse the same icon.
+
+import {
+  Activity,
+  BadgeCheck,
+  Bell,
+  CalendarClock,
+  CalendarDays,
+  Camera,
+  ClipboardList,
+  Clock,
+  FileCheck,
+  FileDown,
+  Gauge,
+  HeartPulse,
+  History,
+  Home,
+  Inbox,
+  LayoutGrid,
+  Link,
+  ListTodo,
+  Megaphone,
+  MessageSquareText,
+  NotebookText,
+  PenLine,
+  PieChart,
+  Shield,
+  ShieldAlert,
+  Sparkles,
+  StickyNote,
+  Timer,
+  TriangleAlert,
+  UserCheck,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
+
+export const WIDGET_ICONS: Record<string, LucideIcon> = {
+  // Shared / manager
+  hero: Home,
+  metrics: Gauge,
+  decisions: Bell,
+  priorities: ClipboardList,
+  attendance: UserCheck,
+  safety: ShieldAlert,
+  workload: Activity,
+  handofflog: History,
+  funding: Wallet,
+  review: FileCheck,
+  certs: BadgeCheck,
+  handoffs: MessageSquareText,
+  pulse: HeartPulse,
+  photos: Camera,
+  activity: History,
+  quickactions: Sparkles,
+  payroll: FileDown,
+  team: Users,
+  inboxpreview: Inbox,
+  schedulepreview: CalendarDays,
+  // Worker
+  announcements: Megaphone,
+  timeclock: Clock,
+  shiftbrief: NotebookText,
+  mytasks: ListTodo,
+  notes: StickyNote,
+  snapshot: PieChart,
+  handoffform: PenLine,
+  safetyform: TriangleAlert,
+  safetylog: Shield,
+  schedule: CalendarDays,
+  weektime: Timer,
+  quicklinks: Link,
+  // Viewer
+  onshift: Users,
+  duetoday: CalendarClock,
+};
+
+/** Icon for a widget id — falls back to a generic grid icon. */
+export function widgetIcon(id: string): LucideIcon {
+  return WIDGET_ICONS[id] ?? LayoutGrid;
+}
