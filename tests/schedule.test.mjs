@@ -41,3 +41,15 @@ test('week schedule separates overdue and unscheduled work and counts per-worker
   assert.equal(schedule.workload.length, 1);
   assert.deepEqual(schedule.workload[0], { workerId: 'active', byDay: [1, 0, 0, 0, 0, 0, 0], total: 1 });
 });
+
+test('the schedule view spans the app’s real fourteen-day horizon', () => {
+  const schedule = buildWeekSchedule([
+    task({ id: 'week-a', dueDate: '2026-09-15' }),
+    task({ id: 'week-b', dueDate: '2026-09-25' }),
+    task({ id: 'beyond', dueDate: '2026-09-28' }),
+  ], workers, '2026-09-13', 14);
+  assert.equal(schedule.days.length, 14);
+  assert.equal(schedule.days[13].date, '2026-09-26');
+  assert.ok(schedule.days.flatMap((day) => day.tasks).some((item) => item.id === 'week-b'));
+  assert.equal(schedule.days.flatMap((day) => day.tasks).some((item) => item.id === 'beyond'), false);
+});

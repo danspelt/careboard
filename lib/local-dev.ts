@@ -483,6 +483,13 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       mockState.timeEntries = (mockState.timeEntries ?? []).filter((e) => e.id !== entryId);
       break;
     }
+    case 'deleteUpload': {
+      const uploadId = requiredString(input.uploadId, 'Upload');
+      for (const chore of mockState.chores) {
+        chore.photos = (chore.photos ?? []).filter((photo) => photo.id !== uploadId);
+      }
+      break;
+    }
     case 'resetMemberPassword':
     case 'reinviteMember':
     case 'reviewClientNote':

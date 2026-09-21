@@ -7,6 +7,8 @@ import {
   canSendInboxMessage,
   canSubmitClientNote,
   canViewClientNoteImage,
+  coverageAcceptedMessage,
+  coverageAskMessage,
   normalizeClientNoteText,
   reviewClientNote,
   triageInboxMessage,
@@ -113,4 +115,15 @@ test('upload route validates and OCRs before persisting, while review remains ma
   assert.match(household, /'reviewClientNote'/);
   assert.match(household, /managerOnly\.includes\(action\)/);
   assert.match(household, /safety_alert_reviewed/);
+});
+
+test('coverage messages name the asker, the shift, and the yes', () => {
+  const ask = coverageAskMessage('Maya Singh', '2026-09-27', '08:00', '16:00', 'Family appointment');
+  assert.match(ask, /Maya Singh is looking for cover on 2026-09-27, 08:00–16:00/);
+  assert.match(ask, /Family appointment/);
+  assert.match(ask, /say yes/);
+  const accepted = coverageAcceptedMessage('Alex Chen', '2026-09-27', '08:00', '16:00');
+  assert.match(accepted, /Alex Chen said yes/);
+  assert.match(accepted, /2026-09-27/);
+  assert.match(accepted, /is covered/);
 });
