@@ -57,7 +57,7 @@ test('landing header has a prominent app icon and three labeled icon navigation 
 test('configured Google SSO has a direct sign-in form and a password alternative', async () => {
   const html = await landing({ googleEnabled: true });
   assert.match(html, /<form\b/);
-  assert.match(html, /Continue with Google/);
+  assert.match(html, /Sign in to your account/);
   assert.match(html, /Google single sign-on/);
   assert.match(html, /href="\/sign-in"[^>]*>[^<]*Use a password/);
 });
