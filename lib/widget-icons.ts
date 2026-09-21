@@ -13,6 +13,7 @@ import {
   FileCheck,
   FileDown,
   Gauge,
+  HeartHandshake,
   HeartPulse,
   History,
   Home,
@@ -61,6 +62,7 @@ export const WIDGET_ICONS: Record<string, LucideIcon> = {
   schedulepreview: CalendarDays,
   // Worker
   announcements: Megaphone,
+  coverage: HeartHandshake,
   timeclock: Clock,
   shiftbrief: NotebookText,
   mytasks: ListTodo,

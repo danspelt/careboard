@@ -41,6 +41,16 @@ test('widget ids are unique and catalog entries are well formed', () => {
   assert.ok(widgetDef('timeclock'));
 });
 
+test('the coverage widget is worker-only, full-width, and icon-mapped', () => {
+  const coverage = widgetDef('coverage');
+  assert.ok(coverage, 'coverage widget exists');
+  assert.deepEqual(coverage.roles, ['worker']);
+  assert.equal(coverage.defaultSize, 'full');
+  assert.ok(widgetsForRole('worker').some((widget) => widget.id === 'coverage'));
+  assert.ok(!widgetsForRole('manager').some((widget) => widget.id === 'coverage'));
+  assert.ok(WIDGET_ICONS.coverage, 'coverage has a professional icon');
+});
+
 test('normalizeLayout drops unknown ids, duplicates, and bad sizes', () => {
   const cleaned = normalizeLayout('worker', [
     { id: 'timeclock', size: 'half' },

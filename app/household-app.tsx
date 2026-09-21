@@ -7,7 +7,7 @@ import { createContext, createElement, useContext, useEffect, useState } from 'r
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
-import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sparkles, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, Sofa, Sparkles, Sprout, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -247,7 +247,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-7 sm:py-7">
           {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
-          {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentRole={role} /></div>}
+          {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentMember={state.viewer.id} /></div>}
           {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} mutate={mutate} busy={busy} dashboard={dashboard} />
@@ -342,27 +342,30 @@ function BellButton({ unread, onClick }: { unread: number; onClick: () => void }
     </button>
   );
 }
-function switchLocalDevRole(role: 'manager' | 'viewer' | 'worker') {
-  document.cookie = `careboard-local-role=${role}; path=/; max-age=86400`;
+type LocalPersona = 'manager' | 'worker' | 'worker2' | 'viewer';
+
+function switchLocalDevRole(persona: LocalPersona) {
+  document.cookie = `careboard-local-role=${persona}; path=/; max-age=86400`;
   window.location.reload();
 }
 
-function LocalDevRoleSwitcher({ currentRole }: { currentRole: 'manager' | 'viewer' | 'worker' }) {
-  const roles: Array<{ id: 'manager' | 'viewer' | 'worker'; label: string }> = [
-    { id: 'manager', label: 'Manager' },
-    { id: 'worker', label: 'Caregiver' },
-    { id: 'viewer', label: 'Viewer' },
+function LocalDevRoleSwitcher({ currentMember }: { currentMember: string }) {
+  const personas: Array<{ id: LocalPersona; memberId: string; label: string }> = [
+    { id: 'manager', memberId: 'member-manager', label: 'Manager · Dana' },
+    { id: 'worker', memberId: 'member-worker-1', label: 'Caregiver · Alex' },
+    { id: 'worker2', memberId: 'member-worker-2', label: 'Caregiver · Maya' },
+    { id: 'viewer', memberId: 'member-viewer-1', label: 'Viewer' },
   ];
   return (
     <div className="rounded-2xl border border-dashed border-[#c6d2c8] bg-[#f7f6f1] p-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#687873]">Local preview</p>
-      <div className="grid grid-cols-3 gap-2">
-        {roles.map(({ id, label }) => (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {personas.map(({ id, memberId, label }) => (
           <button
             key={id}
             onClick={() => switchLocalDevRole(id)}
-            aria-pressed={currentRole === id}
-            className={`rounded-xl px-2 py-2 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${currentRole === id ? 'bg-[#287b6f] text-white' : 'bg-white text-[#52645f] hover:bg-[#eef2ec]'}`}
+            aria-pressed={currentMember === memberId}
+            className={`rounded-xl px-2 py-2 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${currentMember === memberId ? 'bg-[#287b6f] text-white' : 'bg-white text-[#52645f] hover:bg-[#eef2ec]'}`}
           >
             {label}
           </button>
@@ -430,7 +433,7 @@ function StatusBadge({ status }: { status: string }) {
 function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy, dashboard }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
-  if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
+  if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
   if (section === 'tasks') {
     const query = taskQuery.trim().toLowerCase();
     const filtered = state.chores.filter((task: Chore) => {
@@ -1123,10 +1126,20 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
                 <div className="mb-2 space-y-1">
                   {dayShifts.slice(0, 2).map((shift) => {
                     const person = memberFor(shift.memberId);
-                    return <p key={shift.id} className="flex items-center gap-1.5 text-[11px] font-semibold text-[#4d6b5e]"><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: person.color }} aria-hidden="true" />{personal ? 'Your shift' : person.name.split(' ')[0]} · {formatShift(shift)}</p>;
+                    const covered = (state.scheduleRequests ?? []).find((request: any) => request.status === 'covered' && request.requestedDate === day.date && request.shiftId === shift.id);
+                    const covering = covered ? memberFor(covered.acceptedBy) : null;
+                    const shown = covering ?? person;
+                    const label = covering ? `${covering.id === state.viewer.id ? 'You' : covering.name.split(' ')[0]} for ${shift.memberId === state.viewer.id ? 'you' : person.name.split(' ')[0]}` : personal ? 'Your shift' : person.name.split(' ')[0];
+                    return <p key={shift.id} className="flex items-center gap-1.5 text-[11px] font-semibold text-[#4d6b5e]" title={covering ? `${shown.name} is covering this shift` : undefined}><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: shown.color }} aria-hidden="true" />{label} · {formatShift(shift)}</p>;
                   })}
                   {dayShifts.length > 2 && <p className="text-[11px] font-semibold text-[#4d6b5e]">+{dayShifts.length - 2} more on shift</p>}
                 </div>
+              )}
+              {personal && (state.scheduleRequests ?? []).filter((request: any) => request.status === 'covered' && request.requestedDate === day.date && request.acceptedBy === state.viewer.id && !dayShifts.some((shift) => shift.id === request.shiftId)).map((request: any) => (
+                <p key={request.id} className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-[#287b6f]"><HeartHandshake className="size-3 shrink-0" aria-hidden="true" />You cover {memberFor(request.requesterId)?.name.split(' ')[0] ?? 'a teammate'} · {request.startTime}–{request.endTime}</p>
+              ))}
+              {personal && (state.scheduleRequests ?? []).some((request: any) => request.status === 'open' && request.requesterId === state.viewer.id && request.requestedDate === day.date) && (
+                <p className="mb-2 text-[11px] font-semibold italic text-[#8b5e1f]">Cover requested · waiting on a yes</p>
               )}
               <div className="flex flex-1 flex-col gap-1.5">
                 {day.tasks.map((task) => scheduled(task, true))}
@@ -1186,12 +1199,11 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
-function AssistantView({ state, mutate }: { state: HouseholdState; mutate: (payload: Record<string, unknown>, message?: string) => Promise<unknown> }) {
+function AssistantView({ state, setSection }: { state: HouseholdState; setSection: (section: Section) => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [requesting, setRequesting] = useState(false);
   const suggestions = ['What tasks should I focus on today?', 'Which days do I have off?', 'How can I coordinate schedule coverage?'];
 
   async function ask(question: string) {
@@ -1254,19 +1266,9 @@ function AssistantView({ state, mutate }: { state: HouseholdState; mutate: (payl
           <Card><h2 className="flex items-center gap-2 font-bold"><Shield className="size-5 text-[#287b6f]" aria-hidden="true" />Privacy by role</h2><p className="mt-2 text-sm leading-6 text-[#687873]">The assistant receives only a limited view of tasks and shifts already authorized for your role. It does not receive contact details, pay, reports, settings, or audit records.</p></Card>
           <Card><h2 className="font-bold">Read-only help</h2><p className="mt-2 text-sm leading-6 text-[#687873]">To make a change, use the normal CareBoard task and schedule controls. The assistant will never make changes for you.</p></Card>
           {state.viewer.role === 'worker' && <Card>
-            <h2 className="flex items-center gap-2 font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Request a day off</h2>
-            <p className="mt-2 text-sm leading-6 text-[#687873]">Send an explicit request to your manager through the monitored CareBoard Inbox. Your schedule will not change automatically.</p>
-            <form className="mt-4 space-y-3" onSubmit={async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); setRequesting(true); setError(''); try { await mutate({ action: 'requestScheduleChange', date: data.get('date'), shiftId: data.get('shiftId'), reason: data.get('reason') }, 'Day-off request sent to your manager and the care team.'); form.reset(); } catch { /* global notice contains the mutation error */ } finally { setRequesting(false); } }}>
-              <label htmlFor="schedule-request-date" className="block text-sm font-semibold">Requested date<Input id="schedule-request-date" name="date" type="date" required className="mt-1 h-11 rounded-xl bg-white" /></label>
-              <label htmlFor="schedule-request-shift" className="block text-sm font-semibold">Shift<select id="schedule-request-shift" name="shiftId" required className={fieldClass}><option value="">Choose a shift</option>{(state.shifts ?? []).map((shift) => <option key={shift.id} value={shift.id}>{weekdayFull[shift.weekday]} · {formatShift(shift)}{shift.cycleWeek ? ` · week ${'AB'[shift.cycleWeek - 1]}` : ''}</option>)}</select></label>
-              <label htmlFor="schedule-request-reason" className="block text-sm font-semibold">What do you need?<textarea id="schedule-request-reason" name="reason" required maxLength={500} rows={3} placeholder="I need this day off because…" className={fieldClass} /></label>
-              <Button type="submit" disabled={requesting} variant="outline" className="min-h-11 w-full"><Send className="size-4" aria-hidden="true" />{requesting ? 'Sending…' : 'Request a day off'}</Button>
-            </form>
-          </Card>}
-          {state.viewer.role === 'worker' && (state.scheduleRequests ?? []).some((request) => request.status === 'open' && request.requesterId !== state.viewer.id) && <Card>
-            <h2 className="flex items-center gap-2 font-bold"><UserCheck className="size-5 text-[#287b6f]" aria-hidden="true" />Shifts needing coverage</h2>
-            <p className="mt-2 text-sm leading-6 text-[#687873]">Accepting updates the schedule immediately and notifies the manager.</p>
-            <div className="mt-4 space-y-3">{(state.scheduleRequests ?? []).filter((request) => request.status === 'open' && request.requesterId !== state.viewer.id).map((request) => <div key={request.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><p className="text-sm font-semibold">{request.requestedDate} · {request.startTime}-{request.endTime}</p><Button type="button" size="sm" className="mt-3 bg-[#287b6f]" onClick={() => void mutate({ action: 'acceptScheduleCoverage', requestId: request.id }, 'Coverage accepted. The schedule and manager dashboard were updated.')}><Check className="size-4" />Accept this shift</Button></div>)}</div>
+            <h2 className="flex items-center gap-2 font-bold"><HeartHandshake className="size-5 text-[#287b6f]" aria-hidden="true" />Need cover for a shift?</h2>
+            <p className="mt-2 text-sm leading-6 text-[#687873]">The <strong>Shift cover</strong> card on your Today dashboard asks every teammate at once — and keeps the ask up until someone says yes.</p>
+            <Button type="button" variant="outline" className="mt-3 min-h-11 w-full" onClick={() => setSection('today')}><HeartHandshake className="size-4" aria-hidden="true" />Open shift cover</Button>
           </Card>}
         </aside>
       </div>
@@ -1324,7 +1326,7 @@ function ViewerView({ section, state, setTask, dashboard }: any) {
 function WorkerView({ section, state, member, setSection, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
-  if (section === 'assistant') return <AssistantView state={state} mutate={mutate} />;
+  if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
   if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
   if (section === 'profile') return (
     <>
@@ -1579,6 +1581,7 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
       </section>
     ),
     announcements: <AnnouncementBanner items={state.announcements ?? []} />,
+    coverage: <CoverageCard state={state} member={member} mutate={mutate} busy={busy} />,
     timeclock: <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />,
     shiftbrief: (
       <>
@@ -1698,6 +1701,78 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
     ),
   };
   return <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />;
+}
+
+function CoverageCard({ state, member, mutate, busy }: any) {
+  const [asking, setAsking] = useState(false);
+  const [sending, setSending] = useState(false);
+  const requests = state.scheduleRequests ?? [];
+  const asksFromOthers = requests.filter((request: any) => request.status === 'open' && request.requesterId !== member.id);
+  const myOpen = requests.find((request: any) => request.status === 'open' && request.requesterId === member.id);
+  const myCovered = requests.filter((request: any) => request.status === 'covered' && request.requesterId === member.id).slice(0, 2);
+  const covering = requests.filter((request: any) => request.status === 'covered' && request.acceptedBy === member.id && request.requestedDate >= today()).slice(0, 3);
+  const memberFor = (id: string) => state.members.find((item: Member) => item.id === id);
+  const teammateCount = state.members.filter((item: Member) => item.role === 'worker' && item.status === 'active' && item.id !== member.id).length;
+  const askedCount = teammateCount + 1; // coworkers plus the manager
+  return (
+    <Card className="border-[#cfe3d8]">
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#e4f0e8] text-[#25654f]"><HeartHandshake className="size-5" aria-hidden="true" /></span>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-bold">Shift cover</h2>
+          <p className="text-sm text-[#687873]">Asks go to every teammate and stay up until someone says yes — first yes takes the shift.</p>
+        </div>
+      </div>
+      {asksFromOthers.length > 0 && (
+        <ul className="mt-4 space-y-3">
+          {asksFromOthers.map((request: any) => {
+            const asker = memberFor(request.requesterId);
+            return (
+              <li key={request.id} className="rounded-xl border border-[#d9c99d] bg-[#fffdf4] p-3">
+                <div className="flex items-center gap-2.5">
+                  {asker && <AvatarFor member={asker} className="size-8" />}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">{asker?.name.split(' ')[0] ?? 'A teammate'} could use a hand</p>
+                    <p className="text-xs text-[#687873]">{dateLabel(request.requestedDate)} · {request.startTime}–{request.endTime}</p>
+                  </div>
+                </div>
+                {request.reason && <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#6f5422]">“{request.reason}”</p>}
+                <Button type="button" size="sm" className="mt-3 min-h-11 w-full bg-[#287b6f]" disabled={busy} onClick={() => void mutate({ action: 'acceptScheduleCoverage', requestId: request.id }, `You said yes — ${dateLabel(request.requestedDate)} is your shift now. Thank you!`)}><Check className="size-4" aria-hidden="true" />I can take it</Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {myOpen && (
+        <div className="mt-4 rounded-xl border border-[#bcd4c9] bg-[#f2f7f1] p-3">
+          <p className="text-sm font-semibold text-[#25654f]">Your ask is out · {dateLabel(myOpen.requestedDate)} {myOpen.startTime}–{myOpen.endTime}</p>
+          <p className="mt-1 text-xs leading-5 text-[#466457]">{askedCount} teammate{askedCount === 1 ? '' : 's'} and your manager have it — it stays up until someone says yes.</p>
+          <Button type="button" variant="outline" size="sm" className="mt-3 min-h-11 w-full" disabled={busy} onClick={() => void mutate({ action: 'nudgeCoverageRequest', requestId: myOpen.id }, 'Your teammates got another nudge.')}><Bell className="size-4" aria-hidden="true" />Nudge the team again</Button>
+        </div>
+      )}
+      {myCovered.map((request: any) => (
+        <p key={request.id} className="mt-3 flex items-start gap-2 rounded-xl bg-[#eef4ec] px-3 py-2.5 text-xs font-semibold text-[#25654f]"><CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{memberFor(request.acceptedBy)?.name.split(' ')[0] ?? 'A teammate'} said yes — your {dateLabel(request.requestedDate)} shift is covered.</p>
+      ))}
+      {covering.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {covering.map((request: any) => (
+            <li key={request.id} className="flex items-center gap-2 rounded-lg border border-[#edf0eb] bg-white px-3 py-2 text-xs"><HeartHandshake className="size-3.5 shrink-0 text-[#287b6f]" aria-hidden="true" /><span className="font-semibold">You’re covering {memberFor(request.requesterId)?.name.split(' ')[0] ?? 'a teammate'}</span><span className="ml-auto tabular-nums text-[#687873]">{dateLabel(request.requestedDate)} · {request.startTime}–{request.endTime}</span></li>
+          ))}
+        </ul>
+      )}
+      {asking ? (
+        <form className="mt-4 space-y-3 rounded-xl border border-[#e2e8e1] bg-[#fafbf7] p-3" onSubmit={async (event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); setSending(true); try { await mutate({ action: 'requestScheduleChange', date: data.get('date'), shiftId: data.get('shiftId'), reason: data.get('reason') }, 'Your teammates have been asked — this stays up until someone says yes.'); form.reset(); setAsking(false); } catch { /* live notice reports the error */ } finally { setSending(false); } }}>
+          <label htmlFor="cover-date" className="block text-sm font-semibold">Shift date<Input id="cover-date" name="date" type="date" required className="mt-1 h-11 rounded-xl bg-white" /></label>
+          <label htmlFor="cover-shift" className="block text-sm font-semibold">Which shift<select id="cover-shift" name="shiftId" required className={fieldClass}><option value="">Choose a shift</option>{(state.shifts ?? []).map((shift: Shift) => <option key={shift.id} value={shift.id}>{weekdayFull[shift.weekday]} · {formatShift(shift)}{shift.cycleWeek ? ` · week ${'AB'[shift.cycleWeek - 1]}` : ''}</option>)}</select></label>
+          <label htmlFor="cover-reason" className="block text-sm font-semibold">A note for the team<textarea id="cover-reason" name="reason" required maxLength={500} rows={2} placeholder="Something came up — can anyone take it?" className={fieldClass} /></label>
+          <div className="flex gap-2"><Button type="submit" disabled={sending || busy} className="min-h-11 flex-1 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" />{sending ? 'Asking…' : 'Ask the team'}</Button><Button type="button" variant="outline" className="min-h-11" onClick={() => setAsking(false)}>Cancel</Button></div>
+          <p className="text-[11px] leading-4 text-[#687873]">Your schedule will not change automatically — it updates the moment a teammate says yes, and your manager is notified.</p>
+        </form>
+      ) : (
+        <Button type="button" variant="outline" className="mt-4 min-h-11 w-full" onClick={() => setAsking(true)}><HeartHandshake className="size-4" aria-hidden="true" />Need cover? Ask the team</Button>
+      )}
+    </Card>
+  );
 }
 
 function HandoffTask({ task, member, reasons, setTask, busy, runAction }: any) {

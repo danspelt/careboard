@@ -73,6 +73,15 @@ export function scheduleChangeRequest(date: unknown, reason: unknown, shift: { i
   return { date, reason: detail, shift, body: `Schedule change request for ${date} (${shift.startTime}-${shift.endTime}): ${detail}` };
 }
 
+/** Friendly inbox copy for the coverage loop — coworkers see the ask until someone says yes. */
+export function coverageAskMessage(name: string, date: string, startTime: string, endTime: string, reason: string) {
+  return `${name} is looking for cover on ${date}, ${startTime}–${endTime} — “${reason}”. If you can take it, say yes from your dashboard and the schedule updates itself.`;
+}
+
+export function coverageAcceptedMessage(name: string, date: string, startTime: string, endTime: string) {
+  return `${name} said yes — your ${date} shift, ${startTime}–${endTime}, is covered.`;
+}
+
 const SAFETY_RULES: Array<{ category: SafetyCategory; reason: string; patterns: RegExp[] }> = [
   {
     category: 'emergency',

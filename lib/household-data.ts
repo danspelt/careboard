@@ -11,7 +11,7 @@ import { credentialForEmail, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
 import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, toCsv, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
-import { canSendInboxMessage, reviewClientNote, scheduleChangeRequest, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
+import { canSendInboxMessage, coverageAcceptedMessage, coverageAskMessage, reviewClientNote, scheduleChangeRequest, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
 import { sendCoverageEmail, sendInviteEmail, sendManagerCoverageEmail, sendPayrollReportEmail } from '@/lib/email';
@@ -619,11 +619,16 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!manager) throw new Error('No active manager is available to receive this request.');
     const duplicate = await db.prepare(`SELECT id FROM schedule_change_requests WHERE requester_id=? AND requested_date=? LIMIT 1`).bind(actorId, request.date).first();
     if (duplicate) throw new Error('You already requested a schedule change for that date.');
+    const coworkers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(actorId).all<{ id: string }>();
+    const askBody = coverageAskMessage(actor.name, request.date, request.shift.startTime, request.shift.endTime, request.reason);
     await db.batch([
       db.prepare(`INSERT INTO schedule_change_requests(id,household_id,requester_id,shift_id,requested_date,start_time,end_time,reason,status,created_at) VALUES(?,'default',?,?,?,?,?,?,'open',?)`)
         .bind(crypto.randomUUID(), actorId, request.shift.id, request.date, request.shift.startTime, request.shift.endTime, request.reason, now),
       db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
         .bind(crypto.randomUUID(), manager.id, request.body, actorId, now),
+      ...coworkers.results.map((coworker) =>
+        db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+          .bind(crypto.randomUUID(), coworker.id, askBody, actorId, now)),
       activity(null, actorId, 'schedule_change_requested', `${actor.name} requested a schedule change for ${request.date}`, now),
     ]);
     const recipients = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(actorId).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
@@ -644,12 +649,27 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (overlappingShift) throw new Error('That shift conflicts with your existing schedule.');
     const result = await db.prepare(`UPDATE schedule_change_requests SET status='covered',accepted_by=?,accepted_at=? WHERE id=? AND status='open'`).bind(actorId, now, requestId).run();
     if ((result.meta.changes ?? 0) !== 1) throw new Error('That coverage request was already accepted.');
-    await activity(null, actorId, 'schedule_coverage_accepted', `${actor.name} accepted shift coverage for ${request.requestedDate}`, now).run();
+    await db.batch([
+      activity(null, actorId, 'schedule_coverage_accepted', `${actor.name} accepted shift coverage for ${request.requestedDate}`, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), request.requesterId, coverageAcceptedMessage(actor.name, request.requestedDate, request.startTime, request.endTime), actorId, now),
+    ]);
     const managers = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
     try { await sendManagerCoverageEmail({ recipients: managers.results.map((item) => item.email), date: request.requestedDate, startTime: request.startTime, endTime: request.endTime }); }
     catch (error) { console.error('Manager coverage email failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
     try { await sendCareBoardSms(managers.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: Coverage was accepted for ${request.requestedDate}, ${request.startTime}-${request.endTime}. Review the manager dashboard.`); }
     catch (error) { console.error('Manager coverage SMS failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
+  } else if (action === 'nudgeCoverageRequest') {
+    const requestId = requiredString(input.requestId, 'Schedule request');
+    const request = await db.prepare(`SELECT id, requester_id AS requesterId, requested_date AS requestedDate, start_time AS startTime, end_time AS endTime, status FROM schedule_change_requests WHERE id=?`).bind(requestId).first<ScheduleChangeRequest>();
+    if (!request || request.status !== 'open') throw new Error('That coverage request is no longer open.');
+    if (actor.role !== 'manager' && request.requesterId !== actorId) throw new Error('Only the requester or the manager can nudge this request.');
+    await activity(null, actorId, 'coverage_nudge_sent', `${actor.name} nudged the team about coverage for ${request.requestedDate}`, now).run();
+    const recipients = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(request.requesterId).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
+    try { await sendCoverageEmail({ recipients: recipients.results.map((item) => item.email), date: request.requestedDate, startTime: request.startTime, endTime: request.endTime }); }
+    catch (error) { console.error('Coverage nudge email delivery failed after logging the nudge.', error instanceof Error ? error.message : error); }
+    try { await sendCareBoardSms(recipients.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: A shift on ${request.requestedDate}, ${request.startTime}-${request.endTime}, still needs coverage. Sign in to CareBoard to accept.`); }
+    catch (error) { console.error('Coverage nudge SMS delivery failed after logging the nudge.', error instanceof Error ? error.message : error); }
   } else if (action === 'recordShiftHandoff') {
     const handoff = validateShiftHandoff(input, now.slice(0, 10));
     await db.batch([

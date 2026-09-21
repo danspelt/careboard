@@ -4,7 +4,7 @@ import type { AuthenticatedAccess } from '@/lib/auth-access';
 import type { HouseholdState, Member, Chore, Shift, TimeEntry, Message, AuditEntry, ActivityItem, ClientNoteSubmission } from '@/lib/household-data';
 import type { InboxItem } from '@/lib/client-notes';
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff } from '@/lib/care-safety';
-import { scheduleChangeRequest } from '@/lib/client-notes';
+import { coverageAcceptedMessage, coverageAskMessage, scheduleChangeRequest } from '@/lib/client-notes';
 import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
@@ -57,6 +57,30 @@ const worker: Member = {
   dashboardLayout: null,
 };
 
+const worker2: Member = {
+  id: 'member-worker-2',
+  name: 'Maya',
+  role: 'worker',
+  status: 'active',
+  email: 'maya@example.com',
+  color: '#986ca5',
+  createdAt: now,
+  phone: null,
+  availability: 'Weekends and evenings',
+  skillsNotes: 'Dementia care',
+  emergencyContact: null,
+  certifications: '',
+  languages: 'English',
+  profilePhotoId: null,
+  hourlyRate: 24,
+  dateOfBirth: '1995-08-02',
+  address: '45 Demo Ave, Vancouver, BC',
+  jobTitle: 'Care worker',
+  employmentStartedOn: '2025-06-01',
+  theme: 'plum',
+  dashboardLayout: null,
+};
+
 const viewerMember: Member = {
   id: 'member-viewer-1',
   name: 'Jordan',
@@ -106,7 +130,7 @@ type RawLocalState = Omit<HouseholdState, 'clientNotes' | 'clientNoteQueue' | 'i
 };
 
 const mockState: RawLocalState = {
-  members: [manager, worker, viewerMember],
+  members: [manager, worker, worker2, viewerMember],
   chores: [
     makeChore({ id: 'chore-1', title: 'Prepare breakfast', area: 'Kitchen', dueDate: today, dueTime: '08:00', priority: 'normal', status: 'open', assignedTo: worker.id }),
     makeChore({ id: 'chore-2', title: 'Take out recycling', area: 'Outside', dueDate: today, priority: 'high', status: 'open', assignedTo: null }),
@@ -116,7 +140,10 @@ const mockState: RawLocalState = {
   activity: [],
   audit: [],
   settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', updatedAt: now },
-  shifts: [{ id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', cycleWeek: 0, createdAt: now }],
+  shifts: [
+    { id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', cycleWeek: 0, createdAt: now },
+    { id: 'shift-2', memberId: worker2.id, weekday: (new Date().getDay() + 1) % 7, startTime: '09:00', endTime: '17:00', cycleWeek: 0, createdAt: now },
+  ],
   availability: [{ id: 'avail-1', memberId: worker.id, weekday: 1, startTime: '14:00', endTime: '20:00', cycleWeek: 0, createdAt: now }],
   timeEntries: [],
   certifications: [],
@@ -128,25 +155,28 @@ const mockState: RawLocalState = {
   scheduleRequests: [],
 };
 
-async function localDevRole(): Promise<Role> {
+type LocalPersona = 'manager' | 'worker' | 'worker2' | 'viewer';
+
+async function localDevPersona(): Promise<LocalPersona> {
   const cookieStore = await cookies();
   const cookie = cookieStore.get('careboard-local-role')?.value;
-  if (cookie === 'worker' || cookie === 'viewer' || cookie === 'manager') return cookie;
+  if (cookie === 'worker' || cookie === 'worker2' || cookie === 'viewer' || cookie === 'manager') return cookie;
   return 'manager';
 }
 
-function memberIdForRole(role: Role): string {
-  if (role === 'worker') return worker.id;
-  if (role === 'viewer') return viewerMember.id;
-  return manager.id;
+function memberForPersona(persona: LocalPersona): Member {
+  if (persona === 'worker') return worker;
+  if (persona === 'worker2') return worker2;
+  if (persona === 'viewer') return viewerMember;
+  return manager;
 }
 
 export async function localDevAccess(): Promise<AuthenticatedAccess> {
-  const role = await localDevRole();
+  const member = memberForPersona(await localDevPersona());
   return {
-    memberId: memberIdForRole(role),
-    email: role === 'manager' ? 'local@example.com' : role === 'worker' ? 'alex@example.com' : 'jordan@example.com',
-    role,
+    memberId: member.id,
+    email: member.email ?? 'local@example.com',
+    role: member.role,
     credentialLogin: false,
     mustChangePassword: false,
   };
@@ -468,6 +498,10 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (shift?.cycleWeek && cycleWeekOf(request.date) !== shift.cycleWeek) throw new Error('That shift does not run on that date — check the two-week schedule.');
       if ((mockState.scheduleRequests ?? []).some((item) => item.requesterId === actorId && item.requestedDate === request.date)) throw new Error('You already requested a schedule change for that date.');
       mockState.scheduleRequests = [{ id: crypto.randomUUID(), requesterId: actorId, shiftId: request.shift.id, requestedDate: request.date, startTime: request.shift.startTime, endTime: request.shift.endTime, reason: request.reason, status: 'open', acceptedBy: null, acceptedAt: null, createdAt: now2 }, ...(mockState.scheduleRequests ?? [])];
+      const actorName = mockState.members.find((item) => item.id === actorId)?.name ?? 'A teammate';
+      for (const coworker of mockState.members.filter((item) => item.role === 'worker' && item.id !== actorId && item.status === 'active')) {
+        mockState.inboxItems = [{ id: crypto.randomUUID(), workerId: coworker.id, kind: 'direct_message', body: coverageAskMessage(actorName, request.date, request.shift.startTime, request.shift.endTime, request.reason), submissionId: null, createdBy: actorId, createdAt: now2 }, ...(mockState.inboxItems ?? [])];
+      }
       break;
     }
     case 'acceptScheduleCoverage': {
@@ -477,6 +511,14 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       request.status = 'covered';
       request.acceptedBy = actorId;
       request.acceptedAt = now2;
+      const actorName = mockState.members.find((item) => item.id === actorId)?.name ?? 'A teammate';
+      mockState.inboxItems = [{ id: crypto.randomUUID(), workerId: request.requesterId, kind: 'direct_message', body: coverageAcceptedMessage(actorName, request.requestedDate, request.startTime, request.endTime), submissionId: null, createdBy: actorId, createdAt: now2 }, ...(mockState.inboxItems ?? [])];
+      break;
+    }
+    case 'nudgeCoverageRequest': {
+      const request = (mockState.scheduleRequests ?? []).find((item) => item.id === input.requestId);
+      if (!request || request.status !== 'open') throw new Error('That coverage request is no longer open.');
+      if (request.requesterId !== actorId) throw new Error('Only the requester or the manager can nudge this request.');
       break;
     }
     case 'recordShiftHandoff': {

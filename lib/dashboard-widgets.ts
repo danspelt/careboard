@@ -39,6 +39,7 @@ export const WIDGETS: WidgetDef[] = [
   // Worker widgets
   { id: 'hero', title: 'Your shift today', description: 'Welcome banner with today’s date and shift readiness.', category: 'At a glance', roles: ['worker'], defaultSize: 'full' },
   { id: 'announcements', title: 'Announcements', description: 'Broadcasts from the household manager.', category: 'At a glance', roles: ['worker', 'viewer'], defaultSize: 'full' },
+  { id: 'coverage', title: 'Shift cover asks', description: 'Teammates looking for cover, your own asks, and one-tap yes.', category: 'Team', roles: ['worker'], defaultSize: 'full' },
   { id: 'timeclock', title: 'Time clock', description: 'Clock in and out, today’s tracked time, and your shift.', category: 'Time & pay', roles: ['worker'], defaultSize: 'full' },
   { id: 'shiftbrief', title: 'Shift briefing', description: 'Attention count and today’s completion numbers.', category: 'At a glance', roles: ['worker'], defaultSize: 'full' },
   { id: 'workload', title: 'Your workload', description: 'Warnings when your schedule or task load runs hot.', category: 'Safety', roles: ['worker'], defaultSize: 'full' },
