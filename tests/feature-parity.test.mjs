@@ -28,6 +28,7 @@ const workerReachable = [
   'nudgeCoverageRequest', 'postMessage', 'recordShiftHandoff', 'reportSafetyIncident',
   'requestScheduleChange', 'saveDashboard', 'sendInboxMessage', 'setAvailability', 'start',
   'submitShiftHandoff', 'takeover', 'unclaim', 'updateProfile', 'updateTask',
+  'logMedicationDose', 'completeAppointment', 'sendKudos', 'addSupplyItem', 'markSupplyPurchased',
 ];
 
 test('every mutation action is categorized: manager-only, worker-guarded, or backend-only', () => {

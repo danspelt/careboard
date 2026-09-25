@@ -98,3 +98,62 @@ test('worker today view renders the shift handoff command center', () => {
   assert.match(html, /Shift snapshot/);
   assert.match(html, /Start task/);
 });
+
+function carePlanDashboard(role) {
+  const member = { id: 'test-member', name: 'Test Member', role, status: 'active', color: '#287b6f', profilePhotoId: null };
+  const teammate = { id: 'mate', name: 'Robin Mate', role: 'worker', status: 'active', color: '#986ca5', profilePhotoId: null };
+  const later = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  return renderToStaticMarkup(createElement(HouseholdApp, {
+    authenticatedId: member.id,
+    initialState: {
+      viewer: { id: member.id, role }, members: [member, teammate], reminders: [], activity: [], chores: [],
+      medications: [
+        { id: 'm1', name: 'Metformin', dose: '500 mg', instructions: 'With food', times: ['00:00'], prn: false, active: true },
+        { id: 'p1', name: 'Acetaminophen', dose: '500 mg', instructions: '', times: [], prn: true, active: true },
+      ],
+      medicationLogs: [],
+      careProfile: { preferredName: 'Sam', importantToKnow: 'Allergic to penicillin', howToSupport: 'Offer choices', updatedAt: null },
+      appointments: [{ id: 'a1', title: 'Dentist visit', date: later, time: '10:00', location: 'Main St', notes: '', accompanyingId: member.id, status: 'scheduled', outcome: '' }],
+      supplies: [{ id: 's1', name: 'Gloves', quantity: '1 box', urgency: 'out', addedBy: teammate.id, purchasedBy: null, purchasedAt: null, createdAt: new Date().toISOString() }],
+      kudos: role === 'viewer' ? [] : [{ id: 'k1', senderId: teammate.id, recipientId: member.id, badge: 'teamwork', message: 'Thanks for the swap', createdAt: new Date().toISOString() }],
+    },
+  }));
+}
+
+test('care-plan widgets render live data and let caregivers act', () => {
+  const html = carePlanDashboard('worker');
+  assert.match(html, /Medication round/);
+  assert.match(html, /Metformin/);
+  assert.match(html, /data-status="(?:due|overdue)"/);
+  assert.match(html, />Given</);
+  assert.match(html, /Log dose/);
+  assert.match(html, /About Sam/);
+  assert.match(html, /Allergic to penicillin/);
+  assert.match(html, /Dentist visit/);
+  assert.match(html, /You are going along/);
+  assert.match(html, /Mark done/);
+  assert.match(html, /Out now/);
+  assert.match(html, /Team shout-outs/);
+  assert.match(html, /Thanks for the swap/);
+  assert.match(html, /You received 1 shout-out/);
+});
+
+test('family viewers see the care plan read-only and never see team shout-outs', () => {
+  const html = carePlanDashboard('viewer');
+  assert.match(html, /Medication round/);
+  assert.match(html, /About Sam/);
+  assert.match(html, /Dentist visit/);
+  assert.match(html, /Gloves/);
+  assert.doesNotMatch(html, />Given</);
+  assert.doesNotMatch(html, /Log dose/);
+  assert.doesNotMatch(html, /Mark done/);
+  assert.doesNotMatch(html, /aria-label="Item"/);
+  assert.doesNotMatch(html, />Bought</);
+  assert.doesNotMatch(html, /Team shout-outs/);
+});
+
+test('manager overview includes the medication round, appointments, supplies, and shout-outs', () => {
+  const html = carePlanDashboard('manager');
+  for (const heading of ['Medication round', 'Upcoming appointments', 'Supplies list', 'Team shout-outs']) assert.match(html, new RegExp(heading));
+  assert.match(html, />Cancel</);
+});

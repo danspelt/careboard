@@ -9,6 +9,7 @@ import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import type { Role } from '@/lib/access-policy';
 import { normalizeLayout, randomThemeId, themeById } from '@/lib/dashboard-widgets';
+import { KUDOS_BADGES, canCompleteAppointment, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem } from '@/lib/care-plan';
 
 const now = new Date().toISOString();
 const today = now.slice(0, 10);
@@ -129,6 +130,9 @@ type RawLocalState = Omit<HouseholdState, 'clientNotes' | 'clientNoteQueue' | 'i
   inboxItems: InboxItem[];
 };
 
+const daysFromToday = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+
 const mockState: RawLocalState = {
   members: [manager, worker, worker2, viewerMember],
   chores: [
@@ -153,6 +157,42 @@ const mockState: RawLocalState = {
   shiftHandoffs: [],
   safetyIncidents: [],
   scheduleRequests: [],
+  medications: [
+    { id: 'med-1', name: 'Metformin', dose: '500 mg tablet', instructions: 'Give with breakfast and dinner.', times: ['08:00', '18:00'], prn: false, active: true, createdAt: now, updatedAt: now },
+    { id: 'med-2', name: 'Vitamin D', dose: '1000 IU', instructions: 'With food.', times: ['08:00'], prn: false, active: true, createdAt: now, updatedAt: now },
+    { id: 'med-3', name: 'Melatonin', dose: '3 mg', instructions: '30 minutes before bed.', times: ['21:00'], prn: false, active: true, createdAt: now, updatedAt: now },
+    { id: 'med-4', name: 'Acetaminophen', dose: '500 mg', instructions: 'For pain. No more than 4 doses in 24 hours.', times: [], prn: true, active: true, createdAt: now, updatedAt: now },
+  ],
+  medicationLogs: [
+    { id: 'medlog-1', medicationId: 'med-2', doseDate: today, scheduledTime: '08:00', outcome: 'given', note: '', loggedBy: worker.id, loggedAt: now },
+  ],
+  careProfile: {
+    preferredName: 'Sam',
+    importantToMe: 'My morning coffee on the porch, calls with my daughter Lisa on Sundays, and keeping my garden tidy.',
+    howToSupport: 'Give me time to answer — I get there. Offer choices rather than deciding for me. Knock before coming into my room.',
+    communication: 'I hear better on my left side. If I rub my forehead I am getting tired.',
+    dailyRoutine: '7:30 wake up and coffee · 8:00 breakfast and meds · 10:00 short walk · 12:30 lunch · 14:00 rest · 18:00 dinner and meds · 21:00 bedtime routine',
+    likes: 'Jazz (especially Oscar Peterson), crossword puzzles, talking about the Canucks, butter tarts.',
+    dislikes: 'Loud TV, being rushed in the shower, cold rooms. If upset, a cup of tea and quiet music helps.',
+    importantToKnow: 'Allergic to penicillin. Uses a walker for longer distances. Type 2 diabetes — watch for low blood sugar.',
+    emergencyContacts: 'Lisa (daughter) 604-555-0142 · Dr. Patel 604-555-0199 · London Drugs pharmacy 604-555-0110',
+    updatedBy: manager.id,
+    updatedAt: now,
+  },
+  appointments: [
+    { id: 'appt-1', title: 'Family doctor check-up', date: daysFromToday(2), time: '10:30', location: 'Dr. Patel, 1200 Main St', notes: 'Bring the blood sugar log.', accompanyingId: worker.id, status: 'scheduled', outcome: '', createdAt: now, updatedAt: now },
+    { id: 'appt-2', title: 'Physiotherapy', date: daysFromToday(6), time: '14:00', location: 'Community rehab centre', notes: '', accompanyingId: worker2.id, status: 'scheduled', outcome: '', createdAt: now, updatedAt: now },
+  ],
+  kudos: [
+    { id: 'kudos-1', senderId: manager.id, recipientId: worker.id, badge: 'calm', message: 'Thank you for staying so steady during yesterday’s fall scare.', createdAt: hoursAgo(20) },
+    { id: 'kudos-2', senderId: worker.id, recipientId: worker2.id, badge: 'teamwork', message: 'Thanks for covering my Saturday!', createdAt: hoursAgo(50) },
+  ],
+  supplies: [
+    { id: 'supply-1', name: 'Disposable gloves (M)', quantity: '1 box', urgency: 'out', addedBy: worker.id, purchasedBy: null, purchasedAt: null, createdAt: hoursAgo(6) },
+    { id: 'supply-2', name: 'Blood glucose test strips', quantity: '50', urgency: 'soon', addedBy: worker2.id, purchasedBy: null, purchasedAt: null, createdAt: hoursAgo(30) },
+    { id: 'supply-3', name: 'Oat milk', quantity: '2 cartons', urgency: 'normal', addedBy: worker.id, purchasedBy: null, purchasedAt: null, createdAt: hoursAgo(10) },
+    { id: 'supply-4', name: 'Hand soap refill', quantity: '', urgency: 'soon', addedBy: worker.id, purchasedBy: manager.id, purchasedAt: hoursAgo(26), createdAt: hoursAgo(48) },
+  ],
 };
 
 type LocalPersona = 'manager' | 'worker' | 'worker2' | 'viewer';
@@ -559,6 +599,84 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       incident.resolvedAt = triage.resolved ? now2 : null;
       incident.updatedAt = now2;
       pushActivity('safety_incident_triaged', `${triage.status} safety report`);
+      break;
+    }
+    case 'saveMedication':
+    case 'archiveMedication':
+    case 'saveCareProfile':
+    case 'saveAppointment':
+    case 'cancelAppointment': {
+      if (findMember(actorId).role !== 'manager') throw new Error('Only the household manager can do that.');
+      if (action === 'saveMedication') {
+        const medication = validateMedication(input);
+        const existing = (mockState.medications ?? []).find((item) => item.id === input.medicationId && item.active);
+        if (input.medicationId && !existing) throw new Error('That medication is no longer on the care plan.');
+        if (existing) Object.assign(existing, medication, { updatedAt: now2 });
+        else mockState.medications = [...(mockState.medications ?? []), { id: crypto.randomUUID(), ...medication, active: true, createdAt: now2, updatedAt: now2 }];
+        pushActivity('medication_saved', `${existing ? 'updated' : 'added'} medication ${medication.name}`);
+      } else if (action === 'archiveMedication') {
+        const medication = (mockState.medications ?? []).find((item) => item.id === input.medicationId && item.active);
+        if (!medication) throw new Error('That medication is no longer on the care plan.');
+        medication.active = false;
+        pushActivity('medication_archived', `removed ${medication.name} from the medication round`);
+      } else if (action === 'saveCareProfile') {
+        mockState.careProfile = { ...validateCareProfile(input), updatedBy: actorId, updatedAt: now2 };
+        pushActivity('care_profile_updated', 'updated the About me profile');
+      } else if (action === 'saveAppointment') {
+        const appointment = validateAppointment(input, now2.slice(0, 10));
+        const existing = (mockState.appointments ?? []).find((item) => item.id === input.appointmentId && item.status === 'scheduled');
+        if (input.appointmentId && !existing) throw new Error('That appointment is no longer scheduled.');
+        if (existing) Object.assign(existing, appointment, { updatedAt: now2 });
+        else mockState.appointments = [...(mockState.appointments ?? []), { id: crypto.randomUUID(), ...appointment, status: 'scheduled', outcome: '', createdAt: now2, updatedAt: now2 }];
+        pushActivity('appointment_saved', `${existing ? 'updated' : 'scheduled'} ${appointment.title} on ${appointment.date}`);
+      } else {
+        const appointment = (mockState.appointments ?? []).find((item) => item.id === input.appointmentId && item.status === 'scheduled');
+        if (!appointment) throw new Error('That appointment is no longer scheduled.');
+        appointment.status = 'cancelled';
+        appointment.updatedAt = now2;
+        pushActivity('appointment_cancelled', `cancelled ${appointment.title} on ${appointment.date}`);
+      }
+      break;
+    }
+    case 'logMedicationDose': {
+      const medication = (mockState.medications ?? []).find((item) => item.id === input.medicationId) ?? null;
+      const logs = (mockState.medicationLogs ?? []).filter((log) => log.medicationId === input.medicationId);
+      const dose = validateDoseLog(input, medication, now2.slice(0, 10), logs);
+      mockState.medicationLogs = [{ id: crypto.randomUUID(), medicationId: medication!.id, ...dose, loggedBy: actorId, loggedAt: now2 }, ...(mockState.medicationLogs ?? [])];
+      pushActivity('medication_logged', `logged ${medication!.name}${dose.scheduledTime ? ` (${dose.scheduledTime})` : ' (as needed)'} as ${dose.outcome}`);
+      break;
+    }
+    case 'completeAppointment': {
+      const appointment = (mockState.appointments ?? []).find((item) => item.id === input.appointmentId);
+      const actor = findMember(actorId);
+      if (!appointment || !canCompleteAppointment(actor.role, actorId, appointment)) throw new Error('Only the manager or the accompanying care worker can close this appointment.');
+      appointment.status = 'done';
+      appointment.outcome = optionalString(input.outcome, 1000);
+      appointment.updatedAt = now2;
+      pushActivity('appointment_completed', `completed ${appointment.title} on ${appointment.date}`);
+      break;
+    }
+    case 'sendKudos': {
+      const recipient = mockState.members.find((item) => item.id === input.recipientId) ?? null;
+      const kudos = validateKudos(input, actorId, recipient);
+      mockState.kudos = [{ id: crypto.randomUUID(), senderId: actorId, ...kudos, createdAt: now2 }, ...(mockState.kudos ?? [])];
+      const actorName = findMember(actorId).name;
+      mockState.inboxItems = [{ id: crypto.randomUUID(), workerId: kudos.recipientId, kind: 'direct_message', body: `${actorName} gave you a shout-out: ${KUDOS_BADGES[kudos.badge]}${kudos.message ? ` — "${kudos.message}"` : ''}`, submissionId: null, createdBy: actorId, createdAt: now2 }, ...(mockState.inboxItems ?? [])];
+      pushActivity('kudos_sent', `gave a ${KUDOS_BADGES[kudos.badge]} shout-out`);
+      break;
+    }
+    case 'addSupplyItem': {
+      const item = validateSupplyItem(input);
+      mockState.supplies = [...(mockState.supplies ?? []), { id: crypto.randomUUID(), ...item, addedBy: actorId, purchasedBy: null, purchasedAt: null, createdAt: now2 }];
+      pushActivity('supply_added', `added ${item.name} to the supplies list`);
+      break;
+    }
+    case 'markSupplyPurchased': {
+      const item = (mockState.supplies ?? []).find((entry) => entry.id === input.itemId);
+      if (!item || item.purchasedAt) throw new Error('That item was already marked as bought.');
+      item.purchasedBy = actorId;
+      item.purchasedAt = now2;
+      pushActivity('supply_purchased', `bought ${item.name}`);
       break;
     }
     default:

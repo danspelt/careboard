@@ -21,6 +21,7 @@ import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, vis
 import { cycleWeekOf } from '@/lib/shifts';
 import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
 import { normalizeLayout, randomThemeId, themeById, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
+import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMessage, emptyCareProfile, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem, visibleKudos, type Appointment, type CareProfile, type Kudos, type Medication, type MedicationLog, type SupplyItem } from '@/lib/care-plan';
 
 export type Member = {
   id: string;
@@ -124,6 +125,12 @@ export type HouseholdState = {
   shiftHandoffs?: ShiftHandoffRecord[];
   safetyIncidents?: SafetyIncident[];
   workloadWarnings?: WorkloadWarning[];
+  medications?: Medication[];
+  medicationLogs?: MedicationLog[];
+  careProfile?: CareProfile;
+  appointments?: Appointment[];
+  kudos?: Kudos[];
+  supplies?: SupplyItem[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -221,6 +228,26 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   };
 }
 
+async function loadCarePlan(db: ReturnType<typeof getD1>) {
+  const since = (days: number) => { const date = new Date(); date.setUTCDate(date.getUTCDate() - days); return date.toISOString(); };
+  const [medications, medicationLogs, profile, appointments, kudos, supplies] = await Promise.all([
+    db.prepare(`SELECT id, name, dose, instructions, times_json AS timesJson, prn, active, created_at AS createdAt, updated_at AS updatedAt FROM medications WHERE household_id='default' ORDER BY active DESC, name`).all<Omit<Medication, 'times' | 'prn' | 'active'> & { timesJson: string; prn: number; active: number }>(),
+    db.prepare(`SELECT id, medication_id AS medicationId, dose_date AS doseDate, scheduled_time AS scheduledTime, outcome, note, logged_by AS loggedBy, logged_at AS loggedAt FROM medication_logs WHERE household_id='default' AND dose_date >= ? ORDER BY logged_at DESC LIMIT 1000`).bind(since(30).slice(0, 10)).all<MedicationLog>(),
+    db.prepare(`SELECT ${CARE_PROFILE_FIELDS.map((field) => `${field.column} AS ${field.key}`).join(', ')}, updated_by AS updatedBy, updated_at AS updatedAt FROM care_profile WHERE household_id='default'`).first<CareProfile>(),
+    db.prepare(`SELECT id, title, appointment_date AS date, appointment_time AS time, location, notes, accompanying_id AS accompanyingId, status, outcome, created_at AS createdAt, updated_at AS updatedAt FROM appointments WHERE household_id='default' AND appointment_date >= ? ORDER BY appointment_date, appointment_time`).bind(since(60).slice(0, 10)).all<Appointment>(),
+    db.prepare(`SELECT id, sender_id AS senderId, recipient_id AS recipientId, badge, message, created_at AS createdAt FROM kudos WHERE household_id='default' AND created_at >= ? ORDER BY created_at DESC LIMIT 200`).bind(since(90)).all<Kudos>(),
+    db.prepare(`SELECT id, name, quantity, urgency, added_by AS addedBy, purchased_by AS purchasedBy, purchased_at AS purchasedAt, created_at AS createdAt FROM supply_items WHERE household_id='default' AND (purchased_at IS NULL OR purchased_at >= ?) ORDER BY created_at LIMIT 300`).bind(since(14)).all<SupplyItem>(),
+  ]);
+  return {
+    medications: medications.results.map(({ timesJson, prn, active, ...item }) => ({ ...item, times: JSON.parse(timesJson) as string[], prn: Boolean(prn), active: Boolean(active) })),
+    medicationLogs: medicationLogs.results,
+    careProfile: profile ?? emptyCareProfile(),
+    appointments: appointments.results,
+    kudos: kudos.results,
+    supplies: supplies.results,
+  };
+}
+
 async function rawState() {
   await ensureHouseholdData();
   await ensureAccountTable();
@@ -274,6 +301,7 @@ async function rawState() {
     .all<ProofPhoto>();
   const notes = await db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, kind, body, created_at AS createdAt FROM task_notes ORDER BY created_at`).all<TaskNote>();
   const audit = await db.prepare(`SELECT id, chore_id AS choreId, actor_id AS actorId, action, detail, created_at AS createdAt FROM audit_log ORDER BY created_at DESC LIMIT 200`).all<AuditEntry>();
+  const carePlan = await loadCarePlan(db);
   for (const chore of chores.results) {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
@@ -283,7 +311,7 @@ async function rawState() {
     try { stored = dashboardLayoutJson ? JSON.parse(dashboardLayoutJson) : null; } catch { stored = null; }
     return { ...member, dashboardLayout: stored === null ? null : normalizeLayout(member.role as DashboardRole, stored) };
   });
-  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results };
+  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results, ...carePlan };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -296,6 +324,11 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
   const clientNotes: ClientNote[] = state.clientNoteSubmissions
     .filter((note) => note.status === 'approved' && note.approvedText)
     .map((note) => ({ ...note, body: note.approvedText as string, editedDuringReview: note.approvedText !== note.ocrText }));
+  // The care plan (profile, medications, appointments, supplies) is shared with the whole household; shout-outs stay within the care team.
+  const carePlan = {
+    medications: state.medications ?? [], medicationLogs: state.medicationLogs ?? [], careProfile: state.careProfile ?? emptyCareProfile(),
+    appointments: state.appointments ?? [], supplies: state.supplies ?? [], kudos: visibleKudos(viewer.role, state.kudos ?? []),
+  };
   const remindersFor = (chores: Chore[]) =>
     chores.filter((chore) => {
       if (chore.status === 'complete' || !chore.dueDate) return false;
@@ -314,6 +347,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     safetyIncidents: state.safetyIncidents ?? [],
     workloadWarnings: buildWorkloadWarnings(state.members.filter((item) => item.role === 'worker' && item.status === 'active').map((item) => item.id), state.shifts, state.chores, today, workloadThresholds()),
     metrics: metrics(state.chores, today), reminders: remindersFor(state.chores),
+    ...carePlan,
   };
   if (viewer.role === 'viewer') {
     // Family viewers see the care plan and schedule, but not care workers' private details, audit data, or settings.
@@ -329,6 +363,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
       reminders: remindersFor(state.chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5),
       shifts: state.shifts, metrics: metrics(state.chores, today),
+      ...carePlan,
     };
   }
   const chores = visibleTasks(viewer, state.chores);
@@ -352,7 +387,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()) };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()), ...carePlan };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -544,6 +579,11 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'acknowledgeSafetyAlert',
     'triageSafetyIncident',
     'sendPayrollReport',
+    'saveMedication',
+    'archiveMedication',
+    'saveCareProfile',
+    'saveAppointment',
+    'cancelAppointment',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -715,6 +755,123 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'manager_message',?,NULL,?,?)`)
         .bind(crypto.randomUUID(), incident.reporterId, `Your safety report (${incident.category.replace('_', ' ')}, ${incident.occurredAt.slice(0, 10)}) is now ${triage.status === 'resolved' ? 'resolved' : 'being reviewed'}.${triage.followUp ? ` ${triage.followUp.slice(0, 300)}` : ''}`, actorId, now),
     ]);
+  } else if (action === 'saveMedication') {
+    const medication = validateMedication(input);
+    const medicationId = optionalString(input.medicationId, 100);
+    if (medicationId) {
+      const result = await db.prepare(`UPDATE medications SET name=?, dose=?, instructions=?, times_json=?, prn=?, updated_at=? WHERE id=? AND household_id='default' AND active=1`)
+        .bind(medication.name, medication.dose, medication.instructions, JSON.stringify(medication.times), medication.prn ? 1 : 0, now, medicationId).run();
+      if ((result.meta.changes ?? 0) !== 1) throw new Error('That medication is no longer on the care plan.');
+    } else {
+      await db.prepare(`INSERT INTO medications(id,household_id,name,dose,instructions,times_json,prn,active,created_by,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,1,?,?,?)`)
+        .bind(crypto.randomUUID(), medication.name, medication.dose, medication.instructions, JSON.stringify(medication.times), medication.prn ? 1 : 0, actorId, now, now).run();
+    }
+    await activity(null, actorId, 'medication_saved', `${medicationId ? 'updated' : 'added'} medication ${medication.name}`, now).run();
+  } else if (action === 'archiveMedication') {
+    const medicationId = requiredString(input.medicationId, 'Medication');
+    const medication = await db.prepare(`SELECT name FROM medications WHERE id=? AND household_id='default' AND active=1`).bind(medicationId).first<{ name: string }>();
+    if (!medication) throw new Error('That medication is no longer on the care plan.');
+    await db.batch([
+      db.prepare(`UPDATE medications SET active=0, updated_at=? WHERE id=?`).bind(now, medicationId),
+      activity(null, actorId, 'medication_archived', `removed ${medication.name} from the medication round`, now),
+    ]);
+  } else if (action === 'logMedicationDose') {
+    const medicationId = requiredString(input.medicationId, 'Medication');
+    const row = await db.prepare(`SELECT name, times_json AS timesJson, prn, active FROM medications WHERE id=? AND household_id='default'`).bind(medicationId).first<{ name: string; timesJson: string; prn: number; active: number }>();
+    const recent = await db.prepare(`SELECT dose_date AS doseDate, scheduled_time AS scheduledTime FROM medication_logs WHERE medication_id=? AND dose_date >= ?`).bind(medicationId, addDaysISO(now.slice(0, 10), -2)).all<{ doseDate: string; scheduledTime: string | null }>();
+    const dose = validateDoseLog(input, row ? { times: JSON.parse(row.timesJson) as string[], prn: Boolean(row.prn), active: Boolean(row.active) } : null, now.slice(0, 10), recent.results);
+    const name = row?.name ?? 'medication';
+    const statements = [
+      db.prepare(`INSERT INTO medication_logs(id,household_id,medication_id,dose_date,scheduled_time,outcome,note,logged_by,logged_at) VALUES(?,'default',?,?,?,?,?,?,?)`)
+        .bind(crypto.randomUUID(), medicationId, dose.doseDate, dose.scheduledTime, dose.outcome, dose.note, actorId, now),
+      activity(null, actorId, 'medication_logged', `logged ${name}${dose.scheduledTime ? ` (${dose.scheduledTime})` : ' (as needed)'} as ${dose.outcome}`, now),
+    ];
+    if (dose.outcome !== 'given' && actor.role !== 'manager') {
+      const managers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ id: string }>();
+      for (const manager of managers.results) {
+        statements.push(db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+          .bind(crypto.randomUUID(), manager.id, doseAlertMessage(actor.name, name, dose.scheduledTime, dose.outcome, dose.note), actorId, now));
+      }
+    }
+    try { await db.batch(statements); }
+    catch (error) {
+      if (error instanceof Error && /unique|duplicate/i.test(error.message)) throw new Error('That dose was just logged by someone else. Refresh to see it.');
+      throw error;
+    }
+  } else if (action === 'saveCareProfile') {
+    const profile = validateCareProfile(input);
+    const columns = CARE_PROFILE_FIELDS.map((field) => field.column);
+    await db.batch([
+      db.prepare(`INSERT INTO care_profile(household_id, ${columns.join(', ')}, updated_by, updated_at) VALUES('default', ${columns.map(() => '?').join(', ')}, ?, ?)
+        ON CONFLICT (household_id) DO UPDATE SET ${columns.map((column) => `${column}=excluded.${column}`).join(', ')}, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
+        .bind(...CARE_PROFILE_FIELDS.map((field) => profile[field.key]), actorId, now),
+      activity(null, actorId, 'care_profile_updated', 'updated the About me profile', now),
+    ]);
+  } else if (action === 'saveAppointment') {
+    const appointment = validateAppointment(input, now.slice(0, 10));
+    if (appointment.accompanyingId) await validAssignee(appointment.accompanyingId);
+    const appointmentId = optionalString(input.appointmentId, 100);
+    const statements: ReturnType<typeof db.prepare>[] = [];
+    if (appointmentId) {
+      const result = await db.prepare(`UPDATE appointments SET title=?, appointment_date=?, appointment_time=?, location=?, notes=?, accompanying_id=?, updated_at=? WHERE id=? AND household_id='default' AND status='scheduled'`)
+        .bind(appointment.title, appointment.date, appointment.time, appointment.location, appointment.notes, appointment.accompanyingId, now, appointmentId).run();
+      if ((result.meta.changes ?? 0) !== 1) throw new Error('That appointment is no longer scheduled.');
+    } else {
+      statements.push(db.prepare(`INSERT INTO appointments(id,household_id,title,appointment_date,appointment_time,location,notes,accompanying_id,status,outcome,created_by,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,?,'scheduled','',?,?,?)`)
+        .bind(crypto.randomUUID(), appointment.title, appointment.date, appointment.time, appointment.location, appointment.notes, appointment.accompanyingId, actorId, now, now));
+    }
+    statements.push(activity(null, actorId, 'appointment_saved', `${appointmentId ? 'updated' : 'scheduled'} ${appointment.title} on ${appointment.date}`, now));
+    if (appointment.accompanyingId) {
+      statements.push(db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'manager_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), appointment.accompanyingId, `You're accompanying the client to ${appointment.title} on ${appointment.date}${appointment.time ? ` at ${appointment.time}` : ''}${appointment.location ? ` — ${appointment.location}` : ''}.`, actorId, now));
+    }
+    await db.batch(statements);
+  } else if (action === 'cancelAppointment') {
+    const appointmentId = requiredString(input.appointmentId, 'Appointment');
+    const appointment = await db.prepare(`SELECT title, appointment_date AS date FROM appointments WHERE id=? AND household_id='default'`).bind(appointmentId).first<{ title: string; date: string }>();
+    const result = await db.prepare(`UPDATE appointments SET status='cancelled', updated_at=? WHERE id=? AND household_id='default' AND status='scheduled'`).bind(now, appointmentId).run();
+    if (!appointment || (result.meta.changes ?? 0) !== 1) throw new Error('That appointment is no longer scheduled.');
+    await activity(null, actorId, 'appointment_cancelled', `cancelled ${appointment.title} on ${appointment.date}`, now).run();
+  } else if (action === 'completeAppointment') {
+    const appointmentId = requiredString(input.appointmentId, 'Appointment');
+    const appointment = await db.prepare(`SELECT title, appointment_date AS date, status, accompanying_id AS accompanyingId FROM appointments WHERE id=? AND household_id='default'`).bind(appointmentId).first<Pick<Appointment, 'title' | 'date' | 'status' | 'accompanyingId'>>();
+    if (!appointment || !canCompleteAppointment(actor.role, actorId, appointment)) throw new Error('Only the manager or the accompanying care worker can close this appointment.');
+    const outcome = optionalString(input.outcome, 1000);
+    const statements = [
+      db.prepare(`UPDATE appointments SET status='done', outcome=?, updated_at=? WHERE id=? AND status='scheduled'`).bind(outcome, now, appointmentId),
+      activity(null, actorId, 'appointment_completed', `completed ${appointment.title} on ${appointment.date}`, now),
+    ];
+    if (actor.role !== 'manager') {
+      const managers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ id: string }>();
+      for (const manager of managers.results) {
+        statements.push(db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+          .bind(crypto.randomUUID(), manager.id, `${actor.name} finished ${appointment.title} (${appointment.date}).${outcome ? ` Notes: ${outcome.slice(0, 400)}` : ''}`, actorId, now));
+      }
+    }
+    await db.batch(statements);
+  } else if (action === 'sendKudos') {
+    const recipientId = requiredString(input.recipientId, 'Teammate');
+    const recipient = await db.prepare(`SELECT m.id, m.role, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=?`).bind(recipientId).first<{ id: string; role: Role; status: AccountStatus }>();
+    const kudos = validateKudos(input, actorId, recipient ?? null);
+    const label = KUDOS_BADGES[kudos.badge];
+    await db.batch([
+      db.prepare(`INSERT INTO kudos(id,household_id,sender_id,recipient_id,badge,message,created_at) VALUES(?,'default',?,?,?,?,?)`).bind(crypto.randomUUID(), actorId, kudos.recipientId, kudos.badge, kudos.message, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,?,?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), kudos.recipientId, actor.role === 'manager' ? 'manager_message' : 'direct_message', `${actor.name} gave you a shout-out: ${label}${kudos.message ? ` — "${kudos.message}"` : ''}`, actorId, now),
+      activity(null, actorId, 'kudos_sent', `gave a ${label} shout-out`, now),
+    ]);
+  } else if (action === 'addSupplyItem') {
+    const item = validateSupplyItem(input);
+    await db.batch([
+      db.prepare(`INSERT INTO supply_items(id,household_id,name,quantity,urgency,added_by,created_at) VALUES(?,'default',?,?,?,?,?)`).bind(crypto.randomUUID(), item.name, item.quantity, item.urgency, actorId, now),
+      activity(null, actorId, 'supply_added', `added ${item.name} to the supplies list`, now),
+    ]);
+  } else if (action === 'markSupplyPurchased') {
+    const itemId = requiredString(input.itemId, 'Supply item');
+    const item = await db.prepare(`SELECT name FROM supply_items WHERE id=? AND household_id='default'`).bind(itemId).first<{ name: string }>();
+    const result = await db.prepare(`UPDATE supply_items SET purchased_by=?, purchased_at=? WHERE id=? AND household_id='default' AND purchased_at IS NULL`).bind(actorId, now, itemId).run();
+    if (!item || (result.meta.changes ?? 0) !== 1) throw new Error('That item was already marked as bought.');
+    await activity(null, actorId, 'supply_purchased', `bought ${item.name}`, now).run();
   } else if (action === 'sendInboxMessage') {
     const recipientId = requiredString(input.recipientId, 'Recipient');
     const body = requiredString(input.body, 'Message').slice(0, 1000);

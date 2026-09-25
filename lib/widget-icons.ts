@@ -3,6 +3,7 @@
 
 import {
   Activity,
+  Award,
   BadgeCheck,
   Bell,
   CalendarClock,
@@ -13,6 +14,7 @@ import {
   FileCheck,
   FileDown,
   Gauge,
+  HandHeart,
   HeartHandshake,
   HeartPulse,
   History,
@@ -26,9 +28,12 @@ import {
   NotebookText,
   PenLine,
   PieChart,
+  Pill,
   Shield,
   ShieldAlert,
+  ShoppingCart,
   Sparkles,
+  Stethoscope,
   StickyNote,
   Timer,
   TriangleAlert,
@@ -77,6 +82,12 @@ export const WIDGET_ICONS: Record<string, LucideIcon> = {
   // Viewer
   onshift: Users,
   duetoday: CalendarClock,
+  // Care plan
+  medsround: Pill,
+  aboutme: HandHeart,
+  appointments: Stethoscope,
+  supplies: ShoppingCart,
+  kudos: Award,
 };
 
 /** Icon for a widget id — falls back to a generic grid icon. */

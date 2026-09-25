@@ -8,7 +8,7 @@ export type WidgetDef = {
   id: string;
   title: string;
   description: string;
-  category: 'At a glance' | 'Tasks' | 'Team' | 'Safety' | 'Time & pay' | 'Activity';
+  category: 'At a glance' | 'Care plan' | 'Tasks' | 'Team' | 'Safety' | 'Time & pay' | 'Activity';
   roles: DashboardRole[];
   defaultSize: WidgetSize;
 };
@@ -61,6 +61,13 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'metrics', title: 'Today’s numbers', description: 'Due today, completed today, and who is on shift.', category: 'At a glance', roles: ['viewer'], defaultSize: 'full' },
   { id: 'onshift', title: 'On shift today', description: 'Care workers scheduled for today.', category: 'Team', roles: ['viewer'], defaultSize: 'half' },
   { id: 'duetoday', title: 'Due today', description: 'Open tasks due today.', category: 'Tasks', roles: ['viewer'], defaultSize: 'half' },
+
+  // Care plan widgets (shared across roles)
+  { id: 'medsround', title: 'Medication round', description: 'Today’s scheduled doses — given, due, overdue, or refused.', category: 'Care plan', roles: ['manager', 'worker', 'viewer'], defaultSize: 'full' },
+  { id: 'aboutme', title: 'About the person', description: 'One-page profile: what matters, how to support, and key contacts.', category: 'Care plan', roles: ['worker', 'viewer'], defaultSize: 'half' },
+  { id: 'appointments', title: 'Upcoming appointments', description: 'Medical and personal appointments, and who is going along.', category: 'Care plan', roles: ['manager', 'worker', 'viewer'], defaultSize: 'half' },
+  { id: 'supplies', title: 'Supplies list', description: 'Household items running low — add one or mark it bought.', category: 'Care plan', roles: ['manager', 'worker', 'viewer'], defaultSize: 'half' },
+  { id: 'kudos', title: 'Team shout-outs', description: 'Recognize a teammate and see recent appreciation.', category: 'Team', roles: ['manager', 'worker'], defaultSize: 'half' },
 ];
 
 export function widgetsForRole(role: DashboardRole): WidgetDef[] {
