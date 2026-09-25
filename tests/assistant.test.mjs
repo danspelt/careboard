@@ -30,20 +30,23 @@ test('assistant validates bounded history and requires a final user message', ()
 test('worker assistant context excludes other workers, their shifts, contact details, and pay', () => {
   const context = assistantContext(base);
   assert.deepEqual(context.tasks.map((task) => task.id), ['mine', 'open']);
+  assert.deepEqual(context.tasks.map((task) => task.assignedTo), ['you', null]);
   assert.deepEqual(context.shifts.map((shift) => shift.id), ['a-shift']);
+  assert.deepEqual(context.shifts.map((shift) => shift.memberId), ['you']);
   assert.deepEqual(context.members, []);
+  assert.deepEqual(Object.keys(context).sort(), ['members', 'role', 'shifts', 'tasks', 'today']);
   const serialized = JSON.stringify(context);
-  for (const secret of ['private', 'Private detail', 'Bob', '111', '222']) assert.equal(serialized.includes(secret), false);
-  assert.equal(context.members.some((member) => 'phone' in member || 'hourlyRate' in member), false);
+  for (const secret of ['worker-b', 'Bob', 'Private detail', '111', '222']) assert.equal(serialized.includes(secret), false);
 });
 
 test('manager context includes operational names but strips contact, pay, reports, settings, and audit records', () => {
   const context = assistantContext({ ...base, viewer: { id: 'manager', role: 'manager' }, audit: [{ detail: 'secret audit' }], settings: { secret: true } });
   assert.deepEqual(context.tasks.map((task) => task.id), ['mine', 'open', 'private']);
   assert.deepEqual(context.members.map((member) => member.name), ['Alice', 'Bob']);
+  for (const member of context.members) assert.deepEqual(Object.keys(member).sort(), ['id', 'name', 'role']);
+  assert.deepEqual(Object.keys(context).sort(), ['members', 'role', 'shifts', 'tasks', 'today']);
   const serialized = JSON.stringify(context);
-  for (const secret of ['111', '222', 'secret audit', '"settings"']) assert.equal(serialized.includes(secret), false);
-  assert.equal(context.members.some((member) => 'phone' in member || 'hourlyRate' in member), false);
+  for (const secret of ['111', '222', 'secret audit']) assert.equal(serialized.includes(secret), false);
   assert.match(assistantInstructions(context), /informational and read-only/);
   assert.match(assistantInstructions(context), /untrusted data/);
   assert.match(assistantInstructions(context), /two-week cycle/);
