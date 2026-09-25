@@ -7,7 +7,7 @@ import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff } fr
 import { coverageAcceptedMessage, coverageAskMessage, scheduleChangeRequest } from '@/lib/client-notes';
 import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
-import type { Role } from '@/lib/access-policy';
+import { workerCan, type Role } from '@/lib/access-policy';
 import { normalizeLayout, randomThemeId, themeById } from '@/lib/dashboard-widgets';
 import { KUDOS_BADGES, canCompleteAppointment, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem } from '@/lib/care-plan';
 
@@ -255,7 +255,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
   const action = requiredString(input.action, 'Action');
   const actorId = typeof input.actorId === 'string' ? input.actorId : manager.id;
   const now2 = new Date().toISOString();
-  // Mirror the production rule so role previews behave like the real backend.
+  // Mirror the production rules so role previews behave like the real backend.
   if (actorId === viewerMember.id) throw new Error('Family viewers have read-only access.');
 
   const findChore = (id: string) => {
@@ -269,6 +269,18 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     if (!member) throw new Error('Member not found.');
     return member;
   };
+
+  const actor = findMember(actorId);
+  // Same list as the production backend — role previews enforce it identically.
+  const managerOnly = new Set([
+    'createChore', 'assign', 'unclaim', 'addMember', 'disableMember', 'reactivateMember',
+    'resetMemberPassword', 'updateHouseholdSettings', 'announce', 'setShifts', 'approveTask',
+    'reopenTask', 'inviteMember', 'reinviteMember', 'deleteTimeEntry', 'saveCertification',
+    'deleteCertification', 'reviewClientNote', 'acknowledgeSafetyAlert', 'triageSafetyIncident',
+    'sendPayrollReport', 'saveMedication', 'archiveMedication', 'saveCareProfile',
+    'saveAppointment', 'cancelAppointment',
+  ]);
+  if (managerOnly.has(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
   switch (action) {
     case 'createChore': {
@@ -302,6 +314,16 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     case 'updateTask': {
       const choreId = requiredString(input.choreId, 'Chore');
       const chore = findChore(choreId);
+      if (actor.role === 'worker' && (chore.assignedTo !== actorId || chore.status === 'complete')) throw new Error('You can only update your own active tasks.');
+      if (actor.role !== 'manager') {
+        if (typeof input.progressNotes === 'string') chore.progressNotes = input.progressNotes;
+        if (typeof input.completionNotes === 'string') chore.completionNotes = input.completionNotes;
+        if (typeof input.issueReport === 'string') chore.issueReport = input.issueReport;
+        if (typeof input.expectedCompletionAt === 'string') chore.expectedCompletionAt = input.expectedCompletionAt || null;
+        chore.issueOpen = input.issueOpen === 'on' || input.issueOpen === true || input.issueOpen === 'true';
+        pushActivity('updated', `updated ${chore.title}`);
+        break;
+      }
       if (typeof input.title === 'string') chore.title = input.title;
       if (typeof input.area === 'string') chore.area = input.area;
       if (typeof input.dueDate === 'string') chore.dueDate = input.dueDate || null;
@@ -321,42 +343,46 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     }
     case 'claim': {
       const chore = findChore(requiredString(input.choreId, 'Chore'));
-      if (chore.status === 'open' && !chore.assignedTo) {
-        chore.assignedTo = actorId;
-        pushActivity('claimed', `claimed ${chore.title}`);
-      }
+      if (!(chore.status === 'open' && !chore.assignedTo)) throw new Error('That task changed before your update. Refresh and try again.');
+      chore.assignedTo = actorId;
+      pushActivity('claimed', `claimed ${chore.title}`);
       break;
     }
     case 'start': {
       const chore = findChore(requiredString(input.choreId, 'Chore'));
-      if (chore.status === 'open' && chore.assignedTo === actorId) {
-        chore.status = 'in_progress';
-        chore.startedAt = now2;
-        pushActivity('started', `started ${chore.title}`);
-      }
+      if (!(chore.status === 'open' && (actor.role === 'manager' || chore.assignedTo === actorId))) throw new Error('That task changed before your update. Refresh and try again.');
+      chore.status = 'in_progress';
+      chore.startedAt = now2;
+      pushActivity('started', `started ${chore.title}`);
       break;
     }
     case 'complete': {
       const chore = findChore(requiredString(input.choreId, 'Chore'));
-      if (chore.status !== 'complete' && (actorId === manager.id || chore.assignedTo === actorId)) {
-        chore.status = 'complete';
-        chore.completedBy = actorId;
-        chore.completedAt = now2;
-        chore.reviewStatus = actorId === manager.id ? null : 'pending';
-        pushActivity('completed', `finished ${chore.title}`);
-      }
+      const allowed = actor.role === 'manager'
+        ? chore.status === 'open' || chore.status === 'in_progress'
+        : chore.status === 'in_progress' && chore.assignedTo === actorId;
+      if (!allowed) throw new Error('That task changed before your update. Refresh and try again.');
+      chore.status = 'complete';
+      chore.assignedTo = chore.assignedTo ?? actorId;
+      chore.completedBy = actorId;
+      chore.completedAt = now2;
+      chore.reviewStatus = actor.role === 'manager' ? null : 'pending';
+      pushActivity('completed', `finished ${chore.title}`);
       break;
     }
     case 'takeover': {
       const chore = findChore(requiredString(input.choreId, 'Chore'));
-      if (chore.status !== 'complete' && chore.assignedTo && chore.assignedTo !== actorId) {
-        chore.assignedTo = actorId;
-        chore.status = 'open';
-        chore.startedAt = null;
-        chore.notes = chore.notes ?? [];
-        chore.notes.push({ id: crypto.randomUUID(), choreId: chore.id, memberId: actorId, kind: 'progress', body: 'Took over', createdAt: now2 });
-        pushActivity('took_over', `took over ${chore.title}`);
-      }
+      if (chore.status === 'complete') throw new Error('That task is already complete.');
+      if (chore.assignedTo === actorId) throw new Error('That task is already yours.');
+      if (!chore.assignedTo) throw new Error('That task is unassigned — claim it instead.');
+      if (actor.role === 'worker' && !workerCan('takeover', actorId, chore)) throw new Error('You can only take over unfinished tasks.');
+      const previous = mockState.members.find((m) => m.id === chore.assignedTo);
+      chore.assignedTo = actorId;
+      chore.status = 'open';
+      chore.startedAt = null;
+      chore.notes = chore.notes ?? [];
+      chore.notes.push({ id: crypto.randomUUID(), choreId: chore.id, memberId: actorId, kind: 'progress', body: `Took over${previous ? ` from ${previous.name}` : ''}`, createdAt: now2 });
+      pushActivity('took_over', `took over ${chore.title}`);
       break;
     }
     case 'assign': {
@@ -482,6 +508,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     case 'setShifts':
     case 'setAvailability': {
       const memberId = requiredString(input.memberId, 'Member');
+      if (action === 'setAvailability' && actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only update your own availability.');
       const raw = typeof input.shifts === 'string' ? input.shifts : typeof input.windows === 'string' ? input.windows : '[]';
       const rows: Array<{ weekday: number; startTime: string; endTime: string; cycleWeek?: number }> = JSON.parse(raw);
       const target: Shift[] = rows.map((row, index) => ({ id: `${action}-${memberId}-${index}`, memberId, weekday: row.weekday, startTime: row.startTime, endTime: row.endTime, cycleWeek: row.cycleWeek ?? 0, createdAt: now2 }));
@@ -510,19 +537,30 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       mockState.certifications = (mockState.certifications ?? []).filter((c) => c.id !== id);
       break;
     }
-    case 'clockIn': {
-      const entry: TimeEntry = { id: crypto.randomUUID(), memberId: actorId, startedAt: now2, endedAt: null, createdAt: now2 };
-      mockState.timeEntries = [entry, ...(mockState.timeEntries ?? [])];
-      break;
-    }
+    case 'clockIn':
     case 'clockOut': {
-      const open = (mockState.timeEntries ?? []).find((e) => e.memberId === actorId && !e.endedAt);
-      if (open) open.endedAt = now2;
+      const memberId = typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
+      if (actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only track your own time.');
+      const target = findMember(memberId);
+      if (target.role !== 'worker' || target.status !== 'active') throw new Error('Choose an active care worker.');
+      const open = (mockState.timeEntries ?? []).find((e) => e.memberId === memberId && !e.endedAt);
+      if (action === 'clockIn') {
+        if (open) throw new Error(`${target.name} is already clocked in.`);
+        const entry: TimeEntry = { id: crypto.randomUUID(), memberId, startedAt: now2, endedAt: null, createdAt: now2 };
+        mockState.timeEntries = [entry, ...(mockState.timeEntries ?? [])];
+        pushActivity('clocked_in', `clocked in ${target.name}`);
+      } else {
+        if (!open) throw new Error(`${target.name} is not clocked in.`);
+        open.endedAt = now2;
+        pushActivity('clocked_out', `clocked out ${target.name}`);
+      }
       break;
     }
     case 'deleteTimeEntry': {
       const entryId = requiredString(input.entryId, 'Time entry');
+      const before = (mockState.timeEntries ?? []).length;
       mockState.timeEntries = (mockState.timeEntries ?? []).filter((e) => e.id !== entryId);
+      if (mockState.timeEntries.length !== before - 1) throw new Error('Time entry not found.');
       break;
     }
     case 'deleteUpload': {

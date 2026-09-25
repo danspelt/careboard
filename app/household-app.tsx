@@ -17,7 +17,7 @@ import type { Chore, HouseholdState, Member, Message } from '@/lib/household-dat
 import { attentionReasons, buildShiftHandoff } from '@/lib/shift-handoff';
 import { incidentCategoryLabels, incidentSeverityLabels } from '@/lib/care-safety';
 import { buildManagerCommandCenter } from '@/lib/manager-command-center';
-import { buildWeekSchedule } from '@/lib/schedule';
+import { buildWeekSchedule, nextTaskAction, workerDayPlan } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding } from '@/lib/onboarding';
@@ -1084,10 +1084,94 @@ function MoreManager({ state, mutate, busy }: any) {
   );
 }
 
-function ScheduleView({ state, workers, personal = false, readOnly = false, setTask, setCreateOpen, mutate, busy }: any) {
+function MyScheduleView({ state, member, setTask, mutate, busy }: any) {
+  const date = today();
+  const dayPlan = workerDayPlan<Chore>(state.chores, member.id, date);
+  const comingUp = buildWeekSchedule<Chore>(state.chores, [], date, 7).days.slice(1)
+    .map((day) => ({
+      ...day,
+      tasks: day.tasks.filter((task) => task.assignedTo === member.id || (task.status === 'open' && task.assignedTo === null)),
+    }))
+    .filter((day) => day.tasks.length > 0 || shiftsForDay(state.shifts ?? [], day.date).some((shift) => shift.memberId === member.id));
+  const memberFor = (id: string | null) => state.members.find((item: Member) => item.id === id);
+  const myShiftFor = (day: string) => (state.shifts ?? []).find((shift: Shift) => shift.memberId === member.id && shiftsForDay([shift], day).length > 0) ?? null;
+  const coveringToday = (state.scheduleRequests ?? []).filter((request: any) => request.status === 'covered' && request.requestedDate === date && request.acceptedBy === member.id);
+  const askedToday = (state.scheduleRequests ?? []).some((request: any) => request.status === 'open' && request.requesterId === member.id && request.requestedDate === date);
+  const unscheduled = state.chores.filter((task: Chore) => task.status !== 'complete' && task.dueDate === null && (task.assignedTo === member.id || task.assignedTo === null));
+  const runAction = async (event: React.MouseEvent, task: Chore, action: 'claim' | 'start' | 'complete') => {
+    event.stopPropagation();
+    try {
+      await mutate({ action, choreId: task.id }, action === 'claim' ? `${task.title} claimed.` : action === 'start' ? `${task.title} started.` : `${task.title} completed.`);
+    } catch { /* live notice reports the error */ }
+  };
+  const taskRow = (task: Chore, note?: string) => {
+    const action = nextTaskAction(task, member.id);
+    return (
+      <div key={task.id} className={`flex items-center gap-3 rounded-xl border p-3 ${task.status === 'complete' ? 'border-[#e2e8e1] bg-[#f4f7f2] opacity-70' : task.issueOpen ? 'border-[#eccab6] bg-[#fdf3ec]' : 'border-[#dfe5dc] bg-white'}`}>
+        <span className="w-12 shrink-0 text-xs font-semibold tabular-nums text-[#52645f]">{task.dueTime ?? '—'}</span>
+        <button onClick={() => setTask(task)} className="min-w-0 flex-1 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+          <span className={`block truncate text-sm font-semibold ${task.status === 'complete' ? 'line-through' : ''}`}>{task.title}</span>
+          <span className="block truncate text-xs text-[#687873]">{note ?? (task.assignedTo === member.id ? 'Yours' : 'Open to claim')}{task.issueOpen ? ' · issue open' : ''}</span>
+        </button>
+        {task.status === 'complete' && <Check className="size-4 shrink-0 text-[#216b61]" aria-label="Done" />}
+        {action === 'claim' && <Button size="sm" variant="outline" disabled={busy} onClick={(e) => runAction(e, task, 'claim')}><UserCheck className="size-4" />Claim</Button>}
+        {action === 'start' && <Button size="sm" disabled={busy} onClick={(e) => runAction(e, task, 'start')} className="bg-[#287b6f]"><Play className="size-4" />Start</Button>}
+        {action === 'complete' && <Button size="sm" disabled={busy} onClick={(e) => runAction(e, task, 'complete')} className="bg-[#287b6f]"><Check className="size-4" />Done</Button>}
+      </div>
+    );
+  };
+  const todayShift = myShiftFor(date);
+  return (
+    <>
+      <Title title="My schedule" text="Clock in, work through today, and see what’s coming." />
+      <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />
+      <Card className="mt-6">
+        <h2 className="flex items-center gap-2 text-lg font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Today — {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2>
+        <p className="mt-1 text-sm text-[#687873]">{todayShift ? `Your shift ${formatShift(todayShift)}` : 'No shift scheduled today'}</p>
+        {coveringToday.map((request: any) => (
+          <p key={request.id} className="mt-2 flex items-center gap-1.5 rounded-xl bg-[#eef4ef] p-2.5 text-xs font-semibold text-[#287b6f]"><HeartHandshake className="size-3.5 shrink-0" aria-hidden="true" />You’re covering {memberFor(request.requesterId)?.name.split(' ')[0] ?? 'a teammate'} · {request.startTime}–{request.endTime}</p>
+        ))}
+        {askedToday && <p className="mt-2 text-xs font-semibold italic text-[#8b5e1f]">Cover requested · waiting on a yes</p>}
+        <div className="mt-4 space-y-2">
+          {dayPlan.carriedOver.map((task) => taskRow(task, `Still needs doing — was due ${dateLabel(task.dueDate)}`))}
+          {dayPlan.today.map((task) => taskRow(task))}
+          {!dayPlan.carriedOver.length && !dayPlan.today.length && <EmptyHandoff icon={CheckCircle2} title="All clear today" text="Nothing is due for you today. Check coming up below to get ahead." compact />}
+        </div>
+      </Card>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CalendarDays className="size-5 text-[#287b6f]" aria-hidden="true" />Coming up</h2>
+          <p className="text-sm text-[#687873]">Your next six days — tap a task for details</p>
+          <div className="mt-4 space-y-4">
+            {comingUp.length ? comingUp.map((day) => {
+              const shift = myShiftFor(day.date);
+              const label = day.date === addDaysISO(date, 1) ? 'Tomorrow' : new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+              return (
+                <section key={day.date} aria-label={`Schedule for ${day.date}`}>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#52645f]">{label}{shift ? ` · ${formatShift(shift)}` : ''}</p>
+                  <div className="mt-1.5 space-y-1.5">
+                    {day.tasks.length ? day.tasks.map((task) => taskRow(task)) : <p className="rounded-xl border border-dashed border-[#d7dfd7] p-3 text-center text-xs text-[#8a978f]">On shift — no tasks due</p>}
+                  </div>
+                </section>
+              );
+            }) : <EmptyHandoff icon={CalendarDays} title="Nothing coming up" text="The next six days are clear for you." compact />}
+          </div>
+        </Card>
+        <Card>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Not scheduled yet</h2>
+          <p className="text-sm text-[#687873]">Open work without a date — claim it or tap to pick a day</p>
+          <div className="mt-4 space-y-2">
+            {unscheduled.length ? unscheduled.map((task: Chore) => taskRow(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing unscheduled" text="Every open task has a due date." compact />}
+          </div>
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function ScheduleView({ state, workers, readOnly = false, setTask, setCreateOpen, mutate, busy }: any) {
   const schedule = buildWeekSchedule<Chore>(state.chores, workers, today(), 14);
-  const plan = personal || readOnly ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 14, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
-  const claimable = schedule.days.flatMap((day) => day.tasks).filter((task) => task.assignedTo === null && task.status === 'open');
+  const plan = readOnly ? [] : suggestAssignments<Chore>(state.chores, workers, today(), 14, { shifts: state.shifts ?? [], availability: state.availability ?? [] });
   const [assigning, setAssigning] = useState(false);
   async function autoAssign() {
     setAssigning(true);
@@ -1115,7 +1199,7 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
   };
   return (
     <>
-      <Title title={personal ? 'My two-week schedule' : 'Two-week schedule'} text={personal ? 'Your assignments and work you can claim for the next two weeks.' : readOnly ? 'Fourteen days of household work and who is on shift.' : 'Fourteen days of household work — reschedule or reassign any task from its details.'} action={personal || readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
+      <Title title="Two-week schedule" text={readOnly ? 'Fourteen days of household work and who is on shift.' : 'Fourteen days of household work — reschedule or reassign any task from its details.'} action={readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
           <h2 className="flex items-center gap-2 text-lg font-bold"><AlertTriangle className="size-5 text-[#8b4e2c]" aria-hidden="true" />Overdue — needs rescheduling</h2>
@@ -1144,17 +1228,11 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
                     const covered = (state.scheduleRequests ?? []).find((request: any) => request.status === 'covered' && request.requestedDate === day.date && request.shiftId === shift.id);
                     const covering = covered ? memberFor(covered.acceptedBy) : null;
                     const shown = covering ?? person;
-                    const label = covering ? `${covering.id === state.viewer.id ? 'You' : covering.name.split(' ')[0]} for ${shift.memberId === state.viewer.id ? 'you' : person.name.split(' ')[0]}` : personal ? 'Your shift' : person.name.split(' ')[0];
+                    const label = covering ? `${covering.id === state.viewer.id ? 'You' : covering.name.split(' ')[0]} for ${shift.memberId === state.viewer.id ? 'you' : person.name.split(' ')[0]}` : person.name.split(' ')[0];
                     return <p key={shift.id} className="flex items-center gap-1.5 text-[11px] font-semibold text-[#4d6b5e]" title={covering ? `${shown.name} is covering this shift` : undefined}><span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: shown.color }} aria-hidden="true" />{label} · {formatShift(shift)}</p>;
                   })}
                   {dayShifts.length > 2 && <p className="text-[11px] font-semibold text-[#4d6b5e]">+{dayShifts.length - 2} more on shift</p>}
                 </div>
-              )}
-              {personal && (state.scheduleRequests ?? []).filter((request: any) => request.status === 'covered' && request.requestedDate === day.date && request.acceptedBy === state.viewer.id && !dayShifts.some((shift) => shift.id === request.shiftId)).map((request: any) => (
-                <p key={request.id} className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-[#287b6f]"><HeartHandshake className="size-3 shrink-0" aria-hidden="true" />You cover {memberFor(request.requesterId)?.name.split(' ')[0] ?? 'a teammate'} · {request.startTime}–{request.endTime}</p>
-              ))}
-              {personal && (state.scheduleRequests ?? []).some((request: any) => request.status === 'open' && request.requesterId === state.viewer.id && request.requestedDate === day.date) && (
-                <p className="mb-2 text-[11px] font-semibold italic text-[#8b5e1f]">Cover requested · waiting on a yes</p>
               )}
               <div className="flex flex-1 flex-col gap-1.5">
                 {day.tasks.map((task) => scheduled(task, true))}
@@ -1166,15 +1244,6 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
         })}
       </div>
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        {personal ? (
-        <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Open to claim</h2>
-          <p className="text-sm text-[#687873]">Unassigned work due in the next two weeks — open one to claim it</p>
-          <div className="mt-4 space-y-2">
-            {claimable.length ? claimable.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing to claim" text="All scheduled work is already assigned." compact />}
-          </div>
-        </Card>
-        ) : (
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Users className="size-5 text-[#287b6f]" aria-hidden="true" />Care worker load — next two weeks</h2>
           <p className="text-sm text-[#687873]">Assigned open tasks per day for each active care worker</p>
@@ -1199,9 +1268,8 @@ function ScheduleView({ state, workers, personal = false, readOnly = false, setT
             }) : <EmptyHandoff icon={Users} title="No active care workers" text="Add a care worker to start balancing the weekly load." compact />}
           </div>
         </Card>
-        )}
         <Card>
-          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />{personal ? 'Your unscheduled work' : 'Unscheduled work'}</h2>
+          <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDot className="size-5 text-[#287b6f]" aria-hidden="true" />Unscheduled work</h2>
           <p className="text-sm text-[#687873]">Open tasks without a due date — open one to pick a day</p>
           <div className="mt-4 space-y-2">
             {schedule.unscheduled.length ? schedule.unscheduled.map((task) => scheduled(task)) : <EmptyHandoff icon={CheckCircle2} title="Nothing unscheduled" text="Every open task has a due date." compact />}
@@ -1347,7 +1415,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
-  if (section === 'schedule') return <ScheduleView state={state} workers={[]} personal setTask={setTask} />;
+  if (section === 'schedule') return <MyScheduleView state={state} member={member} setTask={setTask} mutate={mutate} busy={busy} />;
   if (section === 'profile') return (
     <>
       <Title title="Your profile" text="You control your contact, availability, languages, and profile photo." />

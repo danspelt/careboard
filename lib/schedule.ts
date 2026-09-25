@@ -27,6 +27,29 @@ function orderTasks<T extends ScheduleTask>(tasks: T[]) {
   );
 }
 
+export type TaskAction = 'claim' | 'start' | 'complete';
+
+/** The single next thing a caregiver can do with a task — mirrors the claim → start → complete guards in the backend. */
+export function nextTaskAction<T extends ScheduleTask>(task: T, memberId: string): TaskAction | null {
+  if (task.status === 'complete') return null;
+  if (task.assignedTo === null) return task.status === 'open' ? 'claim' : null;
+  if (task.assignedTo !== memberId) return null;
+  if (task.status === 'open') return 'start';
+  if (task.status === 'in_progress') return 'complete';
+  return null;
+}
+
+/** A caregiver's day: their unfinished work carried over from earlier days, plus today's tasks (theirs and claimable). */
+export function workerDayPlan<T extends ScheduleTask>(tasks: T[], memberId: string, date: string) {
+  const open = tasks.filter((task) => task.status !== 'complete');
+  return {
+    carriedOver: orderTasks(open.filter((task) => task.assignedTo === memberId && task.dueDate !== null && task.dueDate < date)),
+    today: orderTasks(
+      tasks.filter((task) => task.dueDate === date && (task.assignedTo === memberId || (task.status === 'open' && task.assignedTo === null))),
+    ),
+  };
+}
+
 export function buildWeekSchedule<T extends ScheduleTask>(tasks: T[], workers: ScheduleWorker[], startDate: string, dayCount = 7) {
   const dates = Array.from({ length: dayCount }, (_, index) => dayOffset(startDate, index));
   const open = tasks.filter((task) => task.status !== 'complete');
