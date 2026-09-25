@@ -91,7 +91,7 @@ for (const role of ['manager', 'worker']) {
 
 test('worker today view renders the shift handoff command center', () => {
   const html = dashboard('worker');
-  assert.match(html, /Shift handoff for Test/);
+  assert.match(html, /Ready for your shift, Test/);
   assert.match(html, /Priority briefing/);
   assert.match(html, /Today’s assignments/);
   assert.match(html, /Latest handoff notes/);

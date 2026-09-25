@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import { runInThisContext } from 'node:vm';
 import { test } from 'node:test';
-import { suggestAssignments } from '../lib/auto-assign.ts';
+import ts from 'typescript';
+
+const root = new URL('../', import.meta.url);
+const require = createRequire(import.meta.url);
+const modules = new Map();
+function loadModule(path) {
+  if (modules.has(path)) return modules.get(path).exports;
+  const loaded = { exports: {} };
+  modules.set(path, loaded);
+  const filename = fileURLToPath(new URL(path, root));
+  const { outputText } = ts.transpileModule(readFileSync(filename, 'utf8'), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  });
+  const localRequire = (specifier) => specifier.startsWith('@/lib/') ? loadModule(`${specifier.slice(2)}.ts`) : require(specifier);
+  runInThisContext(`(function(require, module, exports) {${outputText}\n})`, { filename })(localRequire, loaded, loaded.exports);
+  return loaded.exports;
+}
+const { suggestAssignments } = loadModule('lib/auto-assign.ts');
 
 const workers = [{ id: 'a', status: 'active' }, { id: 'b', status: 'active' }, { id: 'off', status: 'disabled' }];
 const task = (overrides = {}) => ({ id: crypto.randomUUID(), dueDate: '2026-09-14', status: 'open', assignedTo: null, ...overrides });

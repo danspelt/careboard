@@ -14,13 +14,20 @@ export async function GET(request: Request) {
   const to = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get('to') ?? '') ? searchParams.get('to')! : today;
   const memberId = searchParams.get('memberId') ?? '';
   const db = getD1();
-  const member = await db.prepare("SELECT name, hourly_rate AS hourlyRate FROM members WHERE id=? AND role='worker'").bind(memberId).first<{ name: string; hourlyRate: number | null }>();
+  const member = await db.prepare("SELECT name, hourly_rate AS hourlyRate, job_title AS jobTitle, employment_started_on AS employmentStartedOn, phone FROM members WHERE id=? AND role='worker'").bind(memberId).first<{ name: string; hourlyRate: number | null; jobTitle: string | null; employmentStartedOn: string | null; phone: string | null }>();
   if (!member) return new Response(null, { status: 404 });
   const entries = await db
     .prepare(`SELECT started_at AS startedAt, ended_at AS endedAt FROM time_entries WHERE member_id=? AND started_at >= ? AND started_at <= ? ORDER BY started_at`)
     .bind(memberId, `${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`)
     .all<{ startedAt: string; endedAt: string | null }>();
-  const rows: unknown[][] = [['Date', 'Clock in (UTC)', 'Clock out (UTC)', 'Hours', 'Rate', 'Amount']];
+  const rows: unknown[][] = [
+    ['Employee', member.name],
+    ['Job title', member.jobTitle ?? ''],
+    ['Employment start date', member.employmentStartedOn ?? ''],
+    ['Pay period', `${from} to ${to}`],
+    [],
+    ['Date', 'Clock in (UTC)', 'Clock out (UTC)', 'Hours', 'Rate', 'Amount'],
+  ];
   let totalHours = 0;
   for (const entry of entries.results) {
     const end = entry.endedAt ?? new Date().toISOString();

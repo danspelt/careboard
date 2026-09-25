@@ -58,6 +58,10 @@ export async function GET(request: Request) {
     member.status,
     member.createdAt,
     member.profilePhotoId ? 'yes' : 'no',
+    member.jobTitle ?? '',
+    member.employmentStartedOn ?? '',
+    member.dateOfBirth ?? '',
+    member.address ?? '',
   ]);
 
   const rows: unknown[][] = [

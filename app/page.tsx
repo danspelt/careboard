@@ -1,15 +1,27 @@
 import Link from 'next/link';
-import { ArrowRight, BedDouble, Bell, Check, ClipboardCheck, Clock3, FileCheck2, HeartHandshake, House, LockKeyhole, LogIn, ShieldCheck, Sprout, Users } from 'lucide-react';
+import { ArrowRight, BadgeCheck, BedDouble, Bell, CalendarDays, Check, ClipboardCheck, Clock3, FileCheck2, FileDown, HeartHandshake, House, LayoutGrid, LockKeyhole, LogIn, MessageSquareText, Palette, ShieldAlert, ShieldCheck, Sparkles, Sprout, Timer, Users } from 'lucide-react';
 import { auth } from '@/auth';
 import { BrandIcon } from '@/components/brand-icon';
 
 const focusClass = 'focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#287b6f]';
-const primaryClass = `inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#246f63] px-5 py-3 text-sm font-semibold text-white shadow-[0_4px_0_#194e46] transition hover:bg-[#1d5b51] active:translate-y-px sm:w-auto ${focusClass}`;
+const primaryClass = `lp-sheen inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#246f63] px-6 py-3 text-sm font-semibold text-white shadow-[0_4px_0_#194e46,0_12px_28px_rgba(36,111,99,.28)] transition hover:bg-[#1d5b51] active:translate-y-px sm:w-auto ${focusClass}`;
+
 const steps = [
   { icon: ClipboardCheck, title: 'Make a plan', text: 'Assign household tasks, set recurring schedules, and keep due dates and reminders in one place.' },
   { icon: HeartHandshake, title: 'Share the care', text: 'Care workers see their assignments and available work. Add progress notes, flag issues, and share photos.' },
   { icon: FileCheck2, title: 'Know what’s done', text: 'Managers review completed work, coordinate the team, and export monthly reports. Less chasing, more clarity.' },
 ];
+
+const features = [
+  { icon: LayoutGrid, title: 'Widget dashboards', text: 'Every card on your dashboard is a widget — reorder, resize, and restyle it until it feels like yours.', tint: 'bg-[#e8f1ec] text-[#287b6f]' },
+  { icon: CalendarDays, title: 'Two-week schedules', text: 'Alternating Week A / Week B shifts handled natively — set the pattern once and it just rolls.', tint: 'bg-[#e4eef8] text-[#2b6cb0]' },
+  { icon: Timer, title: 'Time clock', text: 'One tap to clock in, one tap to clock out. Hours, breaks, and totals tracked automatically.', tint: 'bg-[#f1e8f5] text-[#7a4e8a]' },
+  { icon: FileDown, title: 'Bookkeeper reports', text: 'A payroll CSV your bookkeeper actually wants — emailed automatically every two weeks.', tint: 'bg-[#f6efdf] text-[#9a6a24]' },
+  { icon: ShieldAlert, title: 'Safety reporting', text: 'Incidents and near-misses go straight to the manager — private, triaged, and followable.', tint: 'bg-[#f8e8ee] text-[#b04e6a]' },
+  { icon: MessageSquareText, title: 'Shift handoffs', text: 'Structured end-of-shift notes so the next caregiver picks up exactly where you left off.', tint: 'bg-[#e6f1e5] text-[#3f7a4e]' },
+];
+
+const ticker = ['Shift handoffs', 'Safety reports', 'Time clock', 'Payroll CSV', 'Widget library', 'Colour themes', 'Two-week shifts', 'Certification alerts', 'CSIL funding', 'Workload signals', 'Proof photos', 'Coverage requests'];
 
 function CareIllustration() {
   return <svg viewBox="0 0 480 174" width="480" height="174" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" className="mx-auto h-auto w-full max-w-md">
@@ -39,31 +51,49 @@ function CareIllustration() {
   </svg>;
 }
 
+function FloatChip({ icon: Icon, text, className = '', delay = '0s' }: { icon: typeof Check; text: string; className?: string; delay?: string }) {
+  return (
+    <span className={`lp-float absolute z-10 hidden items-center gap-2 rounded-2xl border border-[#d8e3d8] bg-white/95 px-3.5 py-2 text-xs font-semibold text-[#203c34] shadow-[0_10px_28px_rgba(32,49,45,.12)] backdrop-blur lg:inline-flex ${className}`} style={{ '--d': delay } as React.CSSProperties}>
+      <Icon className="size-4 text-[#287b6f]" aria-hidden="true" />{text}
+    </span>
+  );
+}
+
 function ExampleBoard() {
-  return <figure className="relative mx-auto w-full max-w-lg rounded-[28px] border border-[#d8e3d8] bg-[#eaf0e6] p-4 sm:p-6">
-    <div className="mb-2 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-[.15em] text-[#466457]"><span>A little teamwork goes a long way</span><HeartHandshake className="ml-2 size-4" aria-hidden="true" /></div>
-    <CareIllustration />
-    <div className="relative -mt-1 rounded-2xl border border-[#d7e0d6] bg-[#fffefa] p-4 shadow-[0_12px_30px_rgba(32,49,45,.07)] sm:p-5">
-      <div className="flex items-center justify-between gap-3 border-b border-[#e5e9e0] pb-4">
-        <div className="flex items-center gap-2.5"><BrandIcon size={32} /><div><h2 className="text-sm font-bold">Today at home</h2><p className="mt-0.5 text-xs text-[#53685f]">A clear plan for your care team</p></div></div>
-        <span className="hidden rounded-full bg-[#edf3e9] px-2.5 py-1 text-[10px] font-semibold text-[#466457] min-[380px]:inline-flex">Example board</span>
+  return <figure className="relative mx-auto w-full max-w-lg xl:max-w-xl">
+    <FloatChip icon={Clock3} text="Maya clocked in" className="-left-6 top-16" delay="0.4s" />
+    <FloatChip icon={MessageSquareText} text="Handoff recorded" className="-right-5 top-36" delay="1.2s" />
+    <FloatChip icon={FileDown} text="Payroll sent to bookkeeper" className="-left-8 bottom-10" delay="2s" />
+    <FloatChip icon={BadgeCheck} text="Cert renewed" className="-right-4 bottom-24" delay="2.8s" />
+    <div className="rounded-[28px] border border-[#d8e3d8] bg-[#eaf0e6]/80 p-4 shadow-[0_24px_60px_rgba(32,49,45,.12)] backdrop-blur sm:p-6">
+      <div className="mb-2 flex items-center justify-between px-1 text-[10px] font-semibold uppercase tracking-[.15em] text-[#466457]"><span>A little teamwork goes a long way</span><HeartHandshake className="ml-2 size-4" aria-hidden="true" /></div>
+      <CareIllustration />
+      <div className="relative -mt-1 rounded-2xl border border-[#d7e0d6] bg-[#fffefa] p-4 shadow-[0_12px_30px_rgba(32,49,45,.07)] sm:p-5">
+        <div className="flex items-center justify-between gap-3 border-b border-[#e5e9e0] pb-4">
+          <div className="flex items-center gap-2.5"><BrandIcon size={32} /><div><h2 className="text-sm font-bold">Today at home</h2><p className="mt-0.5 text-xs text-[#53685f]">A clear plan for your care team</p></div></div>
+          <span className="hidden rounded-full bg-[#edf3e9] px-2.5 py-1 text-[10px] font-semibold text-[#466457] min-[380px]:inline-flex">Example board</span>
+        </div>
+        <ul className="divide-y divide-[#e7ebe4]">
+          {[
+            { icon: Check, title: 'Fresh linens', detail: 'Bedroom · Completed by Maya', status: 'Done', tone: 'bg-[#e4f0e8] text-[#25654f]' },
+            { icon: BedDouble, title: 'Tidy the guest room', detail: 'Bedroom · Assigned to Alex', status: 'In progress', tone: 'bg-[#fbefd9] text-[#81571f]' },
+            { icon: Sprout, title: 'Water the plants', detail: 'Living room · Available to claim', status: 'Open', tone: 'bg-[#edf1ef] text-[#486156]' },
+          ].map(({ icon: Icon, title, detail, status, tone }) => (
+            <li key={title} className="flex items-center gap-3 py-3.5">
+              <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="size-4" aria-hidden="true" /></span>
+              <div className="min-w-0 flex-1"><p className="text-xs font-semibold sm:text-sm">{title}</p><p className="mt-1 text-[11px] leading-4 text-[#53685f]">{detail}</p></div>
+              <span className={`hidden shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold sm:inline-flex ${tone}`}>{status}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 rounded-xl border border-[#e5e9e0] bg-white p-3">
+          <div className="flex items-center justify-between text-[11px] font-semibold"><span className="text-[#466457]">Today’s progress</span><span className="tabular-nums text-[#287b6f]">3 of 5 tasks</span></div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf1ec]"><div className="lp-fill-x h-full w-3/5 rounded-full bg-gradient-to-r from-[#287b6f] to-[#8abf6e]" /></div>
+        </div>
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-[#f2f5ee] px-3 py-2 text-[11px] text-[#466457]"><Bell className="size-4" aria-hidden="true" />The next task, the right person, a little less worry.</div>
       </div>
-      <ul className="divide-y divide-[#e7ebe4]">
-        {[
-          { icon: Check, title: 'Fresh linens', detail: 'Bedroom · Completed by Maya', status: 'Done', tone: 'bg-[#e4f0e8] text-[#25654f]' },
-          { icon: BedDouble, title: 'Tidy the guest room', detail: 'Bedroom · Assigned to Alex', status: 'In progress', tone: 'bg-[#fbefd9] text-[#81571f]' },
-          { icon: Sprout, title: 'Water the plants', detail: 'Living room · Available to claim', status: 'Open', tone: 'bg-[#edf1ef] text-[#486156]' },
-        ].map(({ icon: Icon, title, detail, status, tone }) => (
-          <li key={title} className="flex items-center gap-3 py-3.5">
-            <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="size-4" aria-hidden="true" /></span>
-            <div className="min-w-0 flex-1"><p className="text-xs font-semibold sm:text-sm">{title}</p><p className="mt-1 text-[11px] leading-4 text-[#53685f]">{detail}</p></div>
-            <span className={`hidden shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold sm:inline-flex ${tone}`}>{status}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-center gap-2 rounded-xl bg-[#f2f5ee] px-3 py-2 text-[11px] text-[#466457]"><Bell className="size-4" aria-hidden="true" />The next task, the right person, a little less worry.</div>
+      <figcaption className="mt-3 text-center text-[10px] text-[#53685f]">Example board · Not live household data.</figcaption>
     </div>
-    <figcaption className="mt-3 text-center text-[10px] text-[#53685f]">Example board · Not live household data.</figcaption>
   </figure>;
 }
 
@@ -75,8 +105,8 @@ export default async function Home() {
   return (
     <div className="min-h-screen bg-[#fafbf7] text-[#203c34]">
       <a href="#main" className={`sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-xl focus:bg-white focus:p-3 ${focusClass}`}>Skip to content</a>
-      <header className="sticky top-0 z-40 bg-[#fafbf7]/95 px-3 py-3 backdrop-blur-md sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-[22px] border border-[#d4e1d6] bg-white p-2.5 shadow-[0_6px_24px_rgba(32,63,54,.06)] sm:p-3 lg:flex-nowrap">
+      <header className="sticky top-0 z-40 px-3 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-[22px] border border-[#d4e1d6] bg-white/90 p-2.5 shadow-[0_6px_24px_rgba(32,63,54,.08)] backdrop-blur-md sm:p-3 lg:flex-nowrap">
           <Link href="/" aria-label="CareBoard home" className={`order-1 inline-flex shrink-0 items-center gap-2 rounded-2xl sm:gap-3 ${focusClass}`}>
             <span className="rounded-2xl bg-[#edf3e9] p-1"><BrandIcon size={48} /></span>
             <span><span className="block text-lg font-bold tracking-tight sm:text-xl">CareBoard</span><span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[.12em] text-[#53685f]">Household care</span></span>
@@ -92,44 +122,135 @@ export default async function Home() {
         </div>
       </header>
 
-      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl scroll-mt-48 px-5 pb-8 sm:px-8 lg:scroll-mt-28">
-        <section aria-labelledby="hero-heading" className="grid items-center gap-9 pb-10 pt-7 sm:pt-10 lg:grid-cols-[1fr_1fr] lg:gap-12 lg:pb-12 lg:pt-8">
-          <div>
-            <p className="inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-[#eef4e9] px-3 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551]"><span className="size-1.5 rounded-full bg-[#398264]" />Made for families & care teams</p>
-            <h1 id="hero-heading" className="mt-5 max-w-lg text-[2.6rem] font-semibold leading-[1.08] tracking-[-.045em] sm:text-5xl lg:text-[3.6rem]">A little less juggling.<br /><span className="text-[#287b6f]">A lot more care.</span></h1>
-            <p className="mt-5 max-w-md text-base leading-7 text-[#53685f]">Your private household care board. Organize tasks, coordinate trusted care workers, and see what’s done—all in one calm, shared space.</p>
-            <div className="mt-7 flex flex-col items-start gap-4">
-              {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : <Link href="/sign-in" className={primaryClass}>Join your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#53685f]">
-                <span className="inline-flex items-center gap-1.5"><LockKeyhole className="size-3.5" aria-hidden="true" />Manager-approved access</span>
+      <main id="main" tabIndex={-1} className="scroll-mt-48 lg:scroll-mt-28">
+        {/* Hero — full width, animated gradient backdrop */}
+        <section aria-labelledby="hero-heading" className="relative overflow-hidden">
+          <div className="lp-blob left-[-8%] top-[-12%] size-[36rem] bg-[#9ed4b8]" aria-hidden="true" />
+          <div className="lp-blob right-[-10%] top-[20%] size-[30rem] bg-[#f0d9a0]" style={{ animationDelay: '-6s' }} aria-hidden="true" />
+          <div className="lp-blob bottom-[-18%] left-[30%] size-[26rem] bg-[#a8cfe4]" style={{ animationDelay: '-12s' }} aria-hidden="true" />
+          <div className="relative mx-auto grid w-full max-w-screen-2xl items-center gap-10 px-5 pb-14 pt-9 sm:px-10 sm:pt-14 lg:grid-cols-[1.05fr_1fr] lg:gap-14 lg:pb-20">
+            <div>
+              <p className="lp-fade-up inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551] shadow-sm backdrop-blur"><span className="lp-pulse-dot size-1.5 rounded-full bg-[#398264]" />Made for families &amp; care teams</p>
+              <h1 id="hero-heading" className="lp-fade-up mt-6 max-w-2xl text-[2.9rem] font-semibold leading-[1.05] tracking-[-.045em] sm:text-6xl xl:text-[4.4rem]" style={{ '--d': '0.1s' } as React.CSSProperties}>A little less juggling.<br /><span className="lp-gradient-text">A lot more care.</span></h1>
+              <p className="lp-fade-up mt-6 max-w-xl text-lg leading-8 text-[#53685f]" style={{ '--d': '0.2s' } as React.CSSProperties}>Your private household care board. Organize tasks, coordinate trusted care workers, and see what’s done — all in one calm, shared space you can rearrange like a home screen.</p>
+              <div className="lp-fade-up mt-8 flex flex-col items-start gap-4" style={{ '--d': '0.3s' } as React.CSSProperties}>
+                {signedIn ? <Link href="/dashboard" className={primaryClass}>Open your dashboard<ArrowRight className="size-4" aria-hidden="true" /></Link> : <Link href="/sign-in" className={primaryClass}>Join your care team<ArrowRight className="size-4" aria-hidden="true" /></Link>}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#53685f]">
+                  <span className="inline-flex items-center gap-1.5"><LockKeyhole className="size-3.5" aria-hidden="true" />Manager-approved access</span>
+                </div>
+              </div>
+              <div className="lp-fade-up mt-9 flex flex-wrap gap-x-5 gap-y-3 border-t border-[#e0e7dc] pt-5 text-xs font-medium text-[#466457]" style={{ '--d': '0.4s' } as React.CSSProperties}>
+                <span className="inline-flex items-center gap-2"><ClipboardCheck className="size-4 text-[#287b6f]" aria-hidden="true" />Clear assignments</span>
+                <span className="inline-flex items-center gap-2"><Clock3 className="size-4 text-[#287b6f]" aria-hidden="true" />Timely reminders</span>
+                <span className="inline-flex items-center gap-2"><Users className="size-4 text-[#287b6f]" aria-hidden="true" />Private profiles</span>
+                <span className="inline-flex items-center gap-2"><Palette className="size-4 text-[#287b6f]" aria-hidden="true" />Your colours, your layout</span>
               </div>
             </div>
-            <div className="mt-8 flex flex-wrap gap-x-5 gap-y-3 border-t border-[#e0e7dc] pt-5 text-xs font-medium text-[#466457]">
-              <span className="inline-flex items-center gap-2"><ClipboardCheck className="size-4 text-[#287b6f]" aria-hidden="true" />Clear assignments</span>
-              <span className="inline-flex items-center gap-2"><Clock3 className="size-4 text-[#287b6f]" aria-hidden="true" />Timely reminders</span>
-              <span className="inline-flex items-center gap-2"><Users className="size-4 text-[#287b6f]" aria-hidden="true" />Private profiles</span>
-            </div>
+            <div className="lp-fade-up" style={{ '--d': '0.25s' } as React.CSSProperties}><ExampleBoard /></div>
           </div>
-          <ExampleBoard />
         </section>
 
-        <section id="how-it-works" aria-labelledby="steps-heading" className="scroll-mt-48 border-t border-[#e0e7dc] py-8 lg:scroll-mt-28">
-          <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2"><h2 id="steps-heading" className="text-xl font-semibold tracking-tight">Good care. Less coordination.</h2><p className="text-xs text-[#53685f]">A simple rhythm for every household.</p></div>
-          <ol className="grid gap-4 md:grid-cols-3">
-            {steps.map(({ icon: Icon, title, text }, index) => <li key={title} className="rounded-2xl border border-[#e0e7dc] bg-white p-5">
-              <div className="mb-3 flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-[#edf3e9] text-[#287b6f]"><Icon className="size-5" aria-hidden="true" /></span><span className="text-[11px] font-semibold tracking-widest text-[#6a7d71]">0{index + 1}</span></div>
-              <h3 className="text-sm font-semibold">{title}</h3><p className="mt-2 text-xs leading-6 text-[#53685f]">{text}</p>
+        {/* Feature ticker — fun, full bleed */}
+        <div className="lp-marquee border-y border-[#e0e7dc] bg-white/70 py-3.5" aria-hidden="true">
+          <div className="lp-marquee-track">
+            {[...ticker, ...ticker].map((item, index) => (
+              <span key={index} className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#e0e7dc] bg-[#f7faf6] px-4 py-1.5 text-xs font-semibold text-[#466457]"><Sparkles className="size-3.5 text-[#287b6f]" />{item}</span>
+            ))}
+          </div>
+        </div>
+
+        {/* How it works */}
+        <section id="how-it-works" aria-labelledby="steps-heading" className="mx-auto w-full max-w-screen-2xl scroll-mt-48 px-5 py-12 sm:px-10 lg:scroll-mt-28 lg:py-16">
+          <div className="mb-7 flex flex-wrap items-baseline justify-between gap-2"><h2 id="steps-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">Good care. Less coordination.</h2><p className="text-xs text-[#53685f]">A simple rhythm for every household.</p></div>
+          <ol className="grid gap-4 md:grid-cols-3 lg:gap-6">
+            {steps.map(({ icon: Icon, title, text }, index) => <li key={title} className="lp-card-lift lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-6">
+              <div className="mb-3 flex items-center justify-between"><span className="grid size-11 place-items-center rounded-xl bg-[#edf3e9] text-[#287b6f]"><Icon className="size-5" aria-hidden="true" /></span><span className="text-[11px] font-semibold tracking-widest text-[#6a7d71]">0{index + 1}</span></div>
+              <h3 className="text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-[#53685f]">{text}</p>
             </li>)}
           </ol>
         </section>
 
-        <section id="privacy" aria-labelledby="privacy-heading" className="grid scroll-mt-48 gap-5 rounded-2xl bg-[#203f36] p-5 text-white sm:p-6 md:grid-cols-[1.3fr_1fr] md:gap-8 lg:scroll-mt-28">
-          <div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-5" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-sm font-semibold">Your household. Your people.</h2><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Managers coordinate the household. Care workers see only their profile, assigned tasks, and available work. Personal details stay private.</p></div></div>
-          <div className="border-t border-white/15 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0"><p className="text-sm font-semibold">A private, approved-account space</p><p className="mt-2 text-xs leading-6 text-[#d0e0d5]">Use the account your household manager approved. Need access? Ask your manager to add you to the team.</p><Link href={destination} className={`mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg text-xs font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
+        {/* Feature grid */}
+        <section aria-labelledby="features-heading" className="border-t border-[#e0e7dc] bg-[#f4f8f2]">
+          <div className="mx-auto w-full max-w-screen-2xl px-5 py-12 sm:px-10 lg:py-16">
+            <div className="mb-7 flex flex-wrap items-baseline justify-between gap-2"><h2 id="features-heading" className="text-2xl font-semibold tracking-tight sm:text-3xl">Built for real care work</h2><p className="text-xs text-[#53685f]">Every feature below is a dashboard widget — arrange them your way.</p></div>
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
+              {features.map(({ icon: Icon, title, text, tint }) => <li key={title} className="lp-card-lift lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-6">
+                <span className={`mb-4 grid size-11 place-items-center rounded-xl ${tint}`}><Icon className="size-5" aria-hidden="true" /></span>
+                <h3 className="text-base font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-[#53685f]">{text}</p>
+              </li>)}
+            </ul>
+          </div>
+        </section>
+
+        {/* Everyday data — real-feeling live widgets */}
+        <section aria-labelledby="data-heading" className="border-t border-[#e0e7dc]">
+          <div className="mx-auto grid w-full max-w-screen-2xl items-center gap-10 px-5 py-12 sm:px-10 lg:grid-cols-[1fr_1.25fr] lg:py-16">
+            <div className="lp-reveal">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[#d7e4d3] bg-white/80 px-3.5 py-1.5 text-[11px] font-semibold tracking-wide text-[#3e6551]"><Sparkles className="size-3.5 text-[#287b6f]" aria-hidden="true" />Everyday data, beautifully alive</p>
+              <h2 id="data-heading" className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">The little things add up — and now you can see them.</h2>
+              <p className="mt-4 max-w-md text-sm leading-7 text-[#53685f]">Every clock-in, handoff, and finished task becomes a record your whole team can see. No spreadsheets, no guessing — the work speaks for itself.</p>
+              <ul className="mt-5 space-y-2.5 text-sm text-[#466457]">
+                <li className="flex items-center gap-2.5"><Clock3 className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Hours clocked become payroll for the bookkeeper</li>
+                <li className="flex items-center gap-2.5"><MessageSquareText className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Shift notes become the next caregiver’s briefing</li>
+                <li className="flex items-center gap-2.5"><Check className="size-4 shrink-0 text-[#287b6f]" aria-hidden="true" />Finished tasks become proof the day went well</li>
+              </ul>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Seven-day pulse — bars grow as you scroll them into view */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)]">
+                <p className="flex items-center gap-2 text-xs font-bold"><LayoutGrid className="size-4 text-[#287b6f]" aria-hidden="true" />Seven-day pulse</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">Tasks completed each day</p>
+                <div className="mt-4 flex h-24 items-end gap-2" aria-hidden="true">
+                  {[45, 68, 52, 86, 74, 95, 60].map((height, index) => (
+                    <div key={index} className="flex h-full flex-1 flex-col justify-end"><div className="lp-bar w-full rounded-t-md bg-gradient-to-t from-[#287b6f] to-[#8abf6e]" style={{ height: `${height}%` }} /></div>
+                  ))}
+                </div>
+                <p className="mt-3 flex items-center justify-between rounded-lg bg-[#f4f8f2] px-3 py-1.5 text-[11px] text-[#466457]"><span>Household momentum</span><strong className="text-[#287b6f]">up this week</strong></p>
+              </div>
+              {/* Hours ring — fills as it scrolls in */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)]">
+                <p className="flex items-center gap-2 text-xs font-bold"><Timer className="size-4 text-[#287b6f]" aria-hidden="true" />Hours this week</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">Clocked care time, live</p>
+                <div className="mt-4 flex items-center justify-center" aria-hidden="true">
+                  <svg viewBox="0 0 120 120" className="size-28">
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="#edf1ec" strokeWidth="10" />
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="#287b6f" strokeWidth="10" strokeLinecap="round" strokeDasharray="339.3" strokeDashoffset="108.6" transform="rotate(-90 60 60)" className="lp-ring-scroll" style={{ '--ring-from': '339.3', '--ring-to': '108.6' } as React.CSSProperties} />
+                    <text x="60" y="57" textAnchor="middle" className="fill-[#203c34] text-xl font-bold">32.5h</text>
+                    <text x="60" y="74" textAnchor="middle" className="fill-[#53685f] text-[9px]">of ~48 planned</text>
+                  </svg>
+                </div>
+                <p className="mt-3 text-center text-[11px] text-[#466457]"><span className="lp-tick inline-block size-1.5 rounded-full bg-[#398264]" /> Updating as the team works</p>
+              </div>
+              {/* Live activity feed — items pop in on a loop */}
+              <div className="lp-reveal rounded-2xl border border-[#e0e7dc] bg-white p-5 shadow-[0_10px_30px_rgba(32,49,45,.06)] sm:col-span-2">
+                <p className="flex items-center gap-2 text-xs font-bold"><Bell className="size-4 text-[#287b6f]" aria-hidden="true" />Happening right now</p>
+                <p className="mt-0.5 text-[11px] text-[#53685f]">What a live feed feels like</p>
+                <ul className="mt-4 grid gap-2 sm:grid-cols-2" aria-hidden="true">
+                  {[
+                    { icon: Clock3, text: 'Maya clocked in · 7:02 AM', delay: '0s' },
+                    { icon: Check, text: 'Alex finished “Fresh linens”', delay: '3.5s' },
+                    { icon: MessageSquareText, text: 'Jordan left a handoff note', delay: '7s' },
+                    { icon: ShieldAlert, text: 'Near-miss reported & triaged', delay: '10.5s' },
+                  ].map(({ icon: Icon, text, delay }) => (
+                    <li key={text} className="lp-feed-item flex items-center gap-2.5 rounded-xl border border-[#edf1ec] bg-[#fafbf7] px-3 py-2.5 text-xs font-medium text-[#466457]" style={{ '--d': delay } as React.CSSProperties}><Icon className="size-4 shrink-0 text-[#287b6f]" />{text}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Privacy — full-width dark band */}
+        <section id="privacy" aria-labelledby="privacy-heading" className="scroll-mt-48 bg-[#203f36] text-white lg:scroll-mt-28">
+          <div className="mx-auto grid w-full max-w-screen-2xl gap-6 px-5 py-12 sm:px-10 md:grid-cols-[1.3fr_1fr] md:gap-10 lg:py-16">
+            <div className="flex items-start gap-4"><span className="lp-float grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-[#cce0bd]"><ShieldCheck className="size-6" aria-hidden="true" /></span><div><h2 id="privacy-heading" className="text-xl font-semibold">Your household. Your people.</h2><p className="mt-3 max-w-xl text-sm leading-7 text-[#d0e0d5]">Managers coordinate the household. Care workers see only their profile, assigned tasks, and available work. Personal details stay private — always.</p></div></div>
+            <div className="border-t border-white/15 pt-5 md:border-l md:border-t-0 md:pl-8 md:pt-0"><p className="text-base font-semibold">A private, approved-account space</p><p className="mt-2 text-sm leading-6 text-[#d0e0d5]">Use the account your household manager approved. Need access? Ask your manager to add you to the team.</p><Link href={destination} className={`mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-white underline decoration-white/40 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white`}>{signedIn ? 'Go to dashboard' : 'Join your care team'}<ArrowRight className="size-4" aria-hidden="true" /></Link></div>
+          </div>
         </section>
       </main>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 pb-6 text-[11px] text-[#53685f] sm:px-8"><span className="inline-flex items-center gap-2"><BrandIcon size={24} /><span className="font-semibold">CareBoard</span><span>Care, clearly coordinated.</span></span><span className="inline-flex items-center gap-3"><a href="https://danspelt.com/?utm_source=careboard&utm_medium=footer&utm_campaign=product-sites" target="_blank" rel="noopener" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Built by Dan Spelt</a><a href="#privacy" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Private by design</a></span></footer>
+      <footer className="mx-auto flex w-full max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-5 py-6 text-[11px] text-[#53685f] sm:px-10"><span className="inline-flex items-center gap-2"><BrandIcon size={24} /><span className="font-semibold">CareBoard</span><span>Care, clearly coordinated.</span></span><span className="inline-flex items-center gap-3"><a href="https://danspelt.com/?utm_source=careboard&utm_medium=footer&utm_campaign=product-sites" target="_blank" rel="noopener" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Built by Dan Spelt</a><a href="#privacy" className={`rounded-lg py-2 hover:text-[#246f63] ${focusClass}`}>Private by design</a></span></footer>
     </div>
   );
 }

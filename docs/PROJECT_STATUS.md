@@ -1,54 +1,49 @@
 # Project Status — CareBoard
 
-**Last updated:** September 23, 2026
-**Status:** Live in production; readiness work in flight on a separate integration branch
+**Last updated:** September 25, 2026
+**Status:** Live production version is healthy; substantial integration-branch work passes local verification but is not deployed
 **Live:** https://care.danspelt.com
 **Deploy:** Coolify → `coolify-production` branch, Dockerfile build pack — `running:healthy`
-**Health:** `GET /api/health` → 200 `{"status":"ok"}` (verified 2026-09-23)
-**Repo state:** `careboard-readiness-integration` checked out locally, clean
+**Health:** `GET /api/health` → 200 (verified 2026-09-25)
+**Repo state:** `careboard-readiness-integration` has extensive staged and unstaged local work; preserved and not pushed
 
 ---
 
-## Branch Topology (important)
+## Branch Topology
 
-| Branch | Role | Last commit |
-|---|---|---|
-| `origin/coolify-production` | **What is actually deployed** | 2026-09-20 — parity test-suite audit |
-| `careboard-readiness-integration` | Local checkout — readiness work | 2026-09-18 — auth/landing rebrand |
-| `main` | Base branch | 2026-09-17 — undici security patch |
+| Branch | Role |
+|---|---|
+| `origin/coolify-production` | Deployed production branch |
+| `careboard-readiness-integration` | Local integration work, including the current feature set |
+| `main` | Base branch |
 
-`careboard-readiness-integration` is **8 commits ahead and 19 behind** `origin/coolify-production` — the branches have diverged and need reconciliation before the next deploy.
+The integration branch is **9 commits ahead and 19 behind** `origin/coolify-production`. The worktree also contains substantial staged and unstaged changes. Do not merge/rebase or deploy until these changes are reviewed and branch reconciliation is planned.
 
 ## Where We Are
 
-- Private household chore/care-coordination tracker: manager dashboard (create/assign/complete tasks, CSV export, append-only audit log) + worker dashboard (claim, start, complete, proof photos)
-- Security-first roles — workers can't see other workers' data; disabled workers blocked on every request
-- 90-day retention on profile/proof photos served only through authenticated ownership-checked routes
-- PWA installable; Auth.js 5 with Google OAuth + credentials; SQLite via better-sqlite3
-- Recent work: shift handovers, shared brand-icon rebrand, first-owner password login fix
-
-## Where We Go Next
-
-Reconcile `careboard-readiness-integration` with `coolify-production` so shipped and in-flight work converge, then decide whether CareBoard stays a private household tool or becomes a marketable product.
+- Existing private-household app: manager and worker dashboards, task coordination, timesheets, reports, PWA, Auth.js, SQLite, authenticated uploads, 90-day photo retention
+- Current local integration work adds/extends: schedule coverage and two-week shifts, care-safety reporting, worker handovers, workload warnings, configurable dashboard widgets, email/SMS notifications, payroll reporting, and a privacy-bounded assistant
+- Local integration branch verification passes: **154 tests**, oxlint (0 warnings/errors), production build
+- These integration features are not in the currently deployed `coolify-production` branch
 
 ## What Needs To Get Done
 
-- [ ] Merge/rebase `careboard-readiness-integration` onto latest `origin/coolify-production`; resolve the 19-commit drift, then promote through the Docker verification path
-- [ ] Confirm Coolify env vars: `AUTH_SECRET`, `AUTH_URL`, `CAREBOARD_OWNER_EMAIL`, `DATABASE_PATH=/data/careboard.db`, `UPLOAD_PATH=/data/uploads` — plus a persistent `/data` volume
-- [ ] Optional: enable Google sign-in (`AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`)
-- [ ] Product decision: private household tool vs. sellable care-coordination app (affects roadmap)
+- [ ] Review and commit the validated integration work on `careboard-readiness-integration`; keep current staged/unstaged edits intact until review is complete
+- [ ] Reconcile the integration branch with latest `origin/coolify-production` (9 ahead / 19 behind) on a clean working tree; resolve conflicts and rerun tests/lint/build
+- [ ] Confirm Coolify `AUTH_SECRET`, `AUTH_URL`, `CAREBOARD_OWNER_EMAIL`, `DATABASE_PATH=/data/careboard.db`, `UPLOAD_PATH=/data/uploads`, and persistent `/data` volume; do not expose secret values
+- [ ] Before enabling email/SMS/AI features in production, configure and verify provider credentials, consent/retention requirements, and delivery behavior
+- [x] Safe default for current scope: treat CareBoard as a private household tool; do not add public SaaS signup, billing, or marketing until Dan explicitly changes that direction
 
 ## Verification
 
 ```bash
-node --test tests/*.test.mjs
-npm run lint        # oxlint
-npm run build
+node --test tests/*.test.mjs   # 154 passed
+npm run lint                   # 0 warnings/errors
+npm run build                  # passes
 ```
 
-On Windows, if `node_modules` holds Linux binaries, use the Docker path from AGENTS.md (bind-mount into `node:22-bookworm-slim`, or `docker build -t careboard-ui-verify .`).
+## Remaining Risks / Dependencies
 
-## Known Issues
-
-- Branch divergence between local integration work and the deployed `coolify-production` branch
-- Google OAuth documented but optional — credential login is the current path
+- Local features are not deployed; no production behavior should be inferred from local tests
+- Branch/worktree reconciliation and Coolify configuration are still pending
+- External notification-provider setup and consent/retention configuration require owner credentials and review

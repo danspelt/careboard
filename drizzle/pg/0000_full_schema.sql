@@ -8,13 +8,20 @@ CREATE TABLE members (
   color TEXT NOT NULL,
   created_at TEXT NOT NULL,
   phone TEXT,
+  sms_opt_in INTEGER NOT NULL DEFAULT 0,
   availability TEXT NOT NULL DEFAULT '',
   skills_notes TEXT NOT NULL DEFAULT '',
   emergency_contact TEXT,
   certifications TEXT NOT NULL DEFAULT '',
   languages TEXT NOT NULL DEFAULT '',
   profile_photo_id TEXT,
-  hourly_rate DOUBLE PRECISION
+  hourly_rate DOUBLE PRECISION,
+  date_of_birth TEXT,
+  address TEXT NOT NULL DEFAULT '',
+  job_title TEXT NOT NULL DEFAULT 'Care worker',
+  employment_started_on TEXT,
+  theme TEXT,
+  dashboard_layout TEXT
 );
 --> statement-breakpoint
 CREATE TABLE chores (
@@ -149,7 +156,9 @@ CREATE TABLE household_settings (
   retention_days INTEGER NOT NULL DEFAULT 90 CHECK(retention_days BETWEEN 1 AND 365),
   updated_at TEXT NOT NULL DEFAULT (NOW()::TEXT),
   funded_hours_monthly DOUBLE PRECISION NOT NULL DEFAULT 0,
-  funding_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0
+  funding_hourly_rate DOUBLE PRECISION NOT NULL DEFAULT 0,
+  bookkeeper_email TEXT NOT NULL DEFAULT '',
+  payroll_last_sent TEXT NOT NULL DEFAULT ''
 );
 --> statement-breakpoint
 INSERT INTO household_settings (household_id, recurrence_horizon_days, reminder_default_lead_days, retention_days, updated_at)
@@ -162,6 +171,7 @@ CREATE TABLE shifts (
   weekday INTEGER NOT NULL CHECK(weekday BETWEEN 0 AND 6),
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
+  cycle_week INTEGER NOT NULL DEFAULT 0 CHECK(cycle_week BETWEEN 0 AND 2),
   created_at TEXT NOT NULL
 );
 --> statement-breakpoint
@@ -254,3 +264,55 @@ CREATE TABLE worker_inbox_items (
 CREATE INDEX idx_worker_inbox_items_worker ON worker_inbox_items(household_id, worker_id, created_at);
 --> statement-breakpoint
 CREATE INDEX idx_worker_inbox_items_sender ON worker_inbox_items(household_id, created_by, created_at);
+--> statement-breakpoint
+CREATE TABLE schedule_change_requests (
+  id TEXT PRIMARY KEY NOT NULL,
+  household_id TEXT NOT NULL DEFAULT 'default',
+  requester_id TEXT NOT NULL REFERENCES members(id),
+  shift_id TEXT NOT NULL REFERENCES shifts(id),
+  requested_date TEXT NOT NULL,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'covered')),
+  accepted_by TEXT REFERENCES members(id),
+  accepted_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(requester_id, requested_date)
+);
+--> statement-breakpoint
+CREATE INDEX idx_schedule_change_requests_status_date ON schedule_change_requests(household_id, status, requested_date);
+--> statement-breakpoint
+CREATE TABLE shift_handoffs (
+  id TEXT PRIMARY KEY NOT NULL,
+  household_id TEXT NOT NULL DEFAULT 'default',
+  author_id TEXT NOT NULL REFERENCES members(id),
+  shift_date TEXT NOT NULL,
+  completed_care TEXT NOT NULL,
+  outstanding_tasks TEXT NOT NULL,
+  observations TEXT NOT NULL,
+  checklist_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX idx_shift_handoffs_date ON shift_handoffs(household_id, shift_date, created_at);
+--> statement-breakpoint
+CREATE TABLE safety_incidents (
+  id TEXT PRIMARY KEY NOT NULL,
+  household_id TEXT NOT NULL DEFAULT 'default',
+  reporter_id TEXT NOT NULL REFERENCES members(id),
+  category TEXT NOT NULL CHECK(category IN ('hazard','injury','violence_threat','unsafe_home','near_miss')),
+  severity TEXT NOT NULL CHECK(severity IN ('low','medium','high','urgent')),
+  occurred_at TEXT NOT NULL,
+  location TEXT NOT NULL,
+  description TEXT NOT NULL,
+  immediate_action TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','reviewing','resolved')),
+  assigned_to TEXT REFERENCES members(id),
+  follow_up TEXT NOT NULL DEFAULT '',
+  resolved_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX idx_safety_incidents_triage ON safety_incidents(household_id, status, severity, created_at);

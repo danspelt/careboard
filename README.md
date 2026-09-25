@@ -5,7 +5,10 @@ CareBoard is a private household chore tracker for coordinating care workers. A 
 ## Features
 
 - **Manager dashboard**: create, assign, edit, and complete household tasks; manage workers; export monthly CSV reports; review an append-only audit log.
-- **Worker dashboard**: claim open tasks, start assigned work, complete in-progress tasks, upload proof photos, and edit a limited self-service profile.
+- **Worker dashboard**: claim open tasks, start assigned work, complete in-progress tasks, upload proof photos, share end-of-shift handoffs, report safety concerns, and edit a limited self-service profile.
+- **Care-team wellbeing**: manager triage for safety incidents and near misses, plus workload signals that flag long shift runs, short turnarounds, and heavy task loads. See [docs/care-worker-needs.md](docs/care-worker-needs.md) for the research behind these features.
+- **Two-week schedule**: shifts can repeat every week or alternate between week A and week B of a two-week cycle; the schedule view spans 14 days.
+- **Employer records**: manager-maintained employee records (job title, start date, date of birth, address), per-worker timesheet CSVs, a bookkeeper payroll CSV for any pay period, and household exports for CSIL/BC employment-standards record keeping. See [docs/csil-compliance.md](docs/csil-compliance.md) for the requirements matrix.
 - **Security-first roles**: workers cannot see other workers' profiles, tasks, reports, or audit data. Disabled workers are blocked on every request, so an existing session cannot retain access.
 - **Privacy by default**: profile photos and task proof photos are retained for a fixed 90-day period, served only through authenticated ownership-checked routes, and never exposed as static files.
 - **Progressive Web App**: installable manifest and service worker support for offline shell pages.
@@ -41,6 +44,7 @@ CareBoard is a private household chore tracker for coordinating care workers. A 
    ```
 
    For Google sign-in, also add `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET`.
+   To enable the dashboard AI assistant for managers and care workers, add a server-side `OPENAI_API_KEY`. You can optionally set `OPENAI_MODEL`; it defaults to `gpt-5-mini`. Never prefix the API key with `NEXT_PUBLIC_` or expose it to browser code.
    See [AUTH_SETUP.md](AUTH_SETUP.md) for the full authentication guide.
 
 3. Run the development server:
@@ -88,6 +92,10 @@ The image creates `/data/uploads` for authenticated proof photos and uses `/data
    - `AUTH_URL`: the public HTTPS origin (e.g. `https://care.example.com`)
    - `CAREBOARD_OWNER_EMAIL`: the manager's email address
    - `AUTH_GOOGLE_ID` and `AUTH_GOOGLE_SECRET` if using Google OAuth
+   - `OPENAI_API_KEY` to enable the read-only CareBoard assistant
+   - `OPENAI_MODEL` optionally (defaults to `gpt-5-mini`)
+   - SMTP settings (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`) for invite, coverage, and payroll emails
+   - Twilio settings (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`) for opted-in coverage SMS
    - `DATABASE_PATH=/data/careboard.db`
    - `UPLOAD_PATH=/data/uploads`
 4. Mount a persistent volume at `/data`.

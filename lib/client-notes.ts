@@ -65,6 +65,23 @@ export function canSendInboxMessage(role: Role, senderId: string, recipient: { i
   return recipient.role === 'worker' || (role === 'worker' && recipient.role === 'manager');
 }
 
+export function scheduleChangeRequest(date: unknown, reason: unknown, shift: { id: string; weekday: number; startTime: string; endTime: string } | null) {
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) throw new Error('Choose a valid date for the schedule request.');
+  if (!shift || new Date(`${date}T12:00:00Z`).getUTCDay() !== shift.weekday) throw new Error('Choose one of your shifts for that date.');
+  const detail = typeof reason === 'string' ? reason.trim().slice(0, 500) : '';
+  if (!detail) throw new Error('Explain what schedule change you need.');
+  return { date, reason: detail, shift, body: `Schedule change request for ${date} (${shift.startTime}-${shift.endTime}): ${detail}` };
+}
+
+/** Friendly inbox copy for the coverage loop — coworkers see the ask until someone says yes. */
+export function coverageAskMessage(name: string, date: string, startTime: string, endTime: string, reason: string) {
+  return `${name} is looking for cover on ${date}, ${startTime}–${endTime} — “${reason}”. If you can take it, say yes from your dashboard and the schedule updates itself.`;
+}
+
+export function coverageAcceptedMessage(name: string, date: string, startTime: string, endTime: string) {
+  return `${name} said yes — your ${date} shift, ${startTime}–${endTime}, is covered.`;
+}
+
 const SAFETY_RULES: Array<{ category: SafetyCategory; reason: string; patterns: RegExp[] }> = [
   {
     category: 'emergency',

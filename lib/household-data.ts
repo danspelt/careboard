@@ -9,12 +9,18 @@ import { ensureAccountTable, setAccountStatus } from '@/lib/account-store';
 import { memberIdForEmail, ownerEmail } from '@/lib/auth-config';
 import { credentialForEmail, ensureOwnerCredential, setCredential } from '@/lib/credential-store';
 import { hashPassword, normalizeEmail, passwordError } from '@/lib/auth-security';
-import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, type Priority, type Recurrence } from '@/lib/operations';
+import { addDaysISO, clampInteger, metrics, nextRecurrenceDate, toCsv, type Priority, type Recurrence } from '@/lib/operations';
 import type { Certification } from '@/lib/certifications';
-import { canSendInboxMessage, reviewClientNote, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
+import { canSendInboxMessage, coverageAcceptedMessage, coverageAskMessage, reviewClientNote, scheduleChangeRequest, triageInboxMessage, visibleInbox, visibleSafetyAlerts, type ClientNoteStatus, type InboxItem, type SafetyCategory } from '@/lib/client-notes';
 import { localDevMode } from '@/lib/auth-config';
 import { getLocalDevRawState, mutateLocalDevState } from '@/lib/local-dev';
-import { handoverFieldLimit, handoverHasContent, incomingHandover, type ShiftHandover } from '@/lib/shift-handover';
+import { sendCoverageEmail, sendInviteEmail, sendManagerCoverageEmail, sendPayrollReportEmail } from '@/lib/email';
+import { isE164, sendCareBoardSms } from '@/lib/sms';
+import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from '@/lib/workload-warnings';
+import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
+import { cycleWeekOf } from '@/lib/shifts';
+import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
+import { normalizeLayout, randomThemeId, themeById, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
 
 export type Member = {
   id: string;
@@ -32,6 +38,13 @@ export type Member = {
   languages: string;
   profilePhotoId: string | null;
   hourlyRate?: number | null;
+  smsOptIn?: boolean;
+  dateOfBirth?: string | null;
+  address?: string;
+  jobTitle?: string;
+  employmentStartedOn?: string | null;
+  theme?: string | null;
+  dashboardLayout?: WidgetItem[] | null;
 };
 export type ProofPhoto = { id: string; choreId?: string; profileMemberId?: string; originalName: string; mimeType: string; byteSize: number; createdAt: string };
 export type TaskNote = { id: string; choreId: string; memberId: string; kind: 'progress' | 'completion' | 'issue'; body: string; createdAt: string };
@@ -61,11 +74,13 @@ export type Chore = {
   photos?: ProofPhoto[];
   notes?: TaskNote[];
 };
-export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; createdAt: string };
+export type Shift = { id: string; memberId: string; weekday: number; startTime: string; endTime: string; cycleWeek: number; createdAt: string };
 export type TimeEntry = { id: string; memberId: string; startedAt: string; endedAt: string | null; createdAt: string };
+export type ScheduleChangeRequest = { id: string; requesterId: string; shiftId: string; requestedDate: string; startTime: string; endTime: string; reason: string; status: 'open' | 'covered'; acceptedBy: string | null; acceptedAt: string | null; createdAt: string };
+export type ShiftHandoffRecord = { id: string; authorId: string; shiftDate: string; completedCare: string; outstandingTasks: string; observations: string; checklist: string[]; createdAt: string };
+export type SafetyIncident = { id: string; reporterId: string; category: 'hazard' | 'injury' | 'violence_threat' | 'unsafe_home' | 'near_miss'; severity: 'low' | 'medium' | 'high' | 'urgent'; occurredAt: string; location: string; description: string; immediateAction: string; status: 'submitted' | 'reviewing' | 'resolved'; assignedTo: string | null; followUp: string; resolvedAt: string | null; createdAt: string; updatedAt: string };
 export type ActivityItem = { id: string; choreId: string | null; memberId: string; action: string; detail: string; createdAt: string };
 export type Message = { id: string; memberId: string; body: string; createdAt: string };
-export type { ShiftHandover };
 export type ClientNoteSubmission = {
   id: string; clientMemberId: string; submittedBy: string; sourcePhotoId: string | null; ocrText: string;
   status: ClientNoteStatus; approvedText: string | null; reviewedBy: string | null; reviewedAt: string | null; createdAt: string;
@@ -81,6 +96,8 @@ export type HouseholdSettings = {
   retentionDays: number;
   fundedHoursMonthly: number;
   fundingHourlyRate: number;
+  bookkeeperEmail?: string;
+  payrollLastSent?: string;
   updatedAt: string;
 };
 export type HouseholdState = {
@@ -103,7 +120,10 @@ export type HouseholdState = {
   clientNoteQueue?: ClientNoteSubmission[];
   inbox?: InboxItem[];
   safetyAlerts?: SafetyAlert[];
-  shiftHandovers?: ShiftHandover[];
+  scheduleRequests?: ScheduleChangeRequest[];
+  shiftHandoffs?: ShiftHandoffRecord[];
+  safetyIncidents?: SafetyIncident[];
+  workloadWarnings?: WorkloadWarning[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -129,6 +149,18 @@ async function seedIfEmpty() {
 export async function ensureHouseholdData() {
   await seedIfEmpty();
   await ensureOwnerCredential();
+}
+
+/** Best-effort invite email — never fails the mutation; returns 'sent' or 'skipped'. */
+async function trySendInviteEmail(email: string, name: string, role: 'worker' | 'viewer', token: string): Promise<'sent' | 'skipped'> {
+  const base = process.env.AUTH_URL?.trim().replace(/\/$/, '');
+  if (!base) return 'skipped';
+  try {
+    const result = await sendInviteEmail({ recipient: email, name, role, inviteUrl: `${base}/accept-invite?token=${token}` });
+    return result.status;
+  } catch {
+    return 'skipped';
+  }
 }
 
 async function inviteTokenHash(token: string) {
@@ -173,7 +205,7 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
@@ -183,6 +215,8 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
     fundingHourlyRate: 0,
     reminderDefaultLeadDays: 1,
     retentionDays: 90,
+    bookkeeperEmail: '',
+    payrollLastSent: '',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -191,16 +225,19 @@ async function rawState() {
   await ensureHouseholdData();
   await ensureAccountTable();
   await cleanupExpiredUploads();
+  await maybeSendPayrollReport();
   await generateRecurringTasks();
   const db = getD1();
   const settings = await getHouseholdSettings();
   const cutoff = db.dialect === 'postgres' ? "(NOW() - INTERVAL '90 days')::TEXT" : "datetime('now', '-90 days')";
-  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems, shiftHandovers] = await Promise.all([
+  const [members, chores, activity, shifts, availability, timeEntries, certifications, messages, clientNoteSubmissions, inboxItems, scheduleRequests, shiftHandoffs, safetyIncidents] = await Promise.all([
     db
       .prepare(
         `SELECT m.id, m.name, m.role, COALESCE(l.status, 'active') AS status, g.email, m.color, m.created_at AS createdAt,
-          m.phone, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
-          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate
+          m.phone, m.sms_opt_in AS smsOptIn, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
+          m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate,
+          m.date_of_birth AS dateOfBirth, m.address, m.job_title AS jobTitle, m.employment_started_on AS employmentStartedOn,
+          m.theme, m.dashboard_layout AS dashboardLayoutJson
         FROM members m
         LEFT JOIN account_lifecycle l ON l.member_id=m.id
         LEFT JOIN google_accounts g ON g.member_id=m.id
@@ -221,14 +258,16 @@ async function rawState() {
       )
       .all<Chore>(),
     db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, action, detail, created_at AS createdAt FROM activity ORDER BY created_at DESC LIMIT 60`).all<ActivityItem>(),
-    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
-    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
+    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, cycle_week AS cycleWeek, created_at AS createdAt FROM shifts ORDER BY weekday, start_time`).all<Shift>(),
+    db.prepare(`SELECT id, member_id AS memberId, weekday, start_time AS startTime, end_time AS endTime, 0 AS cycleWeek, created_at AS createdAt FROM availability_windows ORDER BY weekday, start_time`).all<Shift>(),
     db.prepare(`SELECT id, member_id AS memberId, started_at AS startedAt, ended_at AS endedAt, created_at AS createdAt FROM time_entries WHERE started_at >= ${cutoff} ORDER BY started_at DESC`).all<TimeEntry>(),
     db.prepare(`SELECT id, member_id AS memberId, name, expires_on AS expiresOn, created_at AS createdAt FROM certification_records ORDER BY expires_on`).all<Certification>(),
     db.prepare(`SELECT id, member_id AS memberId, body, created_at AS createdAt FROM messages ORDER BY created_at DESC LIMIT 100`).all<Message>(),
     db.prepare(`SELECT id, client_member_id AS clientMemberId, submitted_by AS submittedBy, source_photo_id AS sourcePhotoId, ocr_text AS ocrText, status, approved_text AS approvedText, reviewed_by AS reviewedBy, reviewed_at AS reviewedAt, created_at AS createdAt FROM client_note_submissions ORDER BY created_at DESC`).all<ClientNoteSubmission>(),
     db.prepare(`SELECT id, worker_id AS workerId, kind, body, submission_id AS submissionId, created_by AS createdBy, safety_category AS safetyCategory, safety_reason AS safetyReason, safety_reviewed_by AS safetyReviewedBy, safety_reviewed_at AS safetyReviewedAt, created_at AS createdAt FROM worker_inbox_items ORDER BY created_at DESC LIMIT 300`).all<InboxItem>(),
-    db.prepare(`SELECT id, member_id AS memberId, shift_date AS shiftDate, completed_summary AS completedSummary, pending_summary AS pendingSummary, notes, created_at AS createdAt FROM shift_handovers ORDER BY created_at DESC LIMIT 100`).all<ShiftHandover>(),
+    db.prepare(`SELECT id, requester_id AS requesterId, shift_id AS shiftId, requested_date AS requestedDate, start_time AS startTime, end_time AS endTime, reason, status, accepted_by AS acceptedBy, accepted_at AS acceptedAt, created_at AS createdAt FROM schedule_change_requests ORDER BY created_at DESC`).all<ScheduleChangeRequest>(),
+    db.prepare(`SELECT id, author_id AS authorId, shift_date AS shiftDate, completed_care AS completedCare, outstanding_tasks AS outstandingTasks, observations, checklist_json AS checklistJson, created_at AS createdAt FROM shift_handoffs ORDER BY created_at DESC LIMIT 300`).all<ShiftHandoffRecord & { checklistJson: string }>(),
+    db.prepare(`SELECT id, reporter_id AS reporterId, category, severity, occurred_at AS occurredAt, location, description, immediate_action AS immediateAction, status, assigned_to AS assignedTo, follow_up AS followUp, resolved_at AS resolvedAt, created_at AS createdAt, updated_at AS updatedAt FROM safety_incidents ORDER BY CASE severity WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 300`).all<SafetyIncident>(),
   ]);
   const photos = await db
     .prepare(`SELECT id, chore_id AS choreId, profile_member_id AS profileMemberId, original_name AS originalName, mime_type AS mimeType, byte_size AS byteSize, created_at AS createdAt FROM proof_photos ORDER BY created_at`)
@@ -239,7 +278,12 @@ async function rawState() {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
   }
-  return { members: members.results, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, shiftHandovers: shiftHandovers.results };
+  const parsedMembers = members.results.map(({ dashboardLayoutJson, ...member }: Member & { dashboardLayoutJson?: string | null }) => {
+    let stored: unknown = null;
+    try { stored = dashboardLayoutJson ? JSON.parse(dashboardLayoutJson) : null; } catch { stored = null; }
+    return { ...member, dashboardLayout: stored === null ? null : normalizeLayout(member.role as DashboardRole, stored) };
+  });
+  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -260,10 +304,15 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     });
   if (viewer.role === 'manager') return {
     viewer: { id: viewer.id, role: viewer.role }, ...state,
+    members: state.members.map((item) => (item.id === viewer.id ? item : { ...item, theme: null, dashboardLayout: null })),
     clientNotes,
     clientNoteQueue: state.clientNoteSubmissions.filter((note) => note.status === 'pending'),
     inbox: visibleInbox(viewer.role, viewer.id, state.inboxItems),
     safetyAlerts: visibleSafetyAlerts(viewer.role, state.inboxItems) as SafetyAlert[],
+    scheduleRequests: state.scheduleRequests,
+    shiftHandoffs: state.shiftHandoffs ?? [],
+    safetyIncidents: state.safetyIncidents ?? [],
+    workloadWarnings: buildWorkloadWarnings(state.members.filter((item) => item.role === 'worker' && item.status === 'active').map((item) => item.id), state.shifts, state.chores, today, workloadThresholds()),
     metrics: metrics(state.chores, today), reminders: remindersFor(state.chores),
   };
   if (viewer.role === 'viewer') {
@@ -272,6 +321,9 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
+      theme: item.id === viewer.id ? (item.theme ?? null) : null,
+      dashboardLayout: item.id === viewer.id ? (item.dashboardLayout ?? null) : null,
     }));
     return {
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
@@ -284,8 +336,11 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
   const self: Member = {
     id: viewer.id, name: viewer.name, role: viewer.role, status: viewer.status, color: viewer.color,
     createdAt: viewer.createdAt, phone: viewer.phone, availability: viewer.availability,
-    skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications,
+    skillsNotes: viewer.skillsNotes, emergencyContact: null, certifications: viewer.certifications, smsOptIn: viewer.smsOptIn,
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
+    dateOfBirth: viewer.dateOfBirth ?? null, address: viewer.address ?? '', jobTitle: viewer.jobTitle ?? '',
+    employmentStartedOn: viewer.employmentStartedOn ?? null,
+    theme: viewer.theme ?? null, dashboardLayout: viewer.dashboardLayout ?? null,
   };
   // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
   const roster: Member[] = state.members
@@ -294,12 +349,10 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
-  // Workers see their own handovers plus the single most recent one left by someone else — enough to pick up the shift without exposing the whole team's history.
-  const incoming = incomingHandover(state.shiftHandovers, viewer.id);
-  const shiftHandovers = [...state.shiftHandovers.filter((handover) => handover.memberId === viewer.id).slice(0, 14), ...(incoming ? [incoming] : [])];
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, shiftHandovers };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()) };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -351,6 +404,39 @@ async function generateRecurringTasks() {
   }
 }
 
+export async function payrollCsvFor(from: string, to: string): Promise<string> {
+  const db = getD1();
+  const workers = await db
+    .prepare("SELECT id, name, hourly_rate AS hourlyRate FROM members WHERE role='worker' ORDER BY name")
+    .all<{ id: string; name: string; hourlyRate: number | null }>();
+  const data: PayrollWorker[] = [];
+  for (const worker of workers.results) {
+    const entries = await db
+      .prepare(`SELECT started_at AS startedAt, ended_at AS endedAt FROM time_entries WHERE member_id=? AND started_at >= ? AND started_at <= ? ORDER BY started_at`)
+      .bind(worker.id, `${from}T00:00:00.000Z`, `${to}T23:59:59.999Z`)
+      .all<{ startedAt: string; endedAt: string | null }>();
+    data.push({ name: worker.name, hourlyRate: worker.hourlyRate, entries: entries.results });
+  }
+  return `\uFEFF${toCsv(payrollRows(data, from, to))}\r\n`;
+}
+
+async function maybeSendPayrollReport() {
+  try {
+    const settings = await getHouseholdSettings();
+    const recipient = settings.bookkeeperEmail?.trim();
+    if (!recipient) return;
+    const period = lastCompletePeriod(new Date().toISOString().slice(0, 10));
+    if (settings.payrollLastSent === period.start) return;
+    const csv = await payrollCsvFor(period.start, period.end);
+    const result = await sendPayrollReportEmail({ recipient, from: period.start, to: period.end, csv, filename: `payroll-${period.start}-to-${period.end}.csv` });
+    if (result.status === 'sent') {
+      await getD1().prepare(`UPDATE household_settings SET payroll_last_sent=? WHERE household_id='default'`).bind(period.start).run();
+    }
+  } catch (error) {
+    console.error('Payroll report email failed.', error instanceof Error ? error.message : error);
+  }
+}
+
 async function cleanupExpiredUploads() {
   const settings = await getHouseholdSettings();
   const root = resolve(/* turbopackIgnore: true */ process.env.UPLOAD_PATH || '/data/uploads');
@@ -390,6 +476,13 @@ function optionalNullableString(value: unknown, maxLength: number): string | nul
   return text ? text.slice(0, maxLength) : null;
 }
 
+function optionalNullableDate(value: unknown): string | null {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T12:00:00Z`))) throw new Error('Enter a valid date.');
+  return text;
+}
+
 function clampNumber(value: unknown, min: number, max: number, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -403,9 +496,9 @@ function parseWindowRows(value: unknown) {
   }
   if (!Array.isArray(parsed) || parsed.length > 14) throw new Error('Invalid shift list.');
   const timeFormat = /^([01]\d|2[0-3]):[0-5]\d$/;
-  const rows = parsed.map((row) => ({ weekday: Number(row?.weekday), startTime: String(row?.startTime ?? ''), endTime: String(row?.endTime ?? '') }));
+  const rows = parsed.map((row) => ({ weekday: Number(row?.weekday), startTime: String(row?.startTime ?? ''), endTime: String(row?.endTime ?? ''), cycleWeek: Number(row?.cycleWeek ?? 0) }));
   for (const row of rows) {
-    if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || !timeFormat.test(row.startTime) || !timeFormat.test(row.endTime) || row.startTime >= row.endTime) {
+    if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || !timeFormat.test(row.startTime) || !timeFormat.test(row.endTime) || row.startTime >= row.endTime || ![0, 1, 2].includes(row.cycleWeek)) {
       throw new Error('Each shift needs a weekday and a valid start/end time.');
     }
   }
@@ -449,6 +542,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'deleteCertification',
     'reviewClientNote',
     'acknowledgeSafetyAlert',
+    'triageSafetyIncident',
+    'sendPayrollReport',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -514,6 +609,111 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     await db.batch([
       db.prepare('INSERT INTO messages(id,member_id,body,created_at) VALUES(?,?,?,?)').bind(crypto.randomUUID(), actorId, body, now),
       activity(null, actorId, 'posted_message', body.slice(0, 200), now),
+    ]);
+  } else if (action === 'requestScheduleChange') {
+    if (actor.role !== 'worker') throw new Error('Only care workers can request a schedule change.');
+    const shiftId = requiredString(input.shiftId, 'Shift');
+    const shift = await db.prepare(`SELECT id, weekday, start_time AS startTime, end_time AS endTime, cycle_week AS cycleWeek FROM shifts WHERE id=? AND member_id=?`).bind(shiftId, actorId).first<{ id: string; weekday: number; startTime: string; endTime: string; cycleWeek: number }>();
+    const request = scheduleChangeRequest(input.date, input.reason, shift ?? null);
+    if (shift?.cycleWeek && cycleWeekOf(request.date) !== shift.cycleWeek) throw new Error('That shift does not run on that date — check the two-week schedule.');
+    const manager = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active' LIMIT 1`).first<{ id: string }>();
+    if (!manager) throw new Error('No active manager is available to receive this request.');
+    const duplicate = await db.prepare(`SELECT id FROM schedule_change_requests WHERE requester_id=? AND requested_date=? LIMIT 1`).bind(actorId, request.date).first();
+    if (duplicate) throw new Error('You already requested a schedule change for that date.');
+    const coworkers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(actorId).all<{ id: string }>();
+    const askBody = coverageAskMessage(actor.name, request.date, request.shift.startTime, request.shift.endTime, request.reason);
+    await db.batch([
+      db.prepare(`INSERT INTO schedule_change_requests(id,household_id,requester_id,shift_id,requested_date,start_time,end_time,reason,status,created_at) VALUES(?,'default',?,?,?,?,?,?,'open',?)`)
+        .bind(crypto.randomUUID(), actorId, request.shift.id, request.date, request.shift.startTime, request.shift.endTime, request.reason, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), manager.id, request.body, actorId, now),
+      ...coworkers.results.map((coworker) =>
+        db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+          .bind(crypto.randomUUID(), coworker.id, askBody, actorId, now)),
+      activity(null, actorId, 'schedule_change_requested', `${actor.name} requested a schedule change for ${request.date}`, now),
+    ]);
+    const recipients = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(actorId).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
+    try { await sendCoverageEmail({ recipients: recipients.results.map((item) => item.email), date: request.date, startTime: request.shift.startTime, endTime: request.shift.endTime }); }
+    catch (error) { console.error('Coverage email delivery failed after saving the in-app request.', error instanceof Error ? error.message : error); }
+    try { await sendCareBoardSms(recipients.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: A shift on ${request.date}, ${request.shift.startTime}-${request.shift.endTime}, needs coverage. Sign in to CareBoard to accept.`); }
+    catch (error) { console.error('Coverage SMS delivery failed after saving the in-app request.', error instanceof Error ? error.message : error); }
+  } else if (action === 'acceptScheduleCoverage') {
+    if (actor.role !== 'worker') throw new Error('Only active care workers can accept shift coverage.');
+    const requestId = requiredString(input.requestId, 'Schedule request');
+    const request = await db.prepare(`SELECT id, requester_id AS requesterId, requested_date AS requestedDate, start_time AS startTime, end_time AS endTime, status FROM schedule_change_requests WHERE id=?`).bind(requestId).first<ScheduleChangeRequest>();
+    if (!request || request.status !== 'open') throw new Error('That coverage request is no longer available.');
+    if (request.requesterId === actorId) throw new Error('You cannot accept your own coverage request.');
+    const conflict = await db.prepare(`SELECT id FROM schedule_change_requests WHERE accepted_by=? AND requested_date=? AND status='covered' LIMIT 1`).bind(actorId, request.requestedDate).first();
+    if (conflict) throw new Error('You already have accepted coverage on that date.');
+    const weekday = new Date(`${request.requestedDate}T12:00:00Z`).getUTCDay();
+    const overlappingShift = await db.prepare(`SELECT id FROM shifts WHERE member_id=? AND weekday=? AND start_time<? AND end_time>? AND (cycle_week=0 OR cycle_week=?) LIMIT 1`).bind(actorId, weekday, request.endTime, request.startTime, cycleWeekOf(request.requestedDate)).first();
+    if (overlappingShift) throw new Error('That shift conflicts with your existing schedule.');
+    const result = await db.prepare(`UPDATE schedule_change_requests SET status='covered',accepted_by=?,accepted_at=? WHERE id=? AND status='open'`).bind(actorId, now, requestId).run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That coverage request was already accepted.');
+    await db.batch([
+      activity(null, actorId, 'schedule_coverage_accepted', `${actor.name} accepted shift coverage for ${request.requestedDate}`, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), request.requesterId, coverageAcceptedMessage(actor.name, request.requestedDate, request.startTime, request.endTime), actorId, now),
+    ]);
+    const managers = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
+    try { await sendManagerCoverageEmail({ recipients: managers.results.map((item) => item.email), date: request.requestedDate, startTime: request.startTime, endTime: request.endTime }); }
+    catch (error) { console.error('Manager coverage email failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
+    try { await sendCareBoardSms(managers.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: Coverage was accepted for ${request.requestedDate}, ${request.startTime}-${request.endTime}. Review the manager dashboard.`); }
+    catch (error) { console.error('Manager coverage SMS failed after saving the accepted coverage.', error instanceof Error ? error.message : error); }
+  } else if (action === 'nudgeCoverageRequest') {
+    const requestId = requiredString(input.requestId, 'Schedule request');
+    const request = await db.prepare(`SELECT id, requester_id AS requesterId, requested_date AS requestedDate, start_time AS startTime, end_time AS endTime, status FROM schedule_change_requests WHERE id=?`).bind(requestId).first<ScheduleChangeRequest>();
+    if (!request || request.status !== 'open') throw new Error('That coverage request is no longer open.');
+    if (actor.role !== 'manager' && request.requesterId !== actorId) throw new Error('Only the requester or the manager can nudge this request.');
+    await activity(null, actorId, 'coverage_nudge_sent', `${actor.name} nudged the team about coverage for ${request.requestedDate}`, now).run();
+    const recipients = await db.prepare(`SELECT g.email, m.phone, m.sms_opt_in AS smsOptIn FROM members m JOIN google_accounts g ON g.member_id=m.id LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='worker' AND m.id<>? AND COALESCE(l.status,'active')='active'`).bind(request.requesterId).all<{ email: string; phone: string | null; smsOptIn: boolean }>();
+    try { await sendCoverageEmail({ recipients: recipients.results.map((item) => item.email), date: request.requestedDate, startTime: request.startTime, endTime: request.endTime }); }
+    catch (error) { console.error('Coverage nudge email delivery failed after logging the nudge.', error instanceof Error ? error.message : error); }
+    try { await sendCareBoardSms(recipients.results.filter((item) => item.smsOptIn).map((item) => item.phone ?? ''), `CareBoard: A shift on ${request.requestedDate}, ${request.startTime}-${request.endTime}, still needs coverage. Sign in to CareBoard to accept.`); }
+    catch (error) { console.error('Coverage nudge SMS delivery failed after logging the nudge.', error instanceof Error ? error.message : error); }
+  } else if (action === 'recordShiftHandoff') {
+    const handoff = validateShiftHandoff(input, now.slice(0, 10));
+    await db.batch([
+      db.prepare(`INSERT INTO shift_handoffs(id,household_id,author_id,shift_date,completed_care,outstanding_tasks,observations,checklist_json,created_at) VALUES(?,'default',?,?,?,?,?,?,?)`)
+        .bind(crypto.randomUUID(), actorId, handoff.shiftDate, handoff.completedCare, handoff.outstandingTasks, handoff.observations, JSON.stringify(handoff.checklist), now),
+      activity(null, actorId, 'recorded_handoff', `${actor.name} recorded a shift handoff for ${handoff.shiftDate}`, now),
+    ]);
+  } else if (action === 'reportSafetyIncident') {
+    const incident = validateSafetyIncident(input, now);
+    const incidentId = crypto.randomUUID();
+    const statements = [
+      db.prepare(`INSERT INTO safety_incidents(id,household_id,reporter_id,category,severity,occurred_at,location,description,immediate_action,status,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,?,?,'submitted',?,?)`)
+        .bind(incidentId, actorId, incident.category, incident.severity, incident.occurredAt, incident.location, incident.description, incident.immediateAction, now, now),
+      activity(null, actorId, 'safety_incident_reported', `${actor.name} reported a ${incident.severity} safety concern`, now),
+    ];
+    if (incident.severity === 'high' || incident.severity === 'urgent') {
+      const managers = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.role='manager' AND COALESCE(l.status,'active')='active'`).all<{ id: string }>();
+      for (const manager of managers.results) {
+        statements.push(
+          db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'direct_message',?,NULL,?,?)`)
+            .bind(crypto.randomUUID(), manager.id, `${incident.severity === 'urgent' ? 'Urgent' : 'High-severity'} safety report from ${actor.name}: ${incident.description.slice(0, 300)} — open the command center to triage.`, actorId, now),
+        );
+      }
+    }
+    await db.batch(statements);
+  } else if (action === 'triageSafetyIncident') {
+    const incidentId = requiredString(input.incidentId, 'Safety report');
+    const incident = await db.prepare(`SELECT id, reporter_id AS reporterId, category, severity, occurred_at AS occurredAt, status FROM safety_incidents WHERE id=? AND household_id='default'`).bind(incidentId).first<SafetyIncident>();
+    if (!incident) throw new Error('That safety report no longer exists.');
+    const triage = triageSafetyIncident({ status: incident.status }, input);
+    if (triage.assignedTo) {
+      const assignee = await db.prepare(`SELECT m.id FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role IN ('worker','manager') AND COALESCE(l.status,'active')='active'`).bind(triage.assignedTo).first<{ id: string }>();
+      if (!assignee) throw new Error('Choose an active care team member for follow-up.');
+    }
+    const result = await db
+      .prepare(`UPDATE safety_incidents SET status=?, assigned_to=?, follow_up=?, resolved_at=?, updated_at=? WHERE id=? AND status!='resolved'`)
+      .bind(triage.status, triage.assignedTo, triage.followUp, triage.resolved ? now : null, now, incidentId)
+      .run();
+    if ((result.meta.changes ?? 0) !== 1) throw new Error('That safety report is already resolved.');
+    await db.batch([
+      activity(null, actorId, 'safety_incident_triaged', `${triage.status} safety report from ${incident.occurredAt.slice(0, 10)}`, now),
+      db.prepare(`INSERT INTO worker_inbox_items(id,household_id,worker_id,kind,body,submission_id,created_by,created_at) VALUES(?,'default',?,'manager_message',?,NULL,?,?)`)
+        .bind(crypto.randomUUID(), incident.reporterId, `Your safety report (${incident.category.replace('_', ' ')}, ${incident.occurredAt.slice(0, 10)}) is now ${triage.status === 'resolved' ? 'resolved' : 'being reviewed'}.${triage.followUp ? ` ${triage.followUp.slice(0, 300)}` : ''}`, actorId, now),
     ]);
   } else if (action === 'sendInboxMessage') {
     const recipientId = requiredString(input.recipientId, 'Recipient');
@@ -656,7 +856,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const count = await db.prepare('SELECT COUNT(*) AS count FROM members').first<{ count: number }>();
     const passwordHash = await hashPassword(temporaryPassword as string);
     await db.batch([
-      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,"worker",?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO members(id,name,role,color,created_at,theme) VALUES (?,?,"worker",?,?,?)').bind(id, name, palette[(count?.count ?? 0) % palette.length], now, randomThemeId()),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,activated_at,updated_at) VALUES (?,'default','active',?,?)").bind(id, now, now),
       activity(null, actorId, 'created_worker', `created care worker ${name}`, now),
@@ -675,15 +875,16 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     extras.inviteToken = token;
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     await db.batch([
-      db.prepare('INSERT INTO members(id,name,role,color,created_at) VALUES (?,?,?,?)').bind(id, name, role, palette[(count?.count ?? 0) % palette.length], now),
+      db.prepare('INSERT INTO members(id,name,role,color,created_at,theme) VALUES (?,?,?,?,?,?)').bind(id, name, role, palette[(count?.count ?? 0) % palette.length], now, randomThemeId()),
       db.prepare('INSERT INTO google_accounts(email,member_id) VALUES (?,?)').bind(email, id),
       db.prepare("INSERT INTO account_lifecycle(member_id,household_id,status,updated_at) VALUES (?,'default','invited',?)").bind(id, now),
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
       activity(null, actorId, 'invited_member', `invited ${role === 'viewer' ? 'family viewer' : 'care worker'} ${name}`, now),
     ]);
+    extras.inviteEmail = await trySendInviteEmail(email, name, role, token);
   } else if (action === 'reinviteMember') {
     const memberId = requiredString(input.memberId, 'Member');
-    const member = await db.prepare(`SELECT m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<Member>();
+    const member = await db.prepare(`SELECT m.name, m.role, g.email, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id LEFT JOIN google_accounts g ON g.member_id=m.id WHERE m.id=? AND m.role IN ('worker','viewer')`).bind(memberId).first<Member & { email?: string }>();
     if (!member || member.status !== 'invited') throw new Error('Only pending invites can be renewed.');
     const token = newInviteToken();
     extras.inviteToken = token;
@@ -692,6 +893,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), memberId, await inviteTokenHash(token), expires, now),
       activity(null, actorId, 'reinvited_worker', `created a new invite link for ${member.name}`, now),
     ]);
+    if (member.email) extras.inviteEmail = await trySendInviteEmail(member.email, member.name, member.role === 'viewer' ? 'viewer' : 'worker', token);
   } else if (action === 'setShifts' || action === 'setAvailability') {
     const memberId = requiredString(input.memberId, 'Care worker');
     if (action === 'setAvailability' && actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only update your own availability.');
@@ -699,10 +901,15 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!worker) throw new Error('Choose a valid care worker.');
     const rows = parseWindowRows(input.shifts ?? input.windows);
     const table = action === 'setShifts' ? 'shifts' : 'availability_windows';
+    const insertSql = action === 'setShifts'
+      ? `INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, cycle_week, created_at) VALUES (?,?,?,?,?,?,?)`
+      : `INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, created_at) VALUES (?,?,?,?,?,?)`;
     await db.batch([
       db.prepare(`DELETE FROM ${table} WHERE member_id=?`).bind(memberId),
       ...rows.map((row) =>
-        db.prepare(`INSERT INTO ${table} (id, member_id, weekday, start_time, end_time, created_at) VALUES (?,?,?,?,?,?)`).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, now),
+        action === 'setShifts'
+          ? db.prepare(insertSql).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, row.cycleWeek, now)
+          : db.prepare(insertSql).bind(crypto.randomUUID(), memberId, row.weekday, row.startTime, row.endTime, now),
       ),
       activity(null, actorId, action === 'setShifts' ? 'updated_shifts' : 'updated_availability', `${action === 'setShifts' ? 'updated shifts' : 'updated availability'} for ${worker.name}`, now),
     ]);
@@ -716,12 +923,14 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       .first<{ id: string; role: Role; email?: string }>();
     if (!target) throw new Error('Choose a valid profile.');
     if (actor.role === 'worker' && actor.id !== target.id) throw new Error('You can only edit your own profile.');
-    const allowedWorkerFields = new Set(['phone', 'availability', 'languages', 'profilePhotoId']);
+    const allowedWorkerFields = new Set(['phone', 'smsOptIn', 'availability', 'languages', 'profilePhotoId']);
     const changedFields = Object.keys(input).filter((key) => key !== 'action' && key !== 'actorId' && key !== 'memberId');
     if (actor.role === 'worker' && changedFields.some((field) => !allowedWorkerFields.has(field))) {
       throw new Error('You can only edit phone, availability, languages, and profile photo.');
     }
     const phone = optionalNullableString(input.phone, 40);
+    const smsOptIn = input.smsOptIn !== undefined ? input.smsOptIn === 'on' || input.smsOptIn === true : undefined;
+    if (smsOptIn && !isE164(phone)) throw new Error('SMS alerts require a phone number in E.164 format, such as +15551234567.');
     const availability = optionalString(input.availability, 1000);
     const languages = optionalString(input.languages, 500);
     const skillsNotes = actor.role === 'manager' ? optionalString(input.skillsNotes, 2000) : undefined;
@@ -732,6 +941,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       : undefined;
     const name = actor.role === 'manager' ? (typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 200) : undefined) : undefined;
     const email = actor.role === 'manager' ? normalizeEmail(input.email) : undefined;
+    const dateOfBirth = actor.role === 'manager' ? optionalNullableDate(input.dateOfBirth) : undefined;
+    const address = actor.role === 'manager' ? optionalString(input.address, 500) : undefined;
+    const jobTitle = actor.role === 'manager' ? optionalString(input.jobTitle, 100) : undefined;
+    const employmentStartedOn = actor.role === 'manager' ? optionalNullableDate(input.employmentStartedOn) : undefined;
     const profilePhotoId = typeof input.profilePhotoId === 'string' && input.profilePhotoId ? input.profilePhotoId : undefined;
     if (profilePhotoId) {
       const photoOwner = await db.prepare('SELECT profile_member_id FROM proof_photos WHERE id=?').bind(profilePhotoId).first<{ profileMemberId: string }>();
@@ -740,6 +953,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const sets: string[] = [];
     const values: (string | number | null)[] = [];
     if (phone !== undefined) { sets.push('phone=?'); values.push(phone); }
+    if (smsOptIn !== undefined) { sets.push('sms_opt_in=?'); values.push(smsOptIn ? 1 : 0); }
     if (availability !== undefined) { sets.push('availability=?'); values.push(availability); }
     if (languages !== undefined) { sets.push('languages=?'); values.push(languages); }
     if (skillsNotes !== undefined) { sets.push('skills_notes=?'); values.push(skillsNotes); }
@@ -748,6 +962,10 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (name !== undefined) { sets.push('name=?'); values.push(name); }
     if (profilePhotoId !== undefined) { sets.push('profile_photo_id=?'); values.push(profilePhotoId); }
     if (hourlyRate !== undefined) { sets.push('hourly_rate=?'); values.push(hourlyRate); }
+    if (dateOfBirth !== undefined) { sets.push('date_of_birth=?'); values.push(dateOfBirth); }
+    if (address !== undefined) { sets.push('address=?'); values.push(address); }
+    if (jobTitle !== undefined) { sets.push('job_title=?'); values.push(jobTitle); }
+    if (employmentStartedOn !== undefined) { sets.push('employment_started_on=?'); values.push(employmentStartedOn); }
     if (!sets.length) throw new Error('No valid fields to update.');
     values.push(memberId);
     await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
@@ -765,6 +983,22 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       }
     }
     await activity(null, actorId, 'updated_profile', `updated profile for ${name ?? target.id}`, now).run();
+  } else if (action === 'saveDashboard') {
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    if (input.theme !== undefined) {
+      const theme = input.theme === null || input.theme === '' ? null : requiredString(input.theme, 'Theme');
+      if (theme && !themeById(theme)) throw new Error('Choose a theme from the gallery.');
+      sets.push('theme=?');
+      values.push(theme);
+    }
+    if (input.layout !== undefined) {
+      sets.push('dashboard_layout=?');
+      values.push(JSON.stringify(normalizeLayout(actor.role as DashboardRole, input.layout)));
+    }
+    if (!sets.length) throw new Error('Nothing to update.');
+    values.push(actorId);
+    await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
   } else if (action === 'updateHouseholdSettings') {
     const recurrenceHorizonDays = clampInteger(input.recurrenceHorizonDays, 1, 365, 30);
     const reminderDefaultLeadDays = clampInteger(input.reminderDefaultLeadDays, 0, 90, 1);
@@ -772,13 +1006,26 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const retentionDays = 90;
     const fundedHoursMonthly = clampNumber(input.fundedHoursMonthly, 0, 10000, 0);
     const fundingHourlyRate = clampNumber(input.fundingHourlyRate, 0, 1000, 0);
+    const bookkeeperEmail = optionalString(input.bookkeeperEmail, 200);
+    if (bookkeeperEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookkeeperEmail)) throw new Error('Enter a valid bookkeeper email.');
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
+  } else if (action === 'sendPayrollReport') {
+    const settings = await getHouseholdSettings();
+    const recipient = settings.bookkeeperEmail?.trim();
+    if (!recipient) throw new Error('Set the bookkeeper email in Settings first.');
+    const period = lastCompletePeriod(now.slice(0, 10));
+    const from = typeof input.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.from) ? input.from : period.start;
+    const to = typeof input.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.to) ? input.to : period.end;
+    const csv = await payrollCsvFor(from, to);
+    const result = await sendPayrollReportEmail({ recipient, from, to, csv, filename: `payroll-${from}-to-${to}.csv` });
+    if (result.status !== 'sent') throw new Error('Email is not configured — set EMAIL_FROM and the SMTP settings.');
+    await activity(null, actorId, 'payroll_report_sent', `emailed the payroll report for ${from} to ${to}`, now).run();
   } else if (action === 'saveCertification') {
     const memberId = requiredString(input.memberId, 'Care worker');
     const worker = await db.prepare("SELECT name FROM members WHERE id=? AND role='worker'").bind(memberId).first<Member>();
@@ -861,33 +1108,6 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const body = requiredString(input.body, 'Announcement');
     if (body.length > 500) throw new Error('Announcements are limited to 500 characters.');
     await activity(null, actorId, 'announcement', body, now).run();
-  } else if (action === 'saveShiftHandover') {
-    // Care workers write their own handover; managers may record one on a worker's behalf.
-    const memberId = typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
-    if (actor.role !== 'manager' && memberId !== actorId) throw new Error('You can only write your own shift handover.');
-    const target = await db
-      .prepare(`SELECT m.id, m.name, COALESCE(l.status,'active') AS status FROM members m LEFT JOIN account_lifecycle l ON l.member_id=m.id WHERE m.id=? AND m.role='worker'`)
-      .bind(memberId)
-      .first<Member>();
-    if (!target || target.status !== 'active') throw new Error('Choose an active care worker.');
-    const shiftDate = typeof input.shiftDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.shiftDate) ? input.shiftDate : now.slice(0, 10);
-    const handover = {
-      completedSummary: optionalString(input.completedSummary, handoverFieldLimit),
-      pendingSummary: optionalString(input.pendingSummary, handoverFieldLimit),
-      notes: optionalString(input.notes, handoverFieldLimit),
-    };
-    if (!handoverHasContent(handover)) throw new Error('Add what you finished, what is still pending, or a note for the next shift.');
-    await db.batch([
-      db
-        .prepare(
-          `INSERT INTO shift_handovers(id, household_id, member_id, shift_date, completed_summary, pending_summary, notes, created_at, updated_at)
-           VALUES(?, 'default', ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (household_id, member_id, shift_date)
-           DO UPDATE SET completed_summary=excluded.completed_summary, pending_summary=excluded.pending_summary, notes=excluded.notes, updated_at=excluded.updated_at`,
-        )
-        .bind(crypto.randomUUID(), memberId, shiftDate, handover.completedSummary, handover.pendingSummary, handover.notes, now, now),
-      activity(null, actorId, 'shift_handover', `left a shift handover for ${target.name}`, now),
-    ]);
   } else throw new Error('Unsupported action.');
   return { ...(await getHouseholdState(actorId)), ...extras };
 

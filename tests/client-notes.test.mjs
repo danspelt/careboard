@@ -7,9 +7,12 @@ import {
   canSendInboxMessage,
   canSubmitClientNote,
   canViewClientNoteImage,
+  coverageAcceptedMessage,
+  coverageAskMessage,
   normalizeClientNoteText,
   reviewClientNote,
   triageInboxMessage,
+  scheduleChangeRequest,
   visibleInbox,
   visibleSafetyAlerts,
 } from '../lib/client-notes.ts';
@@ -26,6 +29,14 @@ test('client-note permissions and review transitions fail closed', () => {
   assert.throws(() => reviewClientNote('rejected', 'approve', 'text'), /already been reviewed/);
   assert.throws(() => reviewClientNote('pending', 'approve', '  '), /require reviewed text/);
   assert.equal(normalizeClientNoteText('a  \r\n\n\n\nb', 20), 'a\n\nb');
+});
+
+test('schedule change requests validate a date and bounded reason', () => {
+  const shift = { id: 'shift-1', weekday: 1, startTime: '09:00', endTime: '17:00' };
+  assert.deepEqual(scheduleChangeRequest('2026-09-21', ' Need the day off ', shift), { date: '2026-09-21', reason: 'Need the day off', shift, body: 'Schedule change request for 2026-09-21 (09:00-17:00): Need the day off' });
+  assert.throws(() => scheduleChangeRequest('tomorrow', 'Day off', shift), /valid date/);
+  assert.throws(() => scheduleChangeRequest('2026-09-22', 'Day off', shift), /one of your shifts/);
+  assert.throws(() => scheduleChangeRequest('2026-09-21', '  ', shift), /Explain/);
 });
 
 test('inbox visibility includes only participants for workers and everything for manager', () => {
@@ -110,4 +121,15 @@ test('upload route validates and OCRs before persisting, while review remains ma
   assert.match(household, /'reviewClientNote'/);
   assert.match(household, /managerOnly\.includes\(action\)/);
   assert.match(household, /safety_alert_reviewed/);
+});
+
+test('coverage messages name the asker, the shift, and the yes', () => {
+  const ask = coverageAskMessage('Maya Singh', '2026-09-27', '08:00', '16:00', 'Family appointment');
+  assert.match(ask, /Maya Singh is looking for cover on 2026-09-27, 08:00–16:00/);
+  assert.match(ask, /Family appointment/);
+  assert.match(ask, /say yes/);
+  const accepted = coverageAcceptedMessage('Alex Chen', '2026-09-27', '08:00', '16:00');
+  assert.match(accepted, /Alex Chen said yes/);
+  assert.match(accepted, /2026-09-27/);
+  assert.match(accepted, /is covered/);
 });

@@ -11,6 +11,7 @@ CareBoard is a single-tenant Next.js application backed by SQLite. One household
 ```text
 app/                       Next.js App Router pages and server actions
   api/                     JSON API and authenticated routes
+    assistant/             Role-filtered, read-only OpenAI assistant
     auth/[...nextauth]     Auth.js endpoint
     export/                CSV report download
     health/                Liveness/readiness probe
@@ -74,6 +75,9 @@ Key access rules:
 | Start own assigned open task | No | Yes |
 | Complete own in-progress task | No | Yes |
 | Add notes to own tasks | No | Yes |
+| Record end-of-shift handoffs | Yes | Yes |
+| Report safety incidents | Yes | Yes |
+| Triage safety incidents | Yes | No |
 
 Disabled workers are checked on every protected request. A disabled account immediately loses access even if it holds a valid session cookie.
 
@@ -100,6 +104,15 @@ The migration runner records applied IDs in `_careboard_migrations` so each migr
 - `auth_credentials` — bcrypt-hashed credential passwords and temporary-password flag.
 - `audit_log` — immutable operational audit history visible to managers.
 - `household_settings` — recurrence horizon, reminder lead, and retention policy.
+- `shifts` — recurring shift windows per worker on a two-week cycle: `cycle_week` is 0 (every week), 1, or 2; cycle weeks follow ISO week parity (odd ISO week = week 1).
+- `availability_windows` — weekly recurring availability windows per worker.
+- `time_entries` — clock-in/clock-out records that feed attendance, timesheets, and the payroll export.
+- `shift_handoffs` — worker-authored end-of-shift summaries, outstanding tasks, observations, and checklists.
+- `safety_incidents` — safety and near-miss reports with category, severity, manager triage status, and follow-up.
+
+### Customizable dashboards
+
+Each member's Overview/Today screen is a widget dashboard. `lib/dashboard-widgets.ts` is the pure catalog: widget definitions per role, layout helpers (`normalizeLayout`, `moveWidget`, `setWidgetSize`, `addWidget`, `removeWidget`), and `DASHBOARD_THEMES` color presets. `members.theme` stores the chosen palette (a stable pseudo-random one is assigned at member creation; `themeFor` resolves a deterministic pick when unset) and `members.dashboard_layout` stores the ordered `[{id, size}]` JSON — both are stripped from every other member's view of the roster. The `saveDashboard` mutation validates the theme against the catalog and normalizes the layout server-side. `app/dashboard-grid.tsx` renders the two-column grid (single column on mobile) with a Customize mode exposing move, resize, remove, a grouped widget library, and theme swatches — no drag-and-drop, so it works by touch.
 
 If the database is empty, a seed manager and sample chore are inserted so the first sign-in succeeds.
 
@@ -116,6 +129,8 @@ If the database is empty, a seed manager and sample chore are inserted so the fi
 - `DELETE /api/uploads/[id]` — authenticated deletion restricted to managers or the upload/task owner.
 - `GET /api/uploads/[id]` — authenticated ownership-checked photo download.
 - `GET /api/export` — manager-only CSV export over a date range.
+- `GET /api/timesheets` — manager-only per-worker timesheet CSV (`memberId`, `from`, `to`) with daily hours, rate, and gross amount.
+- `GET /api/payroll` — manager-only all-worker payroll CSV (`from`, `to`; defaults to the last 14 days) listing who worked which day, clock-in/out times, hours, rate, gross pay, and totals — intended for the bookkeeper.
 - `GET /api/health` — container health check; returns HTTP 200 when the app is running.
 
 ## PWA
@@ -135,3 +150,10 @@ The offline page is served when a navigation request fails and a cached shell is
 - Credentials use `bcryptjs` hashing.
 - Mutation payloads are validated with strict regexes for dates, times, and identifiers.
 - CSV export sanitizes cell values to neutralize spreadsheet formula injection.
+- The AI assistant uses the OpenAI Responses API only from the server. Its context is rebuilt from the signed-in member's authorized view on every request and is further minimized: workers receive only their own/unassigned tasks and own shifts; contact data, pay, reports, settings, and audit records are omitted for every role. Assistant history and input lengths are bounded, OpenAI response storage is disabled, and the assistant has no mutation tools.
+- A worker can explicitly submit a day-off request beside the assistant. The durable request appears in CareBoard before best-effort email and opted-in SMS coverage alerts are attempted. Another active worker can explicitly accept a non-conflicting open shift exactly once; that atomic acceptance updates the coverage record, preserves the original request and audit trail, and notifies the manager. The AI cannot trigger this mutation. The manager command center keeps pending absence requests distinct from scheduled/clock-in status and shows resolved coverage changes.
+- Shift handoffs are private: managers see all records; a worker sees only their own handoffs plus handoffs authored by a worker whose shift date they accepted coverage for. Family viewers never see them.
+- Safety incidents are restricted to the reporter and the manager. Reporters receive a private inbox follow-up when the manager reviews or resolves a report. High and urgent severity reports notify active managers through the monitored inbox.
+- Workload warnings (`lib/workload-warnings.ts`) are computed from schedule and task data only — bounded thresholds configurable via `WORKLOAD_MAX_CONSECUTIVE_DAYS`, `WORKLOAD_MIN_TURNAROUND_HOURS`, and `WORKLOAD_MAX_DAILY_TASKS`. They never make health or performance claims.
+
+The product rationale for these care-worker features is documented in [care-worker-needs.md](care-worker-needs.md).
