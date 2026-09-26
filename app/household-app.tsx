@@ -60,6 +60,7 @@ import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
 import { DashboardGrid } from '@/app/dashboard-grid';
 import { layoutFor, appearanceFor, serializeAppearance, type AppearancePrefs, type WidgetItem } from '@/lib/dashboard-widgets';
 import { WEEKDAY_LABELS, formatOperatingHoursSummary, parseOperatingWeekdays } from '@/lib/hours-of-operation';
+import { useIsDesktopViewport, viewportLabel } from '@/lib/viewport';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, careProfileCompleteness, doseOutcomeLabels, kudosCounts, medicationRound, supplyList, supplyUrgencyLabels, upcomingAppointments } from '@/lib/care-plan';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
@@ -103,6 +104,8 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState<'online' | 'refreshing' | 'offline' | 'error'>('online');
+  const isDesktop = useIsDesktopViewport();
+  const viewport = viewportLabel(isDesktop);
   const [feedOpen, setFeedOpen] = useState(false);
   const [feedSeen, setFeedSeen] = useState('');
   const [seenAtOverride, setSeenAtOverride] = useState<string | null>(null);
@@ -345,15 +348,19 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     saveLayout: (layout: WidgetItem[]) => { void mutate({ action: 'saveDashboard', layout }, 'Dashboard updated.').catch(() => {}); },
     saveAppearance: (prefs: AppearancePrefs) => { void mutate({ action: 'saveDashboard', theme: serializeAppearance(prefs) }, 'Look updated.').catch(() => {}); },
   };
-  const nav = manager
+  const navDesktop = manager
     ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['hr', 'HR', Briefcase], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['client', 'Care plan', HandHeart], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
       : [['today', 'Today', Home], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
+  /** Phone bottom bar — caregivers stay simple; managers keep the control-center stops. */
+  const managerMobileNav = [['home', 'Home', LayoutDashboard], ['tasks', 'Tasks', ClipboardList], ['client', 'Care', HandHeart], ['team', 'Team', Users], ['hr', 'HR', Briefcase], ['more', 'More', MoreHorizontal]] as const;
+  const workerMobileNav = [['today', 'Today', Home], ['tasks', 'Tasks', ClipboardList], ['client', 'Care', HandHeart], ['schedule', 'Schedule', CalendarDays], ['more', 'More', MoreHorizontal]] as const;
+  const navMobile = manager ? managerMobileNav : viewer ? navDesktop : workerMobileNav;
 
   return (
     <RoleContext.Provider value={role}>
-    <div className="careboard min-h-screen text-[#20312d]" data-role={role} data-density={appearance.density} data-radius={appearance.radius} style={{ ...appearance.vars, background: 'var(--role-surface)' } as React.CSSProperties}>
+    <div className="careboard min-h-screen text-[#20312d]" data-role={role} data-viewport={viewport} data-density={appearance.density} data-radius={appearance.radius} style={{ ...appearance.vars, background: 'var(--role-surface)' } as React.CSSProperties}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[#287b6f] focus:px-4 focus:py-2 focus:text-white">
         Skip to dashboard content
       </a>
@@ -389,7 +396,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           <span className="text-lg font-bold">CareBoard</span>
         </div>
         <nav className="dashboard-nav flex flex-1 flex-col gap-1 p-4">
-          {nav.map(([id, label, Icon], index) => (
+          {navDesktop.map(([id, label, Icon], index) => (
             <button
               key={id}
               data-guide={`nav-${id}`}
@@ -427,7 +434,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       </aside>
 
       {/* Main content */}
-      <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 md:pl-64 md:pt-0">
+      <main id="main" tabIndex={-1} aria-busy={busy} className="dashboard-main min-h-screen pt-16 pb-24 md:pb-0 md:pl-64 md:pt-0">
         <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-7 sm:py-7">
           {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentMember={state.viewer.id} /></div>}
@@ -444,17 +451,17 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
 
       {/* Mobile bottom nav */}
       <nav className="dashboard-mobile-nav fixed inset-x-0 bottom-0 z-40 border-t border-[#d7dfd7] bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(32,49,45,.08)] backdrop-blur md:hidden" aria-label="Mobile navigation">
-        <ul className="mx-auto flex max-w-full snap-x gap-1 overflow-x-auto">
-          {nav.map(([id, label, Icon]) => (
-            <li key={id} className="min-w-16 flex-1 snap-center">
+        <ul className="mx-auto flex max-w-full gap-1">
+          {navMobile.map(([id, label, Icon]) => (
+            <li key={id} className="min-w-0 flex-1">
             <button
               onClick={() => setSection(id)}
               data-guide={`nav-${id}`}
               aria-current={section === id ? 'page' : undefined}
-              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
             >
               <Icon className="size-5" aria-hidden="true" />
-              {label}
+              <span className="truncate">{label}</span>
             </button>
             </li>
           ))}
@@ -1100,7 +1107,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
   if (section === 'client') return <CarePlanView state={state} mutate={mutate} busy={busy} setSection={setSection} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
-  if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} onOpenLearn={onOpenLearn} />;
+  if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} onOpenLearn={onOpenLearn} setSection={setSection} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const homeNow = new Date();
   const nowTime = homeNow.toTimeString().slice(0, 5);
@@ -1474,7 +1481,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   );
 }
 
-function MoreManager({ state, mutate, busy, onOpenLearn }: any) {
+function MoreManager({ state, mutate, busy, onOpenLearn, setSection }: any) {
   // Learn CareBoard lives in the sidebar / book icon — keep Settings focused on household config.
   const [weekStart] = useState(() => new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10));
   const [payFrom, setPayFrom] = useState(() => new Date(Date.now() - 13 * 864e5).toISOString().slice(0, 10));
@@ -1497,6 +1504,16 @@ function MoreManager({ state, mutate, busy, onOpenLearn }: any) {
   return (
     <>
       <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history. Open Learn CareBoard from the sidebar anytime for a refresher." />
+      <Card className="mb-6 md:hidden">
+        <h2 className="font-bold">More on this phone</h2>
+        <p className="mt-1 text-sm text-[#687873]">Schedule, inbox, and assistant stay one tap away.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection?.('schedule')}><CalendarDays className="size-4" aria-hidden="true" />Schedule</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection?.('messages')}><Inbox className="size-4" aria-hidden="true" />Inbox</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection?.('assistant')}><Sparkles className="size-4" aria-hidden="true" />Assistant</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => onOpenLearn?.()}><BookOpen className="size-4" aria-hidden="true" />Learn</Button>
+        </div>
+      </Card>
       <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -2112,6 +2129,16 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
     return (
     <>
       <Title title="More" text="Account, pay, privacy, and Learn CareBoard refreshers." />
+      <Card className="mb-6 md:hidden">
+        <h2 className="font-bold">Quick jumps</h2>
+        <p className="mt-1 text-sm text-[#687873]">Extras that stay off the simple phone bar.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection('messages')}><Inbox className="size-4" aria-hidden="true" />Inbox</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection('profile')}><User className="size-4" aria-hidden="true" />Profile</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => setSection('assistant')}><Sparkles className="size-4" aria-hidden="true" />Assistant</Button>
+          <Button type="button" variant="outline" className="min-h-11 justify-start" onClick={() => onOpenLearn?.()}><BookOpen className="size-4" aria-hidden="true" />Learn</Button>
+        </div>
+      </Card>
       <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -3037,8 +3064,9 @@ function Metric({ label, value, icon: Icon, tone = 'neutral' }: { label: string;
 }
 
 function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[]; members: Member[]; onOpen: (task: Chore) => void; compact?: boolean }) {
+  const role = useRole();
   if (!tasks.length) return <div className="flex flex-col items-center px-5 py-10 text-center"><span className="mb-3 grid size-12 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><ClipboardList className="size-6" aria-hidden="true" /></span><p className="font-semibold">No tasks to show</p><p className="mt-1 max-w-xs text-sm leading-6 text-[#52645f]">Tasks will appear here as work is planned for your household.</p></div>;
-  return (
+  const cards = (
     <div className={compact ? 'divide-y' : 'grid gap-3 p-5'}>
       {tasks.map((task) => {
         const assigned = members.find((m) => m.id === task.assignedTo);
@@ -3064,6 +3092,41 @@ function TaskList({ tasks, members, onOpen, compact = false }: { tasks: Chore[];
         );
       })}
     </div>
+  );
+  if (role !== 'manager' || compact) return cards;
+  return (
+    <>
+      <div className="manager-task-table hidden overflow-x-auto md:block">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-[#e5eae4] text-xs uppercase tracking-wide text-[#687873]">
+            <tr>
+              <th className="px-5 py-3 font-semibold">Task</th>
+              <th className="px-3 py-3 font-semibold">Area</th>
+              <th className="px-3 py-3 font-semibold">Due</th>
+              <th className="px-3 py-3 font-semibold">Assignee</th>
+              <th className="px-3 py-3 font-semibold">Status</th>
+              <th className="px-5 py-3 font-semibold">Priority</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#eef2ec]">
+            {tasks.map((task) => {
+              const assigned = members.find((m) => m.id === task.assignedTo);
+              return (
+                <tr key={task.id} className="cursor-pointer transition hover:bg-[#f7faf7]" onClick={() => onOpen(task)}>
+                  <td className="px-5 py-3 font-semibold text-[#20312d]">{task.title}</td>
+                  <td className="px-3 py-3 text-[#52645f]">{task.area}</td>
+                  <td className="px-3 py-3 tabular-nums text-[#52645f]">{dateLabel(task.dueDate)}{task.dueTime ? ` · ${task.dueTime}` : ''}</td>
+                  <td className="px-3 py-3 text-[#52645f]">{assigned?.name ?? 'Available'}</td>
+                  <td className="px-3 py-3"><StatusBadge status={task.status} /></td>
+                  <td className="px-5 py-3 capitalize text-[#52645f]">{task.priority}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="md:hidden">{cards}</div>
+    </>
   );
 }
 

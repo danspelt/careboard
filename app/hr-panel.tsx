@@ -83,7 +83,7 @@ function PeopleTab({ workers, certifications, certCount, setProfile, today }: { 
         {certCount > 0 && <span className="rounded-full bg-[#fcf4e9] px-3 py-1 text-xs font-bold text-[#805322]">{certCount} cert alert{certCount === 1 ? '' : 's'}</span>}
       </div>
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
+        <table className="hidden min-w-full text-left text-sm md:table">
           <thead className="text-xs uppercase tracking-wide text-[#687873]">
             <tr>
               <th className="py-2 pr-4 font-semibold">Name</th>
@@ -114,6 +114,22 @@ function PeopleTab({ workers, certifications, certCount, setProfile, today }: { 
             {!workers.length && <tr><td colSpan={6} className="py-8 text-center text-[#687873]">Add care workers from Team to build the roster.</td></tr>}
           </tbody>
         </table>
+        <ul className="grid gap-3 md:hidden">
+          {workers.map((worker) => {
+            const workerCerts = (certifications ?? []).filter((cert) => cert.memberId === worker.id);
+            const alerts = certificationAlerts(workerCerts, [worker], today).length;
+            return (
+              <li key={worker.id}>
+                <button type="button" onClick={() => setProfile(worker)} className="flex w-full flex-col gap-1 rounded-2xl border border-[#e2e8e1] bg-white p-4 text-left transition hover:border-[#aac3b3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+                  <span className="font-bold text-[#20312d]">{worker.name}</span>
+                  <span className="text-sm text-[#52645f]">{worker.jobTitle || 'Care worker'} · {worker.status}</span>
+                  <span className="text-sm tabular-nums text-[#687873]">{worker.hourlyRate != null ? `$${worker.hourlyRate.toFixed(2)}/hr` : 'Rate not set'} · {alerts ? `${alerts} cert alert${alerts === 1 ? '' : 's'}` : `${workerCerts.length || 0} certs`}</span>
+                </button>
+              </li>
+            );
+          })}
+          {!workers.length && <li className="rounded-2xl bg-[#f7f6f1] p-6 text-center text-sm text-[#687873]">Add care workers from Team to build the roster.</li>}
+        </ul>
       </div>
     </Panel>
   );

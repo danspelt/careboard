@@ -146,6 +146,10 @@
 .careboard button:focus-visible { outline: 2px solid #287b6f; outline-offset: 3px; }
 .dashboard-sidebar { background: rgb(255 255 255 / 88%); box-shadow: 12px 0 40px rgb(23 52 45 / 5%); backdrop-filter: blur(18px); }
 .dashboard-mobile-header, .dashboard-mobile-nav { background: rgb(255 255 255 / 92%); backdrop-filter: blur(18px); }
+.careboard[data-viewport='mobile'][data-role='worker'] .welcome-title { font-size: 1.6rem; }
+.careboard[data-viewport='mobile'][data-role='worker'] .welcome-banner { margin-bottom: 1rem; padding: 1rem 1.1rem; }
+.careboard[data-viewport='mobile'][data-role='manager'] .manager-task-table { border-top: 1px solid #e5eae4; }
+.careboard[data-viewport='desktop'] .dashboard-main { min-height: 100vh; }
 .dashboard-nav button { position: relative; }
 .dashboard-nav button { transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease; }
 .dashboard-nav button:hover { transform: translateX(2px); }
