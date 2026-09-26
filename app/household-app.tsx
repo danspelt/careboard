@@ -3,7 +3,8 @@
 
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
-import { createContext, createElement, useContext, useEffect, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
@@ -20,7 +21,8 @@ import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule, nextTaskAction, workerDayPlan } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
-import { buildOnboarding, firstLoginGuide } from '@/lib/onboarding';
+import { buildOnboarding, firstLoginGuide, type FirstLoginGuideStep } from '@/lib/onboarding';
+import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
@@ -79,10 +81,104 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
   const [guideStepsByMember, setGuideStepsByMember] = useState<Record<string, number>>({});
   const [guideDismissedIds, setGuideDismissedIds] = useState<string[]>([]);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
     document.body.dataset.role = role;
     return () => { delete document.body.dataset.role; };
   }, [role]);
+  const guideSteps = firstLoginGuide(role);
+  const guideStep = member ? (guideStepsByMember[member.id] ?? 0) : 0;
+  const guideOpen = !!member && !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
+  const activeGuideStep = guideOpen ? guideSteps[guideStep] : undefined;
+  useEffect(() => {
+    if (!member) return;
+    const navIds = (manager
+      ? ['home', 'assistant', 'tasks', 'client', 'schedule', 'team', 'messages', 'more']
+      : viewer
+        ? ['today', 'client', 'tasks', 'schedule']
+        : ['today', 'assistant', 'tasks', 'client', 'schedule', 'messages', 'profile', 'more']) as Section[];
+    function moveGuide(index: number) {
+      const next = Math.max(0, Math.min(guideSteps.length - 1, index));
+      setGuideStepsByMember((steps) => ({ ...steps, [member.id]: next }));
+      const step = guideSteps[next];
+      if (step?.section) setSection(step.section as Section);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const guideIsOpen = !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
+      if (guideIsOpen) {
+        if (event.key === 'Escape') { event.preventDefault(); dismissGuideFromKeyboard(); return; }
+        if (event.key === 'ArrowRight' || event.key === 'Enter') {
+          event.preventDefault();
+          const index = guideStepsByMember[member.id] ?? 0;
+          if (index >= guideSteps.length - 1) dismissGuideFromKeyboard();
+          else moveGuide(index + 1);
+          return;
+        }
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          const index = guideStepsByMember[member.id] ?? 0;
+          moveGuide(index - 1);
+          return;
+        }
+      }
+      if (isEditableKeyboardTarget(event.target)) return;
+      if (event.key === 'Escape') {
+        if (shortcutsOpen) { event.preventDefault(); setShortcutsOpen(false); return; }
+        if (feedOpen) { event.preventDefault(); setFeedOpen(false); return; }
+        if (createOpen) { event.preventDefault(); setCreateOpen(false); return; }
+        if (addOpen) { event.preventDefault(); setAddOpen(false); return; }
+        if (task) { event.preventDefault(); setTask(null); return; }
+        if (profile) { event.preventDefault(); setProfile(null); return; }
+        if (resetMember) { event.preventDefault(); setResetMember(null); return; }
+        if (shiftWorker) { event.preventDefault(); setShiftWorker(null); return; }
+        if (availWorker) { event.preventDefault(); setAvailWorker(null); return; }
+        return;
+      }
+      if (event.key === '?' || (event.shiftKey && event.key === '/')) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      const digit = Number(event.key);
+      if (digit >= 1 && digit <= navIds.length) {
+        event.preventDefault();
+        setSection(navIds[digit - 1]!);
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === 'b') {
+        event.preventDefault();
+        setFeedSeen(seenAt);
+        setFeedOpen(true);
+        const now = new Date().toISOString();
+        setSeenAt(now);
+        try { localStorage.setItem('careboard-notifications-seen', now); } catch { /* private mode */ }
+        return;
+      }
+      if (key === 'h') { event.preventDefault(); setSection(manager ? 'home' : 'today'); return; }
+      if (key === 't') { event.preventDefault(); setSection('tasks'); return; }
+      if (key === 's') { event.preventDefault(); setSection('schedule'); return; }
+      if (key === 'i' && !viewer) { event.preventDefault(); setSection('messages'); return; }
+      if (key === 'p' && !manager && !viewer) { event.preventDefault(); setSection('profile'); return; }
+      if (key === 'm' && manager) { event.preventDefault(); setSection('team'); return; }
+      if (key === 'n' && manager) { event.preventDefault(); setSection('tasks'); setCreateOpen(true); return; }
+      if (key === 'w' && manager) { event.preventDefault(); setSection('team'); setAddOpen(true); return; }
+    }
+    function dismissGuideFromKeyboard() {
+      if (guideDismissedIds.includes(member.id) || member.guideSeenAt) return;
+      setGuideDismissedIds((ids) => ids.includes(member.id) ? ids : [...ids, member.id]);
+      void fetch('/api/household', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'dismissFirstLoginGuide' }) })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('dismiss failed');
+          const next = await response.json() as HouseholdState;
+          setState(next);
+        })
+        .catch(() => { setGuideDismissedIds((ids) => ids.filter((id) => id !== member.id)); });
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [member, manager, viewer, guideDismissedIds, guideStepsByMember, guideSteps, shortcutsOpen, feedOpen, createOpen, addOpen, task, profile, resetMember, shiftWorker, availWorker, seenAt]);
   useEffect(() => {
     let active = true;
     let refreshing = false;
@@ -171,9 +267,6 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   }
   const bell = <BellButton unread={unread} onClick={openFeed} />;
   const onboarding = buildOnboarding({ manager, viewerId: member.id, members: state.members, tasks: state.chores });
-  const guideSteps = firstLoginGuide(role);
-  const guideStep = guideStepsByMember[member.id] ?? 0;
-  const guideOpen = !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
   function dismissTour() {
     setTourDone(true);
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
@@ -185,8 +278,11 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       setGuideDismissedIds((ids) => ids.filter((id) => id !== member.id));
     });
   }
-  function setGuideStep(index: number) {
-    setGuideStepsByMember((steps) => ({ ...steps, [member.id]: index }));
+  function goGuideStep(index: number) {
+    const next = Math.max(0, Math.min(guideSteps.length - 1, index));
+    setGuideStepsByMember((steps) => ({ ...steps, [member.id]: next }));
+    const step = guideSteps[next];
+    if (step?.section) setSection(step.section as Section);
   }
   const theme = themeFor(member.id, member.theme ?? null);
   const dashboard = {
@@ -229,15 +325,17 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           <span className="text-lg font-bold">CareBoard</span>
         </div>
         <nav className="dashboard-nav flex flex-1 flex-col gap-1 p-4">
-          {nav.map(([id, label, Icon]) => (
+          {nav.map(([id, label, Icon], index) => (
             <button
               key={id}
+              data-guide={`nav-${id}`}
               onClick={() => setSection(id)}
               aria-current={section === id ? 'page' : undefined}
               className={`flex min-h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#287b6f] text-white' : 'text-[#52645f] hover:bg-[#f1f5f1]'}`}
             >
               <Icon className="size-5" aria-hidden="true" />
-              {label}
+              <span className="flex-1">{label}</span>
+              <kbd className="hidden rounded-md border border-current/20 px-1.5 py-0.5 text-[10px] font-semibold opacity-70 lg:inline">{index + 1}</kbd>
             </button>
           ))}
         </nav>
@@ -255,6 +353,9 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
               <LogOut className="size-4" aria-hidden="true" />Sign out
             </button>
           </form>
+          <button type="button" onClick={() => setShortcutsOpen(true)} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+            Keyboard shortcuts <kbd className="rounded border border-[#d7dfd7] bg-white px-1.5 py-0.5">?</kbd>
+          </button>
         </div>
       </aside>
 
@@ -263,7 +364,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
         <div className="mx-auto max-w-screen-2xl px-4 py-5 sm:px-7 sm:py-7">
           {connection !== 'online' && <ConnectionBanner status={connection} onRetry={() => void refresh().catch(() => undefined)} />}
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentMember={state.viewer.id} /></div>}
-          {!viewer && !tourDone && onboarding.some((step) => !step.done) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
+          {!viewer && ((!tourDone && onboarding.some((step) => !step.done)) || (guideOpen && activeGuideStep?.target === 'getting-started')) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
             <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} mutate={mutate} busy={busy} dashboard={dashboard} />
           ) : viewer ? (
@@ -281,6 +382,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
             <li key={id} className="min-w-16 flex-1 snap-center">
             <button
               onClick={() => setSection(id)}
+              data-guide={`nav-${id}`}
               aria-current={section === id ? 'page' : undefined}
               className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${section === id ? 'bg-[#e6f0eb] text-[#287b6f]' : 'text-[#687873]'}`}
             >
@@ -293,13 +395,35 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       </nav>
 
       <TaskDialog task={task} manager={manager} readOnly={viewer} memberId={member.id} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
-      <FirstLoginGuideDialog
+      <FirstLoginGuideTour
         open={guideOpen}
         steps={guideSteps}
         stepIndex={guideStep}
-        onStepIndex={setGuideStep}
+        onStepIndex={goGuideStep}
         onDismiss={dismissGuide}
       />
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Keyboard shortcuts</DialogTitle>
+            <DialogDescription>Move around the dashboard without leaving the keyboard. Shortcuts are paused while you type in a field.</DialogDescription>
+          </DialogHeader>
+          <ul className="divide-y divide-[#e5eae4]">
+            {shortcutsForRole(role).map((item) => (
+              <li key={item.id} className="flex items-center justify-between gap-3 py-3">
+                <span className="text-sm text-[#52645f]">{item.label}</span>
+                <kbd className="rounded-lg border border-[#d7dfd7] bg-[#f7f6f1] px-2 py-1 text-xs font-semibold text-[#20312d]">{item.keys}</kbd>
+              </li>
+            ))}
+            {guideOpen && (
+              <>
+                <li className="flex items-center justify-between gap-3 py-3"><span className="text-sm text-[#52645f]">Welcome guide: next step</span><kbd className="rounded-lg border border-[#d7dfd7] bg-[#f7f6f1] px-2 py-1 text-xs font-semibold">→ / Enter</kbd></li>
+                <li className="flex items-center justify-between gap-3 py-3"><span className="text-sm text-[#52645f]">Welcome guide: previous step</span><kbd className="rounded-lg border border-[#d7dfd7] bg-[#f7f6f1] px-2 py-1 text-xs font-semibold">←</kbd></li>
+              </>
+            )}
+          </ul>
+        </DialogContent>
+      </Dialog>
       <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -399,7 +523,7 @@ function LocalDevRoleSwitcher({ currentMember }: { currentMember: string }) {
 function OnboardingCard({ steps, onDone }: any) {
   const done = steps.filter((step: any) => step.done).length;
   return (
-    <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
+    <Card data-guide="getting-started" className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#e2efe5] text-[#287b6f]"><Sprout className="size-5" aria-hidden="true" /></span>
@@ -420,7 +544,7 @@ function OnboardingCard({ steps, onDone }: any) {
   );
 }
 
-function FirstLoginGuideDialog({
+function FirstLoginGuideTour({
   open,
   steps,
   stepIndex,
@@ -428,25 +552,93 @@ function FirstLoginGuideDialog({
   onDismiss,
 }: {
   open: boolean;
-  steps: Array<{ id: string; title: string; body: string }>;
+  steps: FirstLoginGuideStep[];
   stepIndex: number;
   onStepIndex: (index: number) => void;
   onDismiss: () => void;
 }) {
   const step = steps[stepIndex];
-  if (!step) return null;
+  const highlightRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const veilRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open || !step) return;
+    let cancelled = false;
+    let attempts = 0;
+    const place = (rect: DOMRect | null) => {
+      const highlight = highlightRef.current;
+      const panel = panelRef.current;
+      const veil = veilRef.current;
+      if (!highlight || !panel || !veil) return;
+      if (!rect) {
+        highlight.hidden = true;
+        veil.hidden = false;
+        panel.style.top = '24px';
+        panel.style.left = '24px';
+        return;
+      }
+      const pad = 8;
+      const top = Math.max(8, rect.top - pad);
+      const left = Math.max(8, rect.left - pad);
+      const width = rect.width + pad * 2;
+      const height = rect.height + pad * 2;
+      highlight.hidden = false;
+      veil.hidden = true;
+      highlight.style.top = `${top}px`;
+      highlight.style.left = `${left}px`;
+      highlight.style.width = `${width}px`;
+      highlight.style.height = `${height}px`;
+      const panelWidth = Math.min(360, window.innerWidth - 24);
+      panel.style.width = `${panelWidth}px`;
+      panel.style.top = `${Math.min(window.innerHeight - 220, Math.max(16, top + height + 12))}px`;
+      panel.style.left = `${Math.min(window.innerWidth - panelWidth - 12, Math.max(12, left))}px`;
+    };
+    const measure = () => {
+      if (cancelled) return;
+      const nodes = Array.from(document.querySelectorAll(`[data-guide="${step.target}"]`));
+      const el = nodes.find((node) => node instanceof HTMLElement && node.getClientRects().length > 0) as HTMLElement | undefined;
+      if (!el) {
+        if (attempts++ < 12) window.setTimeout(measure, 50);
+        else place(null);
+        return;
+      }
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      place(el.getBoundingClientRect());
+    };
+    const frame = window.requestAnimationFrame(measure);
+    const onRefresh = () => measure();
+    window.addEventListener('resize', onRefresh);
+    window.addEventListener('scroll', onRefresh, true);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', onRefresh);
+      window.removeEventListener('scroll', onRefresh, true);
+    };
+  }, [open, step, stepIndex]);
+  if (!open || !step || typeof document === 'undefined') return null;
   const last = stepIndex >= steps.length - 1;
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss(); }}>
-      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md" showCloseButton>
-        <DialogHeader>
-          <DialogTitle>{step.title}</DialogTitle>
-          <DialogDescription>{step.body}</DialogDescription>
-        </DialogHeader>
-        <p className="text-xs font-semibold text-[#4d6b5e]">{stepIndex + 1} of {steps.length}</p>
-        <DialogFooter className="gap-2 sm:justify-between">
+  return createPortal(
+    <dialog open className="pointer-events-none fixed inset-0 z-[60] m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 open:flex" aria-labelledby="first-login-guide-title">
+      <div ref={veilRef} className="absolute inset-0 bg-[#102e25]/45" aria-hidden="true" />
+      <div
+        ref={highlightRef}
+        hidden
+        className="absolute rounded-2xl border-2 border-[#287b6f] bg-transparent shadow-[0_0_0_9999px_rgba(16,46,37,0.45)] transition-[top,left,width,height] duration-200 motion-reduce:transition-none"
+        aria-hidden="true"
+      />
+      <div ref={panelRef} className="pointer-events-auto absolute w-[min(360px,calc(100vw-24px))] rounded-3xl border border-[#cbdcd1] bg-[#fffefa] p-5 shadow-[var(--shadow-raised)]" style={{ top: 24, left: 24 }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-[#4d6b5e]">{stepIndex + 1} of {steps.length}</p>
+            <h2 id="first-login-guide-title" className="mt-1 text-lg font-bold text-[#20312d]">{step.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-[#52645f]">{step.body}</p>
+          </div>
+          <button type="button" onClick={onDismiss} aria-label="Close welcome guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <Button type="button" variant="ghost" onClick={onDismiss}>Skip</Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <div className="flex gap-2">
             <Button type="button" variant="outline" disabled={stepIndex === 0} onClick={() => onStepIndex(Math.max(0, stepIndex - 1))}>Back</Button>
             {last ? (
               <Button type="button" onClick={onDismiss}>Done</Button>
@@ -454,12 +646,16 @@ function FirstLoginGuideDialog({
               <Button type="button" onClick={() => onStepIndex(Math.min(steps.length - 1, stepIndex + 1))}>Next</Button>
             )}
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+        <p className="mt-3 text-xs text-[#687873]">Tip: ← → or Enter to move · Esc to skip · ? for all shortcuts</p>
+      </div>
+    </dialog>,
+    document.body,
   );
 }
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }
+function Card({ children, className = '', ...props }: React.ComponentProps<'section'>) {
+  return <section {...props} className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>;
+}
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     open: 'bg-[#e8f1ec] text-[#287b6f]',
@@ -1777,14 +1973,14 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
             </div>
           </Card>
     ),
-    handoffform: <ShiftHandoffComposer mutate={mutate} busy={busy} />,
+    handoffform: <div data-guide="handoffs-safety"><ShiftHandoffComposer mutate={mutate} busy={busy} /></div>,
     handofflog: <ShiftHandoffLog state={state} personal />,
     medsround: <MedicationRoundCard state={state} mutate={mutate} busy={busy} />,
     aboutme: <CareProfileCard state={state} compact setSection={setSection} />,
     appointments: <AppointmentsCard state={state} mutate={mutate} busy={busy} compact />,
     supplies: <SuppliesCard state={state} mutate={mutate} busy={busy} />,
     kudos: <KudosCard state={state} mutate={mutate} busy={busy} />,
-    safetyform: <SafetyReportForm mutate={mutate} busy={busy} />,
+    safetyform: <div data-guide="handoffs-safety"><SafetyReportForm mutate={mutate} busy={busy} /></div>,
     safetylog: <SafetyReportList state={state} />,
     schedule: (
       <Card>

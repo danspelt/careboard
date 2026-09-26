@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildOnboarding, firstLoginGuide } from '../lib/onboarding.ts';
+import { isEditableKeyboardTarget, shortcutsForRole } from '../lib/dashboard-shortcuts.ts';
 
 const task = (overrides = {}) => ({ id: crypto.randomUUID(), status: 'open', assignedTo: null, notes: [], ...overrides });
 
@@ -34,5 +35,22 @@ test('first login guide differs for manager and worker, and viewers get none', (
   for (const step of [...manager, ...worker]) {
     assert.ok(step.title.trim());
     assert.ok(step.body.trim());
+    assert.ok(step.target.trim());
+    assert.ok(step.section.trim());
   }
+  assert.notDeepEqual(manager.map((step) => step.target), worker.map((step) => step.target));
+});
+
+test('dashboard shortcuts differ by role and ignore editable targets', () => {
+  const managerKeys = new Set(shortcutsForRole('manager').map((item) => item.keys));
+  const workerKeys = new Set(shortcutsForRole('worker').map((item) => item.keys));
+  const viewerKeys = new Set(shortcutsForRole('viewer').map((item) => item.keys));
+  assert.ok(managerKeys.has('w'));
+  assert.ok(managerKeys.has('n'));
+  assert.ok(!workerKeys.has('w'));
+  assert.ok(workerKeys.has('p'));
+  assert.ok(!viewerKeys.has('w'));
+  assert.ok(!viewerKeys.has('n'));
+  assert.ok(!viewerKeys.has('p'));
+  assert.equal(isEditableKeyboardTarget(null), false);
 });
