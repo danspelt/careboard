@@ -20,7 +20,7 @@ import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule, nextTaskAction, workerDayPlan } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
-import { buildOnboarding } from '@/lib/onboarding';
+import { buildOnboarding, firstLoginGuide } from '@/lib/onboarding';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
 import { formatMinutes, minutesInRange, openEntryFor, weekSummary } from '@/lib/time-tracking';
@@ -77,6 +77,8 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
   const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
+  const [guideStepsByMember, setGuideStepsByMember] = useState<Record<string, number>>({});
+  const [guideDismissedIds, setGuideDismissedIds] = useState<string[]>([]);
   useEffect(() => {
     document.body.dataset.role = role;
     return () => { delete document.body.dataset.role; };
@@ -169,9 +171,22 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   }
   const bell = <BellButton unread={unread} onClick={openFeed} />;
   const onboarding = buildOnboarding({ manager, viewerId: member.id, members: state.members, tasks: state.chores });
+  const guideSteps = firstLoginGuide(role);
+  const guideStep = guideStepsByMember[member.id] ?? 0;
+  const guideOpen = !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
   function dismissTour() {
     setTourDone(true);
     try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
+  }
+  function dismissGuide() {
+    if (guideDismissedIds.includes(member.id) || member.guideSeenAt) return;
+    setGuideDismissedIds((ids) => ids.includes(member.id) ? ids : [...ids, member.id]);
+    void mutate({ action: 'dismissFirstLoginGuide' }, '').catch(() => {
+      setGuideDismissedIds((ids) => ids.filter((id) => id !== member.id));
+    });
+  }
+  function setGuideStep(index: number) {
+    setGuideStepsByMember((steps) => ({ ...steps, [member.id]: index }));
   }
   const theme = themeFor(member.id, member.theme ?? null);
   const dashboard = {
@@ -278,6 +293,13 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       </nav>
 
       <TaskDialog task={task} manager={manager} readOnly={viewer} memberId={member.id} workers={workers} busy={busy} onClose={() => setTask(null)} mutate={mutate} upload={upload} deletePhoto={deletePhoto} />
+      <FirstLoginGuideDialog
+        open={guideOpen}
+        steps={guideSteps}
+        stepIndex={guideStep}
+        onStepIndex={setGuideStep}
+        onDismiss={dismissGuide}
+      />
       <Dialog open={feedOpen} onOpenChange={(open) => !open && setFeedOpen(false)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -395,6 +417,46 @@ function OnboardingCard({ steps, onDone }: any) {
         ))}
       </ol>
     </Card>
+  );
+}
+
+function FirstLoginGuideDialog({
+  open,
+  steps,
+  stepIndex,
+  onStepIndex,
+  onDismiss,
+}: {
+  open: boolean;
+  steps: Array<{ id: string; title: string; body: string }>;
+  stepIndex: number;
+  onStepIndex: (index: number) => void;
+  onDismiss: () => void;
+}) {
+  const step = steps[stepIndex];
+  if (!step) return null;
+  const last = stepIndex >= steps.length - 1;
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss(); }}>
+      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md" showCloseButton>
+        <DialogHeader>
+          <DialogTitle>{step.title}</DialogTitle>
+          <DialogDescription>{step.body}</DialogDescription>
+        </DialogHeader>
+        <p className="text-xs font-semibold text-[#4d6b5e]">{stepIndex + 1} of {steps.length}</p>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button type="button" variant="ghost" onClick={onDismiss}>Skip</Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button type="button" variant="outline" disabled={stepIndex === 0} onClick={() => onStepIndex(Math.max(0, stepIndex - 1))}>Back</Button>
+            {last ? (
+              <Button type="button" onClick={onDismiss}>Done</Button>
+            ) : (
+              <Button type="button" onClick={() => onStepIndex(Math.min(steps.length - 1, stepIndex + 1))}>Next</Button>
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`dashboard-card rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 shadow-sm ${className}`}>{children}</section>; }

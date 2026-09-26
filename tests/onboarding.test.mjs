@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildOnboarding } from '../lib/onboarding.ts';
+import { buildOnboarding, firstLoginGuide } from '../lib/onboarding.ts';
 
 const task = (overrides = {}) => ({ id: crypto.randomUUID(), status: 'open', assignedTo: null, notes: [], ...overrides });
 
@@ -23,4 +23,16 @@ test('worker onboarding tracks profile, assignment, start, note, and completion'
   });
   assert.deepEqual(steps.map((step) => step.done), [true, true, true, false, false]);
   assert.equal(steps.length, 5);
+});
+
+test('first login guide differs for manager and worker, and viewers get none', () => {
+  const manager = firstLoginGuide('manager');
+  const worker = firstLoginGuide('worker');
+  assert.deepEqual(manager.map((step) => step.id), ['overview', 'team', 'tasks', 'inbox', 'checklist']);
+  assert.deepEqual(worker.map((step) => step.id), ['today', 'tasks', 'handoffs-safety', 'schedule-profile', 'checklist']);
+  assert.deepEqual(firstLoginGuide('viewer'), []);
+  for (const step of [...manager, ...worker]) {
+    assert.ok(step.title.trim());
+    assert.ok(step.body.trim());
+  }
 });

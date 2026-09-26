@@ -46,6 +46,7 @@ export type Member = {
   employmentStartedOn?: string | null;
   theme?: string | null;
   dashboardLayout?: WidgetItem[] | null;
+  guideSeenAt?: string | null;
 };
 export type ProofPhoto = { id: string; choreId?: string; profileMemberId?: string; originalName: string; mimeType: string; byteSize: number; createdAt: string };
 export type TaskNote = { id: string; choreId: string; memberId: string; kind: 'progress' | 'completion' | 'issue'; body: string; createdAt: string };
@@ -264,7 +265,7 @@ async function rawState() {
           m.phone, m.sms_opt_in AS smsOptIn, m.availability, m.skills_notes AS skillsNotes, m.emergency_contact AS emergencyContact,
           m.certifications, m.languages, m.profile_photo_id AS profilePhotoId, m.hourly_rate AS hourlyRate,
           m.date_of_birth AS dateOfBirth, m.address, m.job_title AS jobTitle, m.employment_started_on AS employmentStartedOn,
-          m.theme, m.dashboard_layout AS dashboardLayoutJson
+          m.theme, m.dashboard_layout AS dashboardLayoutJson, m.guide_seen_at AS guideSeenAt
         FROM members m
         LEFT JOIN account_lifecycle l ON l.member_id=m.id
         LEFT JOIN google_accounts g ON g.member_id=m.id
@@ -337,7 +338,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     });
   if (viewer.role === 'manager') return {
     viewer: { id: viewer.id, role: viewer.role }, ...state,
-    members: state.members.map((item) => (item.id === viewer.id ? item : { ...item, theme: null, dashboardLayout: null })),
+    members: state.members.map((item) => (item.id === viewer.id ? item : { ...item, theme: null, dashboardLayout: null, guideSeenAt: null })),
     clientNotes,
     clientNoteQueue: state.clientNoteSubmissions.filter((note) => note.status === 'pending'),
     inbox: visibleInbox(viewer.role, viewer.id, state.inboxItems),
@@ -358,6 +359,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null,
       theme: item.id === viewer.id ? (item.theme ?? null) : null,
       dashboardLayout: item.id === viewer.id ? (item.dashboardLayout ?? null) : null,
+      guideSeenAt: item.id === viewer.id ? (item.guideSeenAt ?? null) : null,
     }));
     return {
       viewer: { id: viewer.id, role: viewer.role }, members: people, chores: state.chores, activity: [],
@@ -375,7 +377,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     languages: viewer.languages, profilePhotoId: viewer.profilePhotoId, hourlyRate: viewer.hourlyRate ?? null,
     dateOfBirth: viewer.dateOfBirth ?? null, address: viewer.address ?? '', jobTitle: viewer.jobTitle ?? '',
     employmentStartedOn: viewer.employmentStartedOn ?? null,
-    theme: viewer.theme ?? null, dashboardLayout: viewer.dashboardLayout ?? null,
+    theme: viewer.theme ?? null, dashboardLayout: viewer.dashboardLayout ?? null, guideSeenAt: viewer.guideSeenAt ?? null,
   };
   // Workers get a minimal roster (names, roles, colors, photos only) so they can see who posted messages and who owns unfinished work — private details stay stripped.
   const roster: Member[] = state.members
@@ -384,7 +386,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       id: item.id, name: item.name, role: item.role, status: item.status, color: item.color,
       createdAt: item.createdAt, phone: null, availability: '', skillsNotes: '', emergencyContact: null,
       certifications: '', languages: '', profilePhotoId: item.profilePhotoId, hourlyRate: null,
-      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null,
+      dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null, guideSeenAt: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
   return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()), ...carePlan };
@@ -1156,6 +1158,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!sets.length) throw new Error('Nothing to update.');
     values.push(actorId);
     await db.prepare(`UPDATE members SET ${sets.join(', ')} WHERE id=?`).bind(...values).run();
+  } else if (action === 'dismissFirstLoginGuide') {
+    await db.prepare('UPDATE members SET guide_seen_at=? WHERE id=?').bind(now, actorId).run();
   } else if (action === 'updateHouseholdSettings') {
     const recurrenceHorizonDays = clampInteger(input.recurrenceHorizonDays, 1, 365, 30);
     const reminderDefaultLeadDays = clampInteger(input.reminderDefaultLeadDays, 0, 90, 1);

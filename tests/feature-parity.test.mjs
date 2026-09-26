@@ -25,7 +25,7 @@ const backendOnly = ['unclaim', 'deleteUpload'];
 // Actions allowed for non-managers; everything else must be in the managerOnly guard list.
 const workerReachable = [
   'acceptScheduleCoverage', 'addNote', 'claim', 'clockIn', 'clockOut', 'complete', 'deleteUpload',
-  'nudgeCoverageRequest', 'postMessage', 'recordShiftHandoff', 'reportSafetyIncident',
+  'dismissFirstLoginGuide', 'nudgeCoverageRequest', 'postMessage', 'recordShiftHandoff', 'reportSafetyIncident',
   'requestScheduleChange', 'saveDashboard', 'sendInboxMessage', 'setAvailability', 'start',
   'submitShiftHandoff', 'takeover', 'unclaim', 'updateProfile', 'updateTask',
   'logMedicationDose', 'completeAppointment', 'sendKudos', 'addSupplyItem', 'markSupplyPurchased',

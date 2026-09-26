@@ -32,6 +32,7 @@ const manager: Member = {
   hourlyRate: null,
   theme: 'teal',
   dashboardLayout: null,
+  guideSeenAt: null,
 };
 
 const worker: Member = {
@@ -56,6 +57,7 @@ const worker: Member = {
   employmentStartedOn: '2025-01-15',
   theme: 'forest',
   dashboardLayout: null,
+  guideSeenAt: null,
 };
 
 const worker2: Member = {
@@ -80,6 +82,7 @@ const worker2: Member = {
   employmentStartedOn: '2025-06-01',
   theme: 'plum',
   dashboardLayout: null,
+  guideSeenAt: null,
 };
 
 const viewerMember: Member = {
@@ -100,6 +103,7 @@ const viewerMember: Member = {
   hourlyRate: null,
   theme: 'plum',
   dashboardLayout: null,
+  guideSeenAt: null,
 };
 
 function makeChore(overrides: Partial<Chore> & Pick<Chore, 'id' | 'title' | 'area' | 'dueDate' | 'priority' | 'status' | 'assignedTo'>): Chore {
@@ -464,6 +468,12 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (input.layout !== undefined) member.dashboardLayout = normalizeLayout(member.role as 'manager' | 'worker' | 'viewer', input.layout);
       break;
     }
+    case 'dismissFirstLoginGuide': {
+      const member = findMember(actorId);
+      if (member.role === 'viewer') throw new Error('Family viewers do not have a first-login guide.');
+      member.guideSeenAt = now2;
+      break;
+    }
     case 'addMember':
     case 'inviteMember': {
       const name = requiredString(input.name, 'Full name');
@@ -487,6 +497,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
         hourlyRate: null,
         theme: randomThemeId(),
         dashboardLayout: null,
+        guideSeenAt: null,
       };
       mockState.members.push(newMember);
       pushActivity('added_member', `added ${name}`);
