@@ -50,6 +50,7 @@ import { buildHrAlerts, incompleteHireWorkerCount, memberOnApprovedLeave, unsign
 import { payPeriodReadyToClose } from '@/lib/hr-payroll';
 import { ManagerHrView, WorkerHrCards } from '@/app/hr-panel';
 import { CsilPanel } from '@/app/csil-panel';
+import { CsilOperationsPanel } from '@/app/csil-operations-panel';
 import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
@@ -1683,6 +1684,7 @@ function MoreManager({ state, mutate, busy, onOpenLearn, setSection }: any) {
         )}
       </Card>
       <CsilPanel state={state} mutate={mutate} busy={busy} />
+      <CsilOperationsPanel />
       <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Hours tracked — last 7 days</h2>
         <p className="mt-1 text-sm text-[#687873]">Care workers clock in and out from their Today view. Open shifts count toward the total live.</p>

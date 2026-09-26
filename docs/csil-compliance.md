@@ -85,7 +85,7 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | Backup/emergency care | Availability, persistent coverage requests, email/SMS alerts and shift handoffs. The agreement's narrative respite/backup plan is not yet a dedicated structured document. |
 | Accessibility, mobile and offline | Responsive/touch-friendly dashboard, labelled controls, reduced-motion styling, PWA manifest and offline shell. Authenticated records and mutations intentionally require a connection and are not cached offline. |
 
-The remaining gaps are deliberately explicit: bank feeds, encrypted receipt OCR, authority-specific templates, structured reimbursement approval, consent/retention administration, a dedicated emergency-plan editor, and one-click year-end packaging need separate threat-model, sample-document, and workflow work. They must not be represented as complete merely because adjacent CareBoard features exist.
+CareBoard now also provides AES-256-GCM encrypted receipt images with best-effort OCR, authenticated manager-only retrieval, provider-neutral CSV/OFX transaction import with deterministic matching, reimbursement request/decision records, consent grants and withdrawal records, configurable financial retention, a dedicated emergency backup-care plan, configurable JSON authority-field mappings, and a one-click portable year-end JSON package. Live bank feeds still require an owner-selected provider, and an authority-specific PDF/XLS rendition requires the authority's current official template; the generic mapping and portable export intentionally avoid inventing either dependency.
 
 ## Suggested next product steps
 

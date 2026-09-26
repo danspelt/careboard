@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict'; import { test } from 'node:test'; import { parseBankExport, matchTransactions } from '../lib/csil-import.ts';
+test('imports provider-neutral CSV and matches by date and amount', () => { const rows=parseBankExport('Date,Description,Amount,Reference\n2026-01-02,Bookkeeper,-75.00,T1'); assert.equal(rows.length,1); assert.equal(matchTransactions(rows,[{id:'e',expenseDate:'2026-01-02',amount:75}])[0].matchedExpenseId,'e'); });
+test('imports OFX transactions', () => { const rows=parseBankExport('<OFX><BANKTRANLIST><STMTTRN><DTPOSTED>20260103<TRNAMT>-20.50<FITID>X1<NAME>SUPPLIER</STMTTRN></BANKTRANLIST>'); assert.deepEqual(rows[0],{postedOn:'2026-01-03',description:'SUPPLIER',amount:-20.5,externalId:'X1'}); });
