@@ -3,11 +3,34 @@
 
 import { logOut } from '@/app/actions/auth';
 import Link from 'next/link';
-import { createContext, createElement, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 const RoleContext = createContext<'manager' | 'viewer' | 'worker'>('worker');
 function useRole() { return useContext(RoleContext); }
+function useIsClient() {
+  return useSyncExternalStore(() => () => {}, () => true, () => false);
+}
+function subscribeLocalStorage(onStoreChange: () => void) {
+  window.addEventListener('storage', onStoreChange);
+  window.addEventListener('careboard-local-storage', onStoreChange);
+  return () => {
+    window.removeEventListener('storage', onStoreChange);
+    window.removeEventListener('careboard-local-storage', onStoreChange);
+  };
+}
+function readLocalStorage(key: string) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writeLocalStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+    window.dispatchEvent(new Event('careboard-local-storage'));
+  } catch { /* private mode */ }
+}
+function useLocalStorageValue(key: string, serverValue = '') {
+  return useSyncExternalStore(subscribeLocalStorage, () => readLocalStorage(key) ?? serverValue, () => serverValue);
+}
 import { AlertTriangle, Award, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HandHeart, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Pill, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, ShoppingCart, Sofa, Sparkles, Sprout, Stethoscope, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -76,9 +99,11 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const [busy, setBusy] = useState(false);
   const [connection, setConnection] = useState<'online' | 'refreshing' | 'offline' | 'error'>('online');
   const [feedOpen, setFeedOpen] = useState(false);
-  const [seenAt, setSeenAt] = useState(() => { try { return localStorage.getItem('careboard-notifications-seen') ?? ''; } catch { return ''; } });
   const [feedSeen, setFeedSeen] = useState('');
-  const [tourDone, setTourDone] = useState(() => { try { return localStorage.getItem('careboard-onboarding-dismissed') === '1'; } catch { return false; } });
+  const [seenAtOverride, setSeenAtOverride] = useState<string | null>(null);
+  const storedSeenAt = useLocalStorageValue('careboard-notifications-seen');
+  const seenAt = seenAtOverride ?? storedSeenAt;
+  const tourDone = useLocalStorageValue('careboard-onboarding-dismissed') === '1';
   const [guideStepsByMember, setGuideStepsByMember] = useState<Record<string, number>>({});
   const [guideDismissedIds, setGuideDismissedIds] = useState<string[]>([]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -152,8 +177,8 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
         setFeedSeen(seenAt);
         setFeedOpen(true);
         const now = new Date().toISOString();
-        setSeenAt(now);
-        try { localStorage.setItem('careboard-notifications-seen', now); } catch { /* private mode */ }
+        setSeenAtOverride(now);
+        writeLocalStorage('careboard-notifications-seen', now);
         return;
       }
       if (key === 'h') { event.preventDefault(); setSection(manager ? 'home' : 'today'); return; }
@@ -262,14 +287,13 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     setFeedSeen(seenAt);
     setFeedOpen(true);
     const now = new Date().toISOString();
-    setSeenAt(now);
-    try { localStorage.setItem('careboard-notifications-seen', now); } catch { /* private mode */ }
+    setSeenAtOverride(now);
+    writeLocalStorage('careboard-notifications-seen', now);
   }
   const bell = <BellButton unread={unread} onClick={openFeed} />;
   const onboarding = buildOnboarding({ manager, viewerId: member.id, members: state.members, tasks: state.chores });
   function dismissTour() {
-    setTourDone(true);
-    try { localStorage.setItem('careboard-onboarding-dismissed', '1'); } catch { /* private mode */ }
+    writeLocalStorage('careboard-onboarding-dismissed', '1');
   }
   function dismissGuide() {
     if (guideDismissedIds.includes(member.id) || member.guideSeenAt) return;
@@ -558,11 +582,12 @@ function FirstLoginGuideTour({
   onDismiss: () => void;
 }) {
   const step = steps[stepIndex];
+  const ready = useIsClient();
   const highlightRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const veilRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    if (!open || !step) return;
+    if (!ready || !open || !step) return;
     let cancelled = false;
     let attempts = 0;
     const place = (rect: DOMRect | null) => {
@@ -615,8 +640,8 @@ function FirstLoginGuideTour({
       window.removeEventListener('resize', onRefresh);
       window.removeEventListener('scroll', onRefresh, true);
     };
-  }, [open, step, stepIndex]);
-  if (!open || !step || typeof document === 'undefined') return null;
+  }, [ready, open, step, stepIndex]);
+  if (!ready || !open || !step) return null;
   const last = stepIndex >= steps.length - 1;
   return createPortal(
     <dialog open className="pointer-events-none fixed inset-0 z-[60] m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 open:flex" aria-labelledby="first-login-guide-title">
