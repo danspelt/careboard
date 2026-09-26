@@ -81,9 +81,9 @@ export function firstLoginGuide(role: FirstLoginGuideRole): FirstLoginGuideStep[
       {
         id: 'payroll',
         title: 'Payroll for your bookkeeper',
-        body: 'Set each worker’s hourly rate on Team, save a bookkeeper email in Settings, then download or email the two-week CSV. CareBoard tracks hours — it does not issue paychecks.',
+        body: 'Set each worker’s hourly rate on Team, then open HR → Payroll to review hours, close a pay run for gross wage statements, and download or email the CSV. CareBoard tracks hours — it does not issue paychecks.',
         target: 'payroll-bookkeeper',
-        section: 'more',
+        section: 'hr',
       },
       {
         id: 'checklist',
@@ -126,7 +126,7 @@ export function firstLoginGuide(role: FirstLoginGuideRole): FirstLoginGuideStep[
     {
       id: 'payroll',
       title: 'Hours and pay estimate',
-      body: 'Clock in on Today. More → Your pay shows your rate (set by your manager), hours this month, and an estimate — not a paycheck. Other workers never see your pay.',
+      body: 'Clock in on Today. More → Your pay shows your rate, open-period hours, estimates, and wage statements after a pay run closes — not a paycheck. Other workers never see your pay.',
       target: 'your-pay',
       section: 'more',
     },

@@ -631,6 +631,8 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'addHireChecklistItem',
     'ensurePayPeriods',
     'closePayRun',
+    'startPayPeriodReview',
+    'reopenPayPeriod',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 

@@ -32,7 +32,7 @@ test('first login guide differs for manager and worker, and viewers get none', (
   assert.deepEqual(manager.map((step) => step.id), ['overview', 'team', 'tasks', 'inbox', 'payroll', 'checklist']);
   assert.deepEqual(worker.map((step) => step.id), ['today', 'tasks', 'handoffs-safety', 'schedule-profile', 'payroll', 'checklist']);
   assert.deepEqual(firstLoginGuide('viewer'), []);
-  assert.equal(manager.find((step) => step.id === 'payroll')?.section, 'more');
+  assert.equal(manager.find((step) => step.id === 'payroll')?.section, 'hr');
   assert.equal(worker.find((step) => step.id === 'payroll')?.target, 'your-pay');
   for (const step of [...manager, ...worker]) {
     assert.ok(step.title.trim());

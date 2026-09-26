@@ -28,7 +28,7 @@ export function payrollAskQuestions(role: PayrollHelpRole): PayrollAskStep[] {
       {
         id: 'export',
         question: 'Ready to hand hours to payroll?',
-        detail: 'Workers clock in on Today. You download or email the payroll CSV from Settings — CareBoard tracks hours; your bookkeeper or payroll software issues pay.',
+        detail: 'Workers clock in on Today. In HR → Payroll, review hours, close the pay run for gross wage statements, then download or email the CSV — CareBoard tracks hours; your bookkeeper or payroll software issues pay.',
       },
     ];
   }
@@ -36,17 +36,17 @@ export function payrollAskQuestions(role: PayrollHelpRole): PayrollAskStep[] {
     {
       id: 'clock-in',
       question: 'Do you know how to clock in?',
-      detail: 'On Today, use Clock in when your shift starts and Clock out when it ends. Those hours feed your pay estimate and the household payroll report.',
+      detail: 'On Today, use Clock in when your shift starts and Clock out when it ends. Those hours feed your pay estimate, closed wage statements, and the household payroll report.',
     },
     {
       id: 'estimate',
       question: 'Where do you see hours and pay?',
-      detail: 'Open More → Your pay for your rate (set by your manager), hours this month, and an estimated total. Estimates are not a paycheck.',
+      detail: 'Open More → Your pay for your rate (set by your manager), open-period hours, estimates, and past wage statements after a pay run closes. Estimates are not a paycheck.',
     },
     {
       id: 'paycheck',
       question: 'Does CareBoard pay you?',
-      detail: 'No. CareBoard records hours for your manager and bookkeeper. Actual pay, deductions, and tax forms come from them or their payroll software.',
+      detail: 'No. CareBoard records hours and gross wage statements for your manager and bookkeeper. Actual pay, deductions, and tax forms come from them or their payroll software.',
     },
   ];
 }
@@ -61,6 +61,11 @@ export function payrollFaq(role: PayrollHelpRole): PayrollFaqItem[] {
         answer: 'Each care worker’s clock-ins by day for the date range you choose — hours, hourly rate when set, gross amounts, and totals — ready for a bookkeeper.',
       },
       {
+        id: 'pay-run',
+        question: 'What happens when I close a pay run?',
+        answer: 'HR → Payroll locks hours × rate as gross lines for the period, opens the next period, and lets each worker download a wage statement. Deductions and net pay stay with your bookkeeper.',
+      },
+      {
         id: 'set-rate',
         question: 'How do I set a care worker’s pay rate?',
         answer: 'Open Team, choose the worker, edit their profile, and enter the hourly pay rate. Missing rates still export hours but leave pay columns blank.',
@@ -68,12 +73,12 @@ export function payrollFaq(role: PayrollHelpRole): PayrollFaqItem[] {
       {
         id: 'bookkeeper',
         question: 'How does bookkeeper email work?',
-        answer: 'Save a bookkeeper email in Settings. Use Email to bookkeeper on the payroll report to send the CSV for the selected pay period.',
+        answer: 'Save a bookkeeper email in HR → Payroll or Settings. Use Email to bookkeeper on the period CSV (or Settings payroll report) to send hours for the selected dates.',
       },
       {
         id: 'not-payroll-software',
         question: 'Does CareBoard run payroll?',
-        answer: 'No. It supplies hours and rates for your bookkeeper or payroll software. Deductions, net pay, remittances, and T4s stay outside CareBoard.',
+        answer: 'No. It supplies hours, rates, and gross wage statements for your bookkeeper or payroll software. Deductions, net pay, remittances, and T4s stay outside CareBoard.',
       },
     ];
   }
@@ -81,7 +86,7 @@ export function payrollFaq(role: PayrollHelpRole): PayrollFaqItem[] {
     {
       id: 'clock',
       question: 'How do my hours get recorded?',
-      answer: 'Clock in and out from Today. Open shifts count live; finished entries roll into your monthly hours and the manager’s payroll report.',
+      answer: 'Clock in and out from Today. Open shifts count live; finished entries roll into your open pay period, monthly hours, and the manager’s payroll report.',
     },
     {
       id: 'rate',
@@ -91,12 +96,12 @@ export function payrollFaq(role: PayrollHelpRole): PayrollFaqItem[] {
     {
       id: 'estimate',
       question: 'Is estimated pay my paycheck?',
-      answer: 'No. It multiplies your clocked hours by your rate for a rough total. Official pay comes from your manager or their bookkeeper.',
+      answer: 'No. It multiplies clocked hours by your rate for a rough total. After a pay run closes, wage statements show locked gross amounts; official pay still comes from your manager or bookkeeper.',
     },
     {
       id: 'privacy',
       question: 'Can other care workers see my pay?',
-      answer: 'No. You only see your own rate and hours. Other workers’ pay stays private.',
+      answer: 'No. You only see your own rate, hours, and wage statements. Other workers’ pay stays private.',
     },
   ];
 }
@@ -105,14 +110,14 @@ export function payrollFaq(role: PayrollHelpRole): PayrollFaqItem[] {
 export function payrollAssistantPrompts(role: PayrollHelpRole): string[] {
   if (role === 'manager') {
     return [
-      'How do I send a payroll report to my bookkeeper?',
+      'How do I close a pay run and send the CSV to my bookkeeper?',
       'Where do I set care worker hourly rates?',
-      'What does the payroll CSV include?',
+      'What does a wage statement include?',
     ];
   }
   return [
     'How do I clock in for my shift?',
-    'Where can I see my hours and pay estimate?',
+    'Where can I see my hours and wage statements?',
     'Does CareBoard issue my paycheck?',
   ];
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { BadgeCheck, CalendarDays, Check, CircleDollarSign, ClipboardList, FileText, Users } from 'lucide-react';
+import { BadgeCheck, CalendarDays, Check, CircleDollarSign, ClipboardList, FileText, Mail, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { HouseholdState, Member } from '@/lib/household-data';
@@ -65,8 +65,8 @@ export function ManagerHrView({
   );
 }
 
-function Panel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 ${className}`}>{children}</section>;
+function Panel({ children, className = '', ...props }: React.ComponentProps<'section'>) {
+  return <section className={`rounded-2xl border border-[#dfe5dc] bg-[#fffefa] p-5 ${className}`} {...props}>{children}</section>;
 }
 
 function PeopleTab({ workers, certifications, certCount, setProfile, today }: { workers: Member[]; certifications: HouseholdState['certifications']; certCount: number; setProfile: (member: Member) => void; today: string }) {
@@ -288,6 +288,7 @@ function OnboardingTab({ state, workers, mutate, busy }: { state: HouseholdState
 
 function PayrollTab({ state, workers, mutate, busy }: { state: HouseholdState; workers: Member[]; mutate: (payload: Record<string, unknown>, message?: string) => Promise<unknown>; busy: boolean }) {
   const openPeriod = (state.payPeriods ?? []).find((period) => period.status === 'open' || period.status === 'review');
+  const latestClosed = [...(state.payPeriods ?? [])].filter((period) => period.status === 'closed').sort((a, b) => b.endOn.localeCompare(a.endOn))[0];
   const today = new Date().toISOString().slice(0, 10);
   const ready = payPeriodReadyToClose(openPeriod, today);
   const runs = state.payRuns ?? [];
@@ -300,10 +301,13 @@ function PayrollTab({ state, workers, mutate, busy }: { state: HouseholdState; w
       return { worker, hours, gross: grossFor(hours, worker.hourlyRate ?? null) };
     });
   }, [openPeriod, workers, state.timeEntries]);
+  const periodEntries = openPeriod
+    ? (state.timeEntries ?? []).filter((entry) => entry.startedAt.slice(0, 10) >= openPeriod.startOn && entry.startedAt.slice(0, 10) <= openPeriod.endOn).slice(0, 12)
+    : [];
 
   return (
     <div className="grid gap-6">
-      <Panel>
+      <Panel data-guide="payroll-bookkeeper">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Current pay period</h2>
@@ -316,8 +320,13 @@ function PayrollTab({ state, workers, mutate, busy }: { state: HouseholdState; w
             {openPeriod && (
               <>
                 <a href={`/api/payroll?from=${openPeriod.startOn}&to=${openPeriod.endOn}`} className="inline-flex min-h-11 items-center rounded-xl border border-[#d7dfd7] px-4 text-sm font-semibold text-[#52645f] hover:bg-[#f1f5f1]">Download CSV</a>
+                <Button type="button" disabled={busy || !state.settings?.bookkeeperEmail} variant="outline" className="min-h-11" onClick={() => void mutate({ action: 'sendPayrollReport', from: openPeriod.startOn, to: openPeriod.endOn }, 'Payroll report emailed to the bookkeeper.')}><Mail className="size-4" aria-hidden="true" />Email bookkeeper</Button>
+                {openPeriod.status === 'open' && <Button type="button" disabled={busy} variant="outline" className="min-h-11" onClick={() => void mutate({ action: 'startPayPeriodReview' }, 'Pay period marked for review.')}>Mark for review</Button>}
                 <Button type="button" disabled={busy} className="min-h-11 bg-[#287b6f]" onClick={() => void mutate({ action: 'closePayRun' }, 'Pay run closed.')}>Close pay run</Button>
               </>
+            )}
+            {latestClosed && (
+              <Button type="button" disabled={busy} variant="outline" className="min-h-11" onClick={() => void mutate({ action: 'reopenPayPeriod', periodId: latestClosed.id }, 'Pay period reopened.')}>Reopen last period</Button>
             )}
           </div>
         </div>
@@ -329,6 +338,25 @@ function PayrollTab({ state, workers, mutate, busy }: { state: HouseholdState; w
                 <span className="tabular-nums text-[#687873]">{hours.toFixed(2)} h · {worker.hourlyRate != null ? `$${gross.toFixed(2)} gross` : 'no rate'}</span>
               </div>
             ))}
+          </div>
+        )}
+        {openPeriod && (
+          <div className="mt-4 border-t border-[#e5eae4] pt-4">
+            <h3 className="text-sm font-bold">Time entries in this period</h3>
+            <p className="mt-1 text-xs text-[#687873]">Delete incorrect entries in Settings → Hours tracked. Clock corrections are made by workers on Today.</p>
+            <ul className="mt-2 divide-y divide-[#e5eae4] text-sm">
+              {periodEntries.map((entry) => {
+                const worker = workers.find((item) => item.id === entry.memberId);
+                return (
+                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <span className="font-medium">{worker?.name ?? 'Care worker'}</span>
+                    <span className="tabular-nums text-xs text-[#687873]">{new Date(entry.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} → {entry.endedAt ? new Date(entry.endedAt).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'now'}</span>
+                    <button type="button" disabled={busy} className="text-xs font-semibold text-[#873d27]" onClick={() => void mutate({ action: 'deleteTimeEntry', entryId: entry.id }, 'Time entry removed.')}>Delete</button>
+                  </li>
+                );
+              })}
+              {!periodEntries.length && <li className="py-3 text-[#687873]">No clock entries in this period yet.</li>}
+            </ul>
           </div>
         )}
         <form

@@ -305,6 +305,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     'saveAppointment', 'cancelAppointment',
     'decideLeaveRequest', 'setLeaveBalance', 'saveHrDocument', 'archiveHrDocument',
     'seedHireChecklist', 'toggleHireChecklistItem', 'addHireChecklistItem', 'ensurePayPeriods', 'closePayRun',
+    'startPayPeriodReview', 'reopenPayPeriod',
   ]);
   if (managerOnly.has(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -399,6 +400,34 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
         const bounds = periodContaining(today, mockState.settings?.payPeriodAnchor || '2025-01-06', mockState.settings?.payPeriodDays ?? 14);
         mockState.payPeriods = [{ id: crypto.randomUUID(), startOn: bounds.startOn, endOn: bounds.endOn, status: 'open', createdAt: now2 }, ...(mockState.payPeriods ?? [])];
       }
+      break;
+    }
+    case 'startPayPeriodReview': {
+      const period = (mockState.payPeriods ?? []).find((item) => item.status === 'open' || item.status === 'review');
+      if (!period || period.status === 'closed') throw new Error('No open pay period.');
+      period.status = 'review';
+      break;
+    }
+    case 'reopenPayPeriod': {
+      const closed = (mockState.payPeriods ?? [])
+        .filter((item) => item.status === 'closed')
+        .sort((a, b) => b.endOn.localeCompare(a.endOn))[0];
+      const period = (typeof input.periodId === 'string' && input.periodId
+        ? (mockState.payPeriods ?? []).find((item) => item.id === input.periodId)
+        : closed) ?? null;
+      if (!period || period.status !== 'closed') throw new Error('Only a closed pay period can be reopened.');
+      const run = (mockState.payRuns ?? []).find((item) => item.periodId === period.id);
+      if (run) {
+        mockState.payRunLines = (mockState.payRunLines ?? []).filter((line) => line.runId !== run.id);
+        mockState.payRuns = (mockState.payRuns ?? []).filter((item) => item.id !== run.id);
+      }
+      period.status = 'open';
+      mockState.payPeriods = (mockState.payPeriods ?? []).filter((item) => {
+        if (item.startOn <= period.endOn) return true;
+        if (item.status !== 'open' && item.status !== 'review') return true;
+        return (mockState.payRuns ?? []).some((payRun) => payRun.periodId === item.id);
+      });
+      pushActivity('pay_period_reopened', `reopened pay period ${period.startOn} to ${period.endOn}`);
       break;
     }
     case 'closePayRun': {

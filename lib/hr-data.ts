@@ -234,6 +234,39 @@ export async function applyHrMutation(input: {
     return true;
   }
 
+  if (action === 'startPayPeriodReview') {
+    if (!manager) throw new Error('Only the household manager can do that.');
+    const period = await ensureOpenPayPeriod(settings);
+    if (period.status === 'closed') throw new Error('That pay period is already closed.');
+    await db.prepare(`UPDATE pay_periods SET status='review' WHERE id=?`).bind(period.id).run();
+    return true;
+  }
+
+  if (action === 'reopenPayPeriod') {
+    if (!manager) throw new Error('Only the household manager can do that.');
+    const periodId = typeof payload.periodId === 'string' && payload.periodId
+      ? payload.periodId
+      : (await db.prepare(`SELECT id FROM pay_periods WHERE household_id='default' AND status='closed' ORDER BY end_on DESC LIMIT 1`).first<{ id: string }>())?.id;
+    if (!periodId) throw new Error('No closed pay period to reopen.');
+    const period = await db.prepare(`SELECT id, start_on AS startOn, end_on AS endOn, status FROM pay_periods WHERE id=?`).bind(periodId).first<{ id: string; startOn: string; endOn: string; status: string }>();
+    if (!period || period.status !== 'closed') throw new Error('Only a closed pay period can be reopened.');
+    const run = await db.prepare(`SELECT id FROM pay_runs WHERE period_id=? ORDER BY closed_at DESC LIMIT 1`).bind(period.id).first<{ id: string }>();
+    const statements = [];
+    if (run) {
+      statements.push(db.prepare(`DELETE FROM pay_run_lines WHERE run_id=?`).bind(run.id));
+      statements.push(db.prepare(`DELETE FROM pay_runs WHERE id=?`).bind(run.id));
+    }
+    statements.push(db.prepare(`UPDATE pay_periods SET status='open' WHERE id=?`).bind(period.id));
+    // Drop an auto-created next open period that has no run yet, so only one open period remains.
+    const later = await db.prepare(`SELECT id FROM pay_periods WHERE household_id='default' AND start_on > ? AND status IN ('open','review')`).bind(period.endOn).all<{ id: string }>();
+    for (const row of later.results) {
+      const hasRun = await db.prepare(`SELECT id FROM pay_runs WHERE period_id=? LIMIT 1`).bind(row.id).first();
+      if (!hasRun) statements.push(db.prepare(`DELETE FROM pay_periods WHERE id=?`).bind(row.id));
+    }
+    await db.batch(statements);
+    return true;
+  }
+
   if (action === 'closePayRun') {
     if (!manager) throw new Error('Only the household manager can do that.');
     const period = await ensureOpenPayPeriod(settings);
