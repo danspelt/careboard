@@ -16,13 +16,16 @@ export function ManagerHrView({
   setProfile,
   mutate,
   busy,
+  focusPayroll = false,
 }: {
   state: HouseholdState;
   setProfile: (member: Member) => void;
   mutate: (payload: Record<string, unknown>, message?: string) => Promise<unknown>;
   busy: boolean;
+  focusPayroll?: boolean;
 }) {
   const [tab, setTab] = useState<HrTab>('people');
+  const activeTab = focusPayroll ? 'payroll' : tab;
   const workers = state.members.filter((member) => member.role === 'worker');
   const today = new Date().toISOString().slice(0, 10);
   const certCount = certificationAlerts(state.certifications ?? [], workers, today).length;
@@ -36,7 +39,7 @@ export function ManagerHrView({
   ];
 
   return (
-    <>
+    <div data-guide="panel-hr-payroll">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">HR</h1>
         <p className="mt-1 text-sm text-[#687873]">People records, time off, policies, hire checklists, and pay periods.</p>
@@ -47,21 +50,21 @@ export function ManagerHrView({
             key={item.id}
             type="button"
             role="tab"
-            aria-selected={tab === item.id}
+            aria-selected={activeTab === item.id}
             onClick={() => setTab(item.id)}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${tab === item.id ? 'bg-[#287b6f] text-white' : 'border border-[#d7dfd7] bg-white text-[#52645f] hover:bg-[#f1f5f1]'}`}
+            className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f] ${activeTab === item.id ? 'bg-[#287b6f] text-white' : 'border border-[#d7dfd7] bg-white text-[#52645f] hover:bg-[#f1f5f1]'}`}
           >
             {item.label}
-            {item.hint ? <span className={`rounded-full px-1.5 text-xs ${tab === item.id ? 'bg-white/20' : 'bg-[#e8f1ec] text-[#287b6f]'}`}>{item.hint}</span> : null}
+            {item.hint ? <span className={`rounded-full px-1.5 text-xs ${activeTab === item.id ? 'bg-white/20' : 'bg-[#e8f1ec] text-[#287b6f]'}`}>{item.hint}</span> : null}
           </button>
         ))}
       </div>
-      {tab === 'people' && <PeopleTab workers={workers} certifications={state.certifications ?? []} certCount={certCount} setProfile={setProfile} today={today} />}
-      {tab === 'leave' && <LeaveTab state={state} workers={workers} mutate={mutate} busy={busy} />}
-      {tab === 'documents' && <DocumentsTab state={state} workers={workers} mutate={mutate} busy={busy} />}
-      {tab === 'onboarding' && <OnboardingTab state={state} workers={workers} mutate={mutate} busy={busy} />}
-      {tab === 'payroll' && <PayrollTab state={state} workers={workers} mutate={mutate} busy={busy} />}
-    </>
+      {activeTab === 'people' && <PeopleTab workers={workers} certifications={state.certifications ?? []} certCount={certCount} setProfile={setProfile} today={today} />}
+      {activeTab === 'leave' && <LeaveTab state={state} workers={workers} mutate={mutate} busy={busy} />}
+      {activeTab === 'documents' && <DocumentsTab state={state} workers={workers} mutate={mutate} busy={busy} />}
+      {activeTab === 'onboarding' && <OnboardingTab state={state} workers={workers} mutate={mutate} busy={busy} />}
+      {activeTab === 'payroll' && <PayrollTab state={state} workers={workers} mutate={mutate} busy={busy} />}
+    </div>
   );
 }
 
@@ -307,7 +310,7 @@ function PayrollTab({ state, workers, mutate, busy }: { state: HouseholdState; w
 
   return (
     <div className="grid gap-6">
-      <Panel data-guide="payroll-bookkeeper">
+      <Panel>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Current pay period</h2>

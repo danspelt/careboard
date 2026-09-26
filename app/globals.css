@@ -195,6 +195,30 @@
 .dashboard-notice button:focus-visible {
   outline-color: #b9ddd3;
 }
+@keyframes guide-spotlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 9999px rgb(16 46 37 / 48%), 0 0 0 0 rgb(40 123 111 / 0%); }
+  50% { box-shadow: 0 0 0 9999px rgb(16 46 37 / 48%), 0 0 0 10px rgb(40 123 111 / 28%); }
+}
+.guide-spotlight {
+  border: 3px solid #287b6f;
+  border-radius: 1rem;
+  background: transparent;
+  box-shadow: 0 0 0 9999px rgb(16 46 37 / 48%);
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+  animation: guide-spotlight-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-spotlight { animation: none; transition: none; }
+}
+[data-guide-active='true'] {
+  position: relative;
+  z-index: 55;
+  outline: 3px solid #287b6f;
+  outline-offset: 4px;
+  border-radius: 1rem;
+  box-shadow: 0 0 0 6px rgb(40 123 111 / 18%), 0 12px 32px rgb(18 61 49 / 18%);
+}
 .sign-in {
   background:
     radial-gradient(circle at 8% 15%, rgb(177 216 195 / 45%) 0%, transparent 28rem),

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildOnboarding, firstLoginGuide } from '../lib/onboarding.ts';
+import { buildOnboarding, firstLoginGuide, guideTopics } from '../lib/onboarding.ts';
 import { isEditableKeyboardTarget, shortcutsForRole } from '../lib/dashboard-shortcuts.ts';
 
 const task = (overrides = {}) => ({ id: crypto.randomUUID(), status: 'open', assignedTo: null, notes: [], ...overrides });
@@ -29,18 +29,36 @@ test('worker onboarding tracks profile, assignment, start, note, and completion'
 test('first login guide differs for manager and worker, and viewers get none', () => {
   const manager = firstLoginGuide('manager');
   const worker = firstLoginGuide('worker');
-  assert.deepEqual(manager.map((step) => step.id), ['overview', 'team', 'tasks', 'inbox', 'payroll', 'checklist']);
-  assert.deepEqual(worker.map((step) => step.id), ['today', 'tasks', 'handoffs-safety', 'schedule-profile', 'payroll', 'checklist']);
+  assert.deepEqual(manager.map((step) => step.id), ['welcome', 'overview', 'team', 'tasks', 'schedule', 'care-plan', 'inbox', 'hr', 'checklist']);
+  assert.deepEqual(worker.map((step) => step.id), ['welcome', 'today', 'tasks', 'handoffs-safety', 'care-plan', 'schedule-profile', 'inbox', 'payroll', 'checklist']);
   assert.deepEqual(firstLoginGuide('viewer'), []);
-  assert.equal(manager.find((step) => step.id === 'payroll')?.section, 'hr');
+  assert.equal(manager.find((step) => step.id === 'hr')?.section, 'hr');
+  assert.equal(manager.find((step) => step.id === 'hr')?.target, 'panel-hr-payroll');
+  assert.equal(manager.find((step) => step.id === 'overview')?.target, 'panel-home');
+  assert.equal(manager.find((step) => step.id === 'team')?.target, 'panel-team');
   assert.equal(worker.find((step) => step.id === 'payroll')?.target, 'your-pay');
+  assert.equal(worker.find((step) => step.id === 'today')?.target, 'panel-today');
+  assert.ok(manager[0]?.howTo.some((line) => /Continue/i.test(line)));
   for (const step of [...manager, ...worker]) {
     assert.ok(step.title.trim());
+    assert.ok(step.summary.trim());
     assert.ok(step.body.trim());
+    assert.ok(step.why.trim());
+    assert.ok(step.howTo.length >= 2);
+    assert.ok(step.topic.trim());
     assert.ok(step.target.trim());
     assert.ok(step.section.trim());
   }
   assert.notDeepEqual(manager.map((step) => step.target), worker.map((step) => step.target));
+});
+
+test('guide topics expose a revisitable library matching the tour', () => {
+  const manager = guideTopics('manager');
+  const worker = guideTopics('worker');
+  assert.equal(manager.length, firstLoginGuide('manager').length);
+  assert.equal(worker.length, firstLoginGuide('worker').length);
+  assert.ok(manager.every((topic) => topic.summary.includes(' ') || topic.summary.length > 8));
+  assert.deepEqual(guideTopics('viewer'), []);
 });
 
 test('dashboard shortcuts differ by role and ignore editable targets', () => {

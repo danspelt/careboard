@@ -31,7 +31,7 @@ function writeLocalStorage(key: string, value: string) {
 function useLocalStorageValue(key: string, serverValue = '') {
   return useSyncExternalStore(subscribeLocalStorage, () => readLocalStorage(key) ?? serverValue, () => serverValue);
 }
-import { AlertTriangle, Award, Bath, BedDouble, Bell, Briefcase, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HandHeart, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Pill, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, ShoppingCart, Sofa, Sparkles, Sprout, Stethoscope, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Award, Bath, BedDouble, Bell, BookOpen, Briefcase, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HandHeart, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Pill, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, ShoppingCart, Sofa, Sparkles, Sprout, Stethoscope, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,7 +44,7 @@ import { buildManagerCommandCenter } from '@/lib/manager-command-center';
 import { buildWeekSchedule, nextTaskAction, workerDayPlan } from '@/lib/schedule';
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
-import { buildOnboarding, firstLoginGuide, type FirstLoginGuideStep } from '@/lib/onboarding';
+import { buildOnboarding, firstLoginGuide, guideTopics, type FirstLoginGuideStep } from '@/lib/onboarding';
 import { assistantPayrollSuggestions, payrollAskQuestions, payrollAskStorageKey, payrollFaq, type PayrollAskStep, type PayrollFaqItem, type PayrollHelpRole } from '@/lib/payroll-help';
 import { buildHrAlerts, incompleteHireWorkerCount, memberOnApprovedLeave, unsignedRequiredDocCount } from '@/lib/hr';
 import { payPeriodReadyToClose } from '@/lib/hr-payroll';
@@ -110,6 +110,8 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   const tourDone = useLocalStorageValue('careboard-onboarding-dismissed') === '1';
   const [guideStepsByMember, setGuideStepsByMember] = useState<Record<string, number>>({});
   const [guideDismissedIds, setGuideDismissedIds] = useState<string[]>([]);
+  const [guideReplay, setGuideReplay] = useState(false);
+  const [learnOpen, setLearnOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   useEffect(() => {
     document.body.dataset.role = role;
@@ -117,7 +119,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   }, [role]);
   const guideSteps = firstLoginGuide(role);
   const guideStep = member ? (guideStepsByMember[member.id] ?? 0) : 0;
-  const guideOpen = !!member && !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
+  const guideOpen = !!member && !viewer && guideSteps.length > 0 && (guideReplay || (!member.guideSeenAt && !guideDismissedIds.includes(member.id)));
   const activeGuideStep = guideOpen ? guideSteps[guideStep] : undefined;
   useEffect(() => {
     if (!member) return;
@@ -134,7 +136,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
-      const guideIsOpen = !viewer && !member.guideSeenAt && !guideDismissedIds.includes(member.id) && guideSteps.length > 0;
+      const guideIsOpen = !viewer && guideSteps.length > 0 && (guideReplay || (!member.guideSeenAt && !guideDismissedIds.includes(member.id)));
       if (guideIsOpen) {
         if (event.key === 'Escape') { event.preventDefault(); dismissGuideFromKeyboard(); return; }
         if (event.key === 'ArrowRight' || event.key === 'Enter') {
@@ -195,6 +197,10 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
       if (key === 'w' && manager) { event.preventDefault(); setSection('team'); setAddOpen(true); return; }
     }
     function dismissGuideFromKeyboard() {
+      if (guideReplay) {
+        setGuideReplay(false);
+        return;
+      }
       if (guideDismissedIds.includes(member.id) || member.guideSeenAt) return;
       setGuideDismissedIds((ids) => ids.includes(member.id) ? ids : [...ids, member.id]);
       void fetch('/api/household', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'dismissFirstLoginGuide' }) })
@@ -207,7 +213,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [member, manager, viewer, guideDismissedIds, guideStepsByMember, guideSteps, shortcutsOpen, feedOpen, createOpen, addOpen, task, profile, resetMember, shiftWorker, availWorker, seenAt]);
+  }, [member, manager, viewer, guideDismissedIds, guideStepsByMember, guideSteps, guideReplay, shortcutsOpen, feedOpen, createOpen, addOpen, task, profile, resetMember, shiftWorker, availWorker, seenAt]);
   useEffect(() => {
     let active = true;
     let refreshing = false;
@@ -300,11 +306,30 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     writeLocalStorage('careboard-onboarding-dismissed', '1');
   }
   function dismissGuide() {
+    if (guideReplay) {
+      setGuideReplay(false);
+      return;
+    }
     if (guideDismissedIds.includes(member.id) || member.guideSeenAt) return;
     setGuideDismissedIds((ids) => ids.includes(member.id) ? ids : [...ids, member.id]);
     void mutate({ action: 'dismissFirstLoginGuide' }, '').catch(() => {
       setGuideDismissedIds((ids) => ids.filter((id) => id !== member.id));
     });
+  }
+  function openGuideAt(index: number) {
+    const next = Math.max(0, Math.min(guideSteps.length - 1, index));
+    setGuideStepsByMember((steps) => ({ ...steps, [member.id]: next }));
+    const step = guideSteps[next];
+    if (step?.section) setSection(step.section as Section);
+    setLearnOpen(false);
+    setGuideReplay(true);
+  }
+  function replayFullGuide() {
+    setGuideStepsByMember((steps) => ({ ...steps, [member.id]: 0 }));
+    const first = guideSteps[0];
+    if (first?.section) setSection(first.section as Section);
+    setLearnOpen(false);
+    setGuideReplay(true);
   }
   function goGuideStep(index: number) {
     const next = Math.max(0, Math.min(guideSteps.length - 1, index));
@@ -340,6 +365,16 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           <span className="hidden sm:inline-flex"><RoleBadge role={role} /></span>
         </button>
         <div className="flex items-center gap-2">
+          {!viewer && (
+            <button
+              type="button"
+              onClick={() => setLearnOpen(true)}
+              aria-label="Learn CareBoard"
+              className="grid size-11 shrink-0 place-items-center rounded-xl text-[#287b6f] transition hover:bg-[#e9efe6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"
+            >
+              <BookOpen className="size-5" aria-hidden="true" />
+            </button>
+          )}
           {bell}
           <form action={logOut}><button aria-label="Sign out" className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-[#287b6f]"><LogOut className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Sign out</span></button></form>
           <AvatarFor member={member} className="size-9" />
@@ -381,6 +416,9 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
               <LogOut className="size-4" aria-hidden="true" />Sign out
             </button>
           </form>
+          <button type="button" onClick={() => setLearnOpen(true)} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#e8f1ec] px-3 text-sm font-semibold text-[#287b6f] transition hover:bg-[#dceae1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
+            <BookOpen className="size-4" aria-hidden="true" />Learn CareBoard
+          </button>
           <button type="button" onClick={() => setShortcutsOpen(true)} className="mt-2 flex min-h-10 w-full items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]">
             Keyboard shortcuts <kbd className="rounded border border-[#d7dfd7] bg-white px-1.5 py-0.5">?</kbd>
           </button>
@@ -394,11 +432,11 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
           {localDev && <div className="mb-5"><LocalDevRoleSwitcher currentMember={state.viewer.id} /></div>}
           {!viewer && ((!tourDone && onboarding.some((step) => !step.done)) || (guideOpen && activeGuideStep?.target === 'getting-started')) && <OnboardingCard steps={onboarding} onDone={dismissTour} />}
           {manager ? (
-            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} mutate={mutate} busy={busy} dashboard={dashboard} />
+            <ManagerView section={section as ManagerSection} setSection={setSection} state={state} workers={workers} open={open} dueToday={dueToday} setTask={setTask} setProfile={setProfile} setCreateOpen={setCreateOpen} setAddOpen={setAddOpen} setResetMember={setResetMember} setShiftWorker={setShiftWorker} setAvailWorker={setAvailWorker} onInvited={(token: string, emailed: boolean) => { setInviteUrl(`${window.location.origin}/accept-invite?token=${token}`); setInviteEmailed(emailed); }} mutate={mutate} busy={busy} dashboard={dashboard} onOpenLearn={() => setLearnOpen(true)} focusHrPayroll={guideOpen && activeGuideStep?.target === 'panel-hr-payroll'} />
           ) : viewer ? (
             <ViewerView section={section} state={state} setTask={setTask} setSection={setSection} dashboard={dashboard} />
           ) : (
-            <WorkerView section={section as WorkerSection} state={state} member={member} setSection={setSection} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} dashboard={dashboard} />
+            <WorkerView section={section as WorkerSection} state={state} member={member} setSection={setSection} setTask={setTask} setProfile={setProfile} setAvailWorker={setAvailWorker} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} dashboard={dashboard} onOpenLearn={() => setLearnOpen(true)} />
           )}
         </div>
       </main>
@@ -429,7 +467,51 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
         stepIndex={guideStep}
         onStepIndex={goGuideStep}
         onDismiss={dismissGuide}
+        mode={guideReplay ? 'refresher' : 'welcome'}
       />
+      {!viewer && (
+        <Dialog open={learnOpen} onOpenChange={setLearnOpen}>
+          <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><BookOpen className="size-5 text-[#287b6f]" aria-hidden="true" />Learn CareBoard</DialogTitle>
+              <DialogDescription>
+                Your always-on teacher. Replay the full welcome walkthrough, or open one subject when you need a refresher.
+              </DialogDescription>
+            </DialogHeader>
+            <button
+              type="button"
+              onClick={replayFullGuide}
+              className="flex w-full items-start gap-3 rounded-2xl border border-[#bcd4c9] bg-[#f2f7f1] p-4 text-left transition hover:border-[#97bba7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"
+            >
+              <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white"><Play className="size-4" aria-hidden="true" /></span>
+              <span>
+                <span className="block text-sm font-bold text-[#20312d]">Replay full welcome tour</span>
+                <span className="mt-1 block text-sm leading-6 text-[#52645f]">Walk every highlight again from the start — same tour new people see on first login.</span>
+              </span>
+            </button>
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[.14em] text-[#687873]">Refresh one subject</p>
+            <ul className="mt-2 divide-y divide-[#e5eae4] rounded-2xl border border-[#e2e8e1] bg-white">
+              {guideTopics(role).map((topic, index) => (
+                <li key={topic.id}>
+                  <button
+                    type="button"
+                    onClick={() => openGuideAt(index)}
+                    className="flex w-full items-start gap-3 px-4 py-3.5 text-left transition hover:bg-[#f7f6f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"
+                  >
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl bg-[#e8f1ec] text-xs font-bold text-[#287b6f]">{index + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-[#4d6b5e]">{topic.topic}</span>
+                      <span className="mt-0.5 block text-sm font-semibold text-[#20312d]">{topic.title}</span>
+                      <span className="mt-1 block text-sm leading-5 text-[#687873]">{topic.summary}</span>
+                    </span>
+                    <ChevronRight className="mt-2 size-4 shrink-0 text-[#687873]" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </DialogContent>
+        </Dialog>
+      )}
       {!viewer && section === 'more' && !guideOpen && (
         <PayrollAskQuestionnaire
           helpRole={manager ? 'manager' : 'worker'}
@@ -664,10 +746,14 @@ function OnboardingCard({ steps, onDone }: any) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-[#e2efe5] text-[#287b6f]"><Sprout className="size-5" aria-hidden="true" /></span>
-          <div><h2 className="text-lg font-bold">Getting started</h2><p className="text-xs font-semibold text-[#4d6b5e]">{done} of {steps.length} done — these check off as you work</p></div>
+          <div>
+            <h2 className="text-lg font-bold">Getting started</h2>
+            <p className="text-xs font-semibold text-[#4d6b5e]">{done} of {steps.length} done — real actions that teach the board</p>
+          </div>
         </div>
         <button onClick={onDone} aria-label="Dismiss getting started guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-white/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
       </div>
+      <p className="mt-3 text-sm leading-6 text-[#52645f]">These check off as you work. Need the spoken tour again later? Open <strong className="font-semibold text-[#20312d]">Learn CareBoard</strong> from the sidebar (book icon on mobile).</p>
       <progress value={done} max={steps.length} aria-label={`${done} of ${steps.length} onboarding steps complete`} className="mt-3 h-2 w-full overflow-hidden rounded-full [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-[#dfe5dc] [&::-webkit-progress-value]:rounded-full [&::-moz-progress-bar]:bg-[#287b6f] [&::-webkit-progress-value]:bg-[#287b6f]" />
       <ol className="mt-4 grid gap-2 sm:grid-cols-2">
         {steps.map((step: any) => (
@@ -687,68 +773,105 @@ function FirstLoginGuideTour({
   stepIndex,
   onStepIndex,
   onDismiss,
+  mode = 'welcome',
 }: {
   open: boolean;
   steps: FirstLoginGuideStep[];
   stepIndex: number;
   onStepIndex: (index: number) => void;
   onDismiss: () => void;
+  mode?: 'welcome' | 'refresher';
 }) {
   const step = steps[stepIndex];
   const ready = useIsClient();
+  const stepKey = `${open}:${stepIndex}:${step?.target ?? ''}`;
+  const [targetFound, setTargetFound] = useState(false);
+  const [measuredKey, setMeasuredKey] = useState(stepKey);
+  if (measuredKey !== stepKey) {
+    setMeasuredKey(stepKey);
+    setTargetFound(false);
+  }
   const highlightRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const veilRef = useRef<HTMLDivElement>(null);
+  const activeElRef = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (!ready || !open || !step) return;
     let cancelled = false;
     let attempts = 0;
+    const clearActive = () => {
+      if (activeElRef.current) {
+        activeElRef.current.removeAttribute('data-guide-active');
+        activeElRef.current = null;
+      }
+    };
     const place = (rect: DOMRect | null) => {
       const highlight = highlightRef.current;
       const panel = panelRef.current;
       const veil = veilRef.current;
       if (!highlight || !panel || !veil) return;
+      const panelWidth = Math.min(380, window.innerWidth - 24);
+      panel.style.width = `${panelWidth}px`;
+      panel.style.maxHeight = `${Math.min(window.innerHeight - 24, 420)}px`;
       if (!rect) {
         highlight.hidden = true;
         veil.hidden = false;
-        panel.style.top = '24px';
-        panel.style.left = '24px';
+        panel.style.top = '16px';
+        panel.style.left = `${Math.max(12, (window.innerWidth - panelWidth) / 2)}px`;
         return;
       }
-      const pad = 8;
+      const pad = 10;
       const top = Math.max(8, rect.top - pad);
       const left = Math.max(8, rect.left - pad);
-      const width = rect.width + pad * 2;
-      const height = rect.height + pad * 2;
+      const width = Math.min(window.innerWidth - 16, rect.width + pad * 2);
+      const height = Math.min(window.innerHeight - 16, rect.height + pad * 2);
       highlight.hidden = false;
       veil.hidden = true;
       highlight.style.top = `${top}px`;
       highlight.style.left = `${left}px`;
       highlight.style.width = `${width}px`;
       highlight.style.height = `${height}px`;
-      const panelWidth = Math.min(360, window.innerWidth - 24);
-      panel.style.width = `${panelWidth}px`;
-      panel.style.top = `${Math.min(window.innerHeight - 220, Math.max(16, top + height + 12))}px`;
-      panel.style.left = `${Math.min(window.innerWidth - panelWidth - 12, Math.max(12, left))}px`;
+      const panelHeight = Math.min(panel.offsetHeight || 320, window.innerHeight - 24);
+      const spaceBelow = window.innerHeight - (top + height);
+      const spaceAbove = top;
+      const preferBelow = spaceBelow >= Math.min(panelHeight + 16, 220) || spaceBelow >= spaceAbove;
+      const panelTop = preferBelow
+        ? Math.min(window.innerHeight - panelHeight - 12, top + height + 14)
+        : Math.max(12, top - panelHeight - 14);
+      let panelLeft = left;
+      if (panelLeft + panelWidth > window.innerWidth - 12) panelLeft = window.innerWidth - panelWidth - 12;
+      if (panelLeft < 12) panelLeft = 12;
+      panel.style.top = `${panelTop}px`;
+      panel.style.left = `${panelLeft}px`;
     };
     const measure = () => {
       if (cancelled) return;
+      clearActive();
       const nodes = Array.from(document.querySelectorAll(`[data-guide="${step.target}"]`));
       const el = nodes.find((node) => node instanceof HTMLElement && node.getClientRects().length > 0) as HTMLElement | undefined;
       if (!el) {
-        if (attempts++ < 12) window.setTimeout(measure, 50);
-        else place(null);
+        if (attempts++ < 20) window.setTimeout(measure, 60);
+        else {
+          setTargetFound(false);
+          place(null);
+        }
         return;
       }
-      el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-      place(el.getBoundingClientRect());
+      setTargetFound(true);
+      el.setAttribute('data-guide-active', 'true');
+      activeElRef.current = el;
+      el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+      window.setTimeout(() => {
+        if (!cancelled) place(el.getBoundingClientRect());
+      }, 180);
     };
-    const frame = window.requestAnimationFrame(measure);
+    const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(measure));
     const onRefresh = () => measure();
     window.addEventListener('resize', onRefresh);
     window.addEventListener('scroll', onRefresh, true);
     return () => {
       cancelled = true;
+      clearActive();
       window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', onRefresh);
       window.removeEventListener('scroll', onRefresh, true);
@@ -758,34 +881,54 @@ function FirstLoginGuideTour({
   const last = stepIndex >= steps.length - 1;
   return createPortal(
     <dialog open className="pointer-events-none fixed inset-0 z-[60] m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 open:flex" aria-labelledby="first-login-guide-title">
-      <div ref={veilRef} className="absolute inset-0 bg-[#102e25]/45" aria-hidden="true" />
-      <div
-        ref={highlightRef}
-        hidden
-        className="absolute rounded-2xl border-2 border-[#287b6f] bg-transparent shadow-[0_0_0_9999px_rgba(16,46,37,0.45)] transition-[top,left,width,height] duration-200 motion-reduce:transition-none"
-        aria-hidden="true"
-      />
-      <div ref={panelRef} className="pointer-events-auto absolute w-[min(360px,calc(100vw-24px))] rounded-3xl border border-[#cbdcd1] bg-[#fffefa] p-5 shadow-[var(--shadow-raised)]" style={{ top: 24, left: 24 }}>
-        <div className="flex items-start justify-between gap-3">
+      <div ref={veilRef} className="absolute inset-0 bg-[#102e25]/50" aria-hidden="true" />
+      <div ref={highlightRef} hidden className="guide-spotlight absolute" aria-hidden="true" />
+      <div ref={panelRef} className="pointer-events-auto absolute flex max-h-[min(420px,calc(100vh-24px))] w-[min(380px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl border border-[#cbdcd1] bg-[#fffefa] shadow-[var(--shadow-raised)]" style={{ top: 24, left: 24 }}>
+        <div className="flex items-start justify-between gap-3 border-b border-[#e5eae4] px-4 pb-3 pt-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-[#4d6b5e]">
+              {mode === 'refresher' ? 'Refresher' : 'Welcome tour'} · Looking at {step.topic} · {stepIndex + 1}/{steps.length}
+            </p>
+            <h2 id="first-login-guide-title" className="mt-1 text-lg font-bold leading-snug text-[#20312d]">{step.title}</h2>
+            <p className="mt-1.5 text-sm font-semibold leading-5 text-[#287b6f]">{step.summary}</p>
+            {!targetFound && <p className="mt-2 text-xs text-[#8b4e2c]">Opening that screen…</p>}
+          </div>
+          <button type="button" onClick={onDismiss} aria-label="Close guide" className="grid size-10 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
+        </div>
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          <p className="text-sm leading-6 text-[#52645f]">{step.body}</p>
           <div>
-            <p className="text-xs font-semibold text-[#4d6b5e]">{stepIndex + 1} of {steps.length}</p>
-            <h2 id="first-login-guide-title" className="mt-1 text-lg font-bold text-[#20312d]">{step.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-[#52645f]">{step.body}</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[#687873]">On this component</p>
+            <ol className="mt-1.5 space-y-1.5">
+              {step.howTo.slice(0, 3).map((line, index) => (
+                <li key={line} className="flex gap-2.5 text-sm leading-5 text-[#20312d]">
+                  <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#e8f1ec] text-[10px] font-bold text-[#287b6f]">{index + 1}</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ol>
           </div>
-          <button type="button" onClick={onDismiss} aria-label="Close welcome guide" className="grid size-11 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
+          {step.tryThis && (
+            <div className="flex gap-2.5 rounded-xl border border-[#bcd4c9] bg-[#f2f7f1] p-2.5">
+              <Play className="mt-0.5 size-3.5 shrink-0 text-[#287b6f]" aria-hidden="true" />
+              <p className="text-sm leading-5 text-[#25654f]"><span className="font-semibold">Try this: </span>{step.tryThis}</p>
+            </div>
+          )}
         </div>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <Button type="button" variant="ghost" onClick={onDismiss}>Skip</Button>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" disabled={stepIndex === 0} onClick={() => onStepIndex(Math.max(0, stepIndex - 1))}>Back</Button>
-            {last ? (
-              <Button type="button" onClick={onDismiss}>Done</Button>
-            ) : (
-              <Button type="button" onClick={() => onStepIndex(Math.min(steps.length - 1, stepIndex + 1))}>Next</Button>
-            )}
+        <div className="border-t border-[#e5eae4] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button type="button" variant="ghost" onClick={onDismiss}>{mode === 'refresher' ? 'Close' : 'Skip'}</Button>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" disabled={stepIndex === 0} onClick={() => onStepIndex(Math.max(0, stepIndex - 1))}>Back</Button>
+              {last ? (
+                <Button type="button" className="bg-[#287b6f]" onClick={onDismiss}>{mode === 'refresher' ? 'Done' : 'Finish'}</Button>
+              ) : (
+                <Button type="button" className="bg-[#287b6f]" onClick={() => onStepIndex(Math.min(steps.length - 1, stepIndex + 1))}>Continue</Button>
+              )}
+            </div>
           </div>
+          <p className="mt-2 text-[11px] text-[#687873]">Continue moves the highlight to the next component · ← → / Enter · Esc</p>
         </div>
-        <p className="mt-3 text-xs text-[#687873]">Tip: ← → or Enter to move · Esc to skip · ? for all shortcuts</p>
       </div>
     </dialog>,
     document.body,
@@ -836,11 +979,11 @@ function StatusBadge({ status }: { status: string }) {
   return <span data-status={status} className={`status-badge inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[status] ?? 'bg-[#f0f0f0] text-[#687873]'}`}>{status.replace('_', ' ')}</span>;
 }
 
-function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy, dashboard }: any) {
+function ManagerView({ section, setSection, state, workers, open, dueToday, setTask, setProfile, setCreateOpen, setAddOpen, setResetMember, setShiftWorker, setAvailWorker, onInvited, mutate, busy, dashboard, onOpenLearn, focusHrPayroll = false }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
-  if (section === 'hr') return <ManagerHrView state={state} setProfile={setProfile} mutate={mutate} busy={busy} />;
+  if (section === 'hr') return <ManagerHrView state={state} setProfile={setProfile} mutate={mutate} busy={busy} focusPayroll={focusHrPayroll} />;
   if (section === 'tasks') {
     const query = taskQuery.trim().toLowerCase();
     const filtered = state.chores.filter((task: Chore) => {
@@ -849,7 +992,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
       return true;
     });
     return (
-      <>
+      <div data-guide="panel-tasks">
         <Title title="Tasks" text="Plan, assign, edit, and review household work." action={<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button>} />
         <Card className="p-0">
           <div className="border-b border-[#dfe5dc] px-5 py-4">
@@ -868,11 +1011,11 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           </div>
           <TaskList tasks={filtered} members={state.members} onOpen={setTask} />
         </Card>
-      </>
+      </div>
     );
   }
   if (section === 'team') return (
-    <>
+    <div data-guide="panel-team">
       <Title title="Care team" text="Detailed profiles are visible only to the household manager." action={<Button onClick={() => setAddOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button>} />
       {workers.length > 0 && <div className="mb-6"><KudosCard state={state} mutate={mutate} busy={busy} /></div>}
       {!workers.length && <Card><div className="flex flex-col items-center py-6 text-center"><span className="mb-4 grid size-14 place-items-center rounded-2xl bg-[#e8f1ec] text-[#287b6f]"><Users className="size-6" aria-hidden="true" /></span><h2 className="text-lg font-semibold">Build your care team</h2><p className="mt-2 max-w-sm text-sm leading-6 text-[#52645f]">Add your first care worker to start sharing household tasks and coordinating care.</p><ul className="mt-4 space-y-2 text-sm text-[#687873]"><li>Invite by email — they set their own password</li><li>Set weekly shifts and availability</li><li>Track certifications and contact details</li></ul><Button onClick={() => setAddOpen(true)} className="mt-5 min-h-11 bg-[#287b6f]"><Plus className="size-4" />Add care worker</Button></div></Card>}
@@ -938,12 +1081,12 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
           </div>
         </>
       )}
-    </>
+    </div>
   );
   if (section === 'schedule') return <ScheduleView state={state} workers={workers} setTask={setTask} setCreateOpen={setCreateOpen} mutate={mutate} busy={busy} />;
   if (section === 'client') return <CarePlanView state={state} mutate={mutate} busy={busy} setSection={setSection} />;
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
-  if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
+  if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} onOpenLearn={onOpenLearn} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
   const homeNow = new Date();
   const nowTime = homeNow.toTimeString().slice(0, 5);
@@ -1302,14 +1445,15 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
     ),
   };
   return (
-    <>
+    <div data-guide="panel-home">
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       <DashboardGrid audience="manager" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />
-    </>
+    </div>
   );
 }
 
-function MoreManager({ state, mutate, busy }: any) {
+function MoreManager({ state, mutate, busy, onOpenLearn }: any) {
+  // Learn CareBoard lives in the sidebar / book icon — keep Settings focused on household config.
   const [weekStart] = useState(() => new Date(Date.now() - 6 * 864e5).toISOString().slice(0, 10));
   const [payFrom, setPayFrom] = useState(() => new Date(Date.now() - 13 * 864e5).toISOString().slice(0, 10));
   const [payTo, setPayTo] = useState(() => today());
@@ -1330,7 +1474,20 @@ function MoreManager({ state, mutate, busy }: any) {
   const overPace = funding.fundedMinutes > 0 && funding.projectedMinutes > funding.fundedMinutes;
   return (
     <>
-      <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history." />
+      <Title title="Settings & reports" text="Household settings, monthly reports, and immutable audit history. Open Learn CareBoard from the sidebar anytime for a refresher." />
+      <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white"><BookOpen className="size-5" aria-hidden="true" /></span>
+            <div>
+              <h2 className="text-lg font-bold">Learn CareBoard</h2>
+              <p className="mt-1 max-w-xl text-sm leading-6 text-[#52645f]">The welcome tour is your teacher — reopen the full walkthrough or jump to one subject (Overview, Team, Tasks, Payroll, and more) whenever you need a clear refresher.</p>
+            </div>
+          </div>
+          <p className="text-sm font-semibold text-[#287b6f]">Use the Learn CareBoard button in the sidebar →</p>
+          <Button type="button" className="bg-[#287b6f]" onClick={() => onOpenLearn?.()}><BookOpen className="size-4" aria-hidden="true" />Open Learn</Button>
+        </div>
+      </Card>
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Settings className="size-5 text-[#287b6f]" aria-hidden="true" />Settings</h2>
@@ -1565,7 +1722,7 @@ function MyScheduleView({ state, member, setTask, mutate, busy }: any) {
   };
   const todayShift = myShiftFor(date);
   return (
-    <>
+    <div data-guide="panel-schedule">
       <Title title="My schedule" text="Clock in, work through today, and see what’s coming." />
       <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />
       <Card className="mt-6">
@@ -1608,7 +1765,7 @@ function MyScheduleView({ state, member, setTask, mutate, busy }: any) {
           </div>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1641,7 +1798,7 @@ function ScheduleView({ state, workers, readOnly = false, setTask, setCreateOpen
     );
   };
   return (
-    <>
+    <div data-guide="panel-schedule">
       <Title title="Two-week schedule" text={readOnly ? 'Fourteen days of household work and who is on shift.' : 'Fourteen days of household work — reschedule or reassign any task from its details.'} action={readOnly ? undefined : <div className="flex flex-wrap gap-2">{plan.length > 0 && <Button variant="outline" disabled={assigning || busy} onClick={autoAssign}><UserCheck className="size-4" />Auto-assign {plan.length} open task{plan.length === 1 ? '' : 's'}</Button>}<Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
       {schedule.overdue.length > 0 && (
         <Card className="mb-6 border-[#eccab6] bg-[#fdf8f2]">
@@ -1719,7 +1876,7 @@ function ScheduleView({ state, workers, readOnly = false, setTask, setCreateOpen
           </div>
         </Card>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1860,7 +2017,7 @@ function ViewerView({ section, state, setTask, setSection, dashboard }: any) {
   );
 }
 
-function WorkerView({ section, state, member, setSection, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard }: any) {
+function WorkerView({ section, state, member, setSection, setTask, setProfile, setAvailWorker, mutate, uploadClientNote, busy, dashboard, onOpenLearn }: any) {
   const [taskQuery, setTaskQuery] = useState('');
   const [taskFilter, setTaskFilter] = useState<'all' | 'mine' | 'available' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
@@ -1910,7 +2067,19 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
     const estimatedPay = member.hourlyRate != null ? (monthMinutes / 60) * member.hourlyRate : null;
     return (
     <>
-      <Title title="More" text="Account, pay, and privacy." />
+      <Title title="More" text="Account, pay, privacy, and Learn CareBoard refreshers." />
+      <Card className="mb-6 border-[#bcd4c9] bg-[#f2f7f1]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white"><BookOpen className="size-5" aria-hidden="true" /></span>
+            <div>
+              <h2 className="text-lg font-bold">Need a refresher?</h2>
+              <p className="mt-1 max-w-xl text-sm leading-6 text-[#52645f]">Replay the welcome tour or open one subject — Today, Tasks, handoffs, Care plan, Inbox, or Your pay — in plain language.</p>
+            </div>
+          </div>
+          <Button type="button" className="bg-[#287b6f]" onClick={() => onOpenLearn?.()}><BookOpen className="size-4" aria-hidden="true" />Open Learn</Button>
+        </div>
+      </Card>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card data-guide="your-pay">
           <div className="flex items-center gap-3">
@@ -1965,7 +2134,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
     return true;
   });
   return (
-    <>
+    <div data-guide="panel-tasks">
       <Title title="Tasks" text="Your assigned work and tasks available to claim." />
       <Card className="p-0">
         <div className="border-b border-[#dfe5dc] px-5 py-4">
@@ -1985,7 +2154,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
         </div>
         <TaskList tasks={filtered} members={[member]} onOpen={setTask} />
       </Card>
-    </>
+    </div>
   );
 }
 
@@ -1998,7 +2167,7 @@ function InboxView({ state, mutate, busy }: any) {
   const alerts = (state.safetyAlerts ?? []).filter((item: any) => !item.safetyReviewedAt);
   const statusKind = (kind: string) => kind.startsWith('client_note_');
   return (
-    <>
+    <div data-guide="panel-messages">
       <Title title="Care team inbox" text={isManager ? 'All direct care-team messages, worker note updates, and advisory safety alerts.' : 'Direct messages and your note updates. The manager can read all team messages.'} />
       {!isManager && <div role="note" className="mb-5 flex items-start gap-3 rounded-2xl border border-[#d9c99d] bg-[#fff8e8] p-4 text-sm text-[#6f5422]"><Shield className="mt-0.5 size-5 shrink-0" aria-hidden="true" /><p><strong>Monitored team inbox.</strong> Messages are visible to participants and the household manager. Unrelated workers cannot read them.</p></div>}
       {isManager && alerts.length > 0 && <Card className="mb-6 border-[#e2b69f] bg-[#fff8f4]">
@@ -2033,7 +2202,7 @@ function InboxView({ state, mutate, busy }: any) {
         <div className="max-h-80 overflow-y-auto p-4">{(state.messages ?? []).length ? <ol className="space-y-3">{(state.messages as Message[]).map((msg) => <li key={msg.id} className="rounded-xl border border-[#e2e8e1] bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{memberFor(msg.memberId)?.name ?? 'Former member'}{msg.memberId === me ? ' (you)' : ''}</span><time className="text-xs text-[#687873]">{new Date(msg.createdAt).toLocaleString()}</time></div><p className="mt-1 break-words text-sm leading-6">{msg.body}</p></li>)}</ol> : <EmptyHandoff icon={MessageSquareText} title="No team-wide messages" text="Use this shared space for information intended for everyone." compact />}</div>
         <form className="flex gap-2 border-t border-[#dfe5dc] p-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'postMessage', ...Object.fromEntries(new FormData(form)) }, 'Team message sent.').then(() => form.reset()).catch(() => {}); }}><Input name="body" required maxLength={1000} placeholder="Message the full care team…" aria-label="Team-wide message" className="min-h-11 flex-1" /><Button type="submit" disabled={busy} aria-label="Send team-wide message" className="min-h-11 bg-[#287b6f]"><Send className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Send</span></Button></form>
       </Card>
-    </>
+    </div>
   );
 }
 
@@ -2244,7 +2413,11 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
       </Card>
     ),
   };
-  return <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />;
+  return (
+    <div data-guide="panel-today">
+      <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />
+    </div>
+  );
 }
 
 function CoverageCard({ state, member, mutate, busy }: any) {
@@ -2758,7 +2931,7 @@ function CarePlanView({ state, mutate, busy, uploadClientNote, setSection }: any
   const role = state.viewer.role;
   const readOnly = role === 'viewer';
   return (
-    <>
+    <div data-guide="panel-client">
       <Title title="Care plan" text={role === 'manager' ? 'The person at the centre of care: their profile, medications, appointments, supplies, and approved notes.' : readOnly ? 'A read-only view of the profile, today’s medication round, appointments, and supplies.' : 'Who you are caring for, today’s medication round, upcoming appointments, and supplies.'} />
       <div className="grid gap-6">
         <CareProfileCard state={state} mutate={mutate} busy={busy} setSection={setSection} />
@@ -2770,7 +2943,7 @@ function CarePlanView({ state, mutate, busy, uploadClientNote, setSection }: any
         <SuppliesCard state={state} mutate={mutate} busy={busy} readOnly={readOnly} />
         {!readOnly && <section aria-labelledby="client-notes-heading"><h2 id="client-notes-heading" className="mb-3 mt-2 flex items-center gap-2 text-xl font-semibold"><FileText className="size-5 text-[#287b6f]" aria-hidden="true" />Client notes</h2><ClientRecordView state={state} mutate={mutate} uploadClientNote={uploadClientNote} busy={busy} embedded /></section>}
       </div>
-    </>
+    </div>
   );
 }
 
