@@ -49,6 +49,7 @@ import { assistantPayrollSuggestions, payrollAskQuestions, payrollAskStorageKey,
 import { buildHrAlerts, incompleteHireWorkerCount, memberOnApprovedLeave, unsignedRequiredDocCount } from '@/lib/hr';
 import { payPeriodReadyToClose } from '@/lib/hr-payroll';
 import { ManagerHrView, WorkerHrCards } from '@/app/hr-panel';
+import { CsilPanel } from '@/app/csil-panel';
 import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
@@ -1559,6 +1560,20 @@ function MoreManager({ state, mutate, busy, onOpenLearn, setSection }: any) {
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
+            <div className="rounded-2xl border border-[#d7dfd7] bg-[#fafbf7] p-4">
+              <h3 className="font-bold">CSIL agreement and account</h3>
+              <p className="mt-1 text-xs leading-5 text-[#687873]">Store only the last four account digits; never enter banking credentials.</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="Health authority" name="csilHealthAuthority" defaultValue={settings?.csilHealthAuthority ?? ''} />
+                <Field label="Health-authority contact" name="csilContactName" defaultValue={settings?.csilContactName ?? ''} />
+                <Field label="Contact email" name="csilContactEmail" type="email" defaultValue={settings?.csilContactEmail ?? ''} />
+                <Field label="Dedicated account — last 4 digits" name="csilAccountLastFour" defaultValue={settings?.csilAccountLastFour ?? ''} />
+                <Field label="Agreement starts" name="csilAgreementStart" type="date" defaultValue={settings?.csilAgreementStart ?? ''} />
+                <Field label="Agreement ends" name="csilAgreementEnd" type="date" defaultValue={settings?.csilAgreementEnd ?? ''} />
+                <Field label="Monthly client contribution ($)" name="csilClientContribution" type="number" step="0.01" defaultValue={settings?.csilClientContribution ?? 0} />
+                <Field label="Report due after month end (days)" name="csilReportDueDays" type="number" defaultValue={settings?.csilReportDueDays ?? 45} />
+              </div>
+            </div>
             <Field label="Bookkeeper email — receives the payroll report every two weeks" name="bookkeeperEmail" type="email" defaultValue={settings?.bookkeeperEmail ?? ''} />
             <Field label="Default vacation hours for new care workers" name="defaultVacationHours" type="number" step="any" defaultValue={settings?.defaultVacationHours ?? 80} />
             <Field label="Pay period length (days)" name="payPeriodDays" type="number" defaultValue={settings?.payPeriodDays ?? 14} />
@@ -1667,6 +1682,7 @@ function MoreManager({ state, mutate, busy, onOpenLearn, setSection }: any) {
           <p className="mt-2 text-sm leading-6 text-[#687873]">Set your funded hours per month and the CSIL funding rate in Settings above to track your budget against the hours your care team actually works.</p>
         )}
       </Card>
+      <CsilPanel state={state} mutate={mutate} busy={busy} />
       <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><Clock className="size-5 text-[#287b6f]" aria-hidden="true" />Hours tracked — last 7 days</h2>
         <p className="mt-1 text-sm text-[#687873]">Care workers clock in and out from their Today view. Open shifts count toward the total live.</p>

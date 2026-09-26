@@ -150,7 +150,9 @@ const mockState: RawLocalState = {
   ],
   activity: [],
   audit: [],
-  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', defaultVacationHours: 80, payPeriodDays: 14, payPeriodAnchor: '2025-01-06', operatingHoursStart: '08:00', operatingHoursEnd: '14:00', operatingWeekdays: '1,2,3,4,5', updatedAt: now },
+  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, csilHealthAuthority: 'Example health authority', csilAgreementStart: `${today.slice(0, 4)}-01-01`, csilAgreementEnd: null, csilClientContribution: 0, csilReportDueDays: 45, csilAccountLastFour: '1234', csilContactName: '', csilContactEmail: '', bookkeeperEmail: '', payrollLastSent: '', defaultVacationHours: 80, payPeriodDays: 14, payPeriodAnchor: '2025-01-06', operatingHoursStart: '08:00', operatingHoursEnd: '14:00', operatingWeekdays: '1,2,3,4,5', updatedAt: now },
+  csilExpenses: [],
+  csilMonthlyReports: [],
   leaveBalances: [
     { memberId: worker.id, kind: 'vacation', hoursEntitled: 80, hoursUsed: 0 },
     { memberId: worker.id, kind: 'sick', hoursEntitled: 0, hoursUsed: 0 },
@@ -307,6 +309,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     'decideLeaveRequest', 'setLeaveBalance', 'saveHrDocument', 'archiveHrDocument',
     'seedHireChecklist', 'toggleHireChecklistItem', 'addHireChecklistItem', 'ensurePayPeriods', 'closePayRun',
     'startPayPeriodReview', 'reopenPayPeriod',
+    'saveCsilExpense', 'deleteCsilExpense', 'saveCsilMonthlyReport',
   ]);
   if (managerOnly.has(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -596,6 +599,14 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.reminderDefaultLeadDays === 'string' || typeof input.reminderDefaultLeadDays === 'number') settings.reminderDefaultLeadDays = Math.max(0, Math.min(30, Number(input.reminderDefaultLeadDays))) || 1;
       if (typeof input.fundedHoursMonthly === 'string' || typeof input.fundedHoursMonthly === 'number') settings.fundedHoursMonthly = Math.max(0, Number(input.fundedHoursMonthly));
       if (typeof input.fundingHourlyRate === 'string' || typeof input.fundingHourlyRate === 'number') settings.fundingHourlyRate = Math.max(0, Number(input.fundingHourlyRate));
+      if (typeof input.csilHealthAuthority === 'string') settings.csilHealthAuthority = input.csilHealthAuthority;
+      if (typeof input.csilAgreementStart === 'string') settings.csilAgreementStart = input.csilAgreementStart || null;
+      if (typeof input.csilAgreementEnd === 'string') settings.csilAgreementEnd = input.csilAgreementEnd || null;
+      if (typeof input.csilClientContribution === 'string' || typeof input.csilClientContribution === 'number') settings.csilClientContribution = Math.max(0, Number(input.csilClientContribution));
+      if (typeof input.csilReportDueDays === 'string' || typeof input.csilReportDueDays === 'number') settings.csilReportDueDays = Math.max(1, Math.min(90, Number(input.csilReportDueDays)));
+      if (typeof input.csilAccountLastFour === 'string') settings.csilAccountLastFour = input.csilAccountLastFour;
+      if (typeof input.csilContactName === 'string') settings.csilContactName = input.csilContactName;
+      if (typeof input.csilContactEmail === 'string') settings.csilContactEmail = input.csilContactEmail;
       if (typeof input.bookkeeperEmail === 'string') settings.bookkeeperEmail = input.bookkeeperEmail;
       if (typeof input.defaultVacationHours === 'string' || typeof input.defaultVacationHours === 'number') settings.defaultVacationHours = Math.max(0, Number(input.defaultVacationHours));
       if (typeof input.payPeriodDays === 'string' || typeof input.payPeriodDays === 'number') settings.payPeriodDays = Math.max(1, Math.min(62, Number(input.payPeriodDays)));
@@ -764,6 +775,23 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       for (const chore of mockState.chores) {
         chore.photos = (chore.photos ?? []).filter((photo) => photo.id !== uploadId);
       }
+      break;
+    }
+    case 'saveCsilExpense': {
+      const id = typeof input.id === 'string' && input.id ? input.id : crypto.randomUUID();
+      const expense = { id, expenseDate: requiredString(input.expenseDate, 'Expense date'), vendor: requiredString(input.vendor, 'Vendor'), category: (typeof input.category === 'string' ? input.category : 'other') as 'other', description: optionalString(input.description, 500), amount: Number(input.amount), eligibilityStatus: (typeof input.eligibilityStatus === 'string' ? input.eligibilityStatus : 'pending') as 'pending', receiptReference: optionalString(input.receiptReference, 240), createdBy: actorId, createdAt: now2, updatedAt: now2 };
+      mockState.csilExpenses = [expense, ...(mockState.csilExpenses ?? []).filter((item) => item.id !== id)];
+      break;
+    }
+    case 'deleteCsilExpense': {
+      mockState.csilExpenses = (mockState.csilExpenses ?? []).filter((item) => item.id !== input.expenseId);
+      break;
+    }
+    case 'saveCsilMonthlyReport': {
+      const reportMonth = requiredString(input.reportMonth, 'Report month');
+      const existing = (mockState.csilMonthlyReports ?? []).find((item) => item.reportMonth === reportMonth);
+      const record = { id: existing?.id ?? crypto.randomUUID(), reportMonth, status: (typeof input.status === 'string' ? input.status : 'draft') as 'draft', submittedAt: input.status === 'draft' ? null : now2, notes: optionalString(input.notes, 1000), createdBy: actorId, createdAt: existing?.createdAt ?? now2, updatedAt: now2 };
+      mockState.csilMonthlyReports = [record, ...(mockState.csilMonthlyReports ?? []).filter((item) => item.reportMonth !== reportMonth)];
       break;
     }
     case 'resetMemberPassword':

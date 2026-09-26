@@ -7,7 +7,8 @@ const household = readFileSync(new URL('../lib/household-data.ts', import.meta.u
 const hrData = readFileSync(new URL('../lib/hr-data.ts', import.meta.url), 'utf8');
 const localDev = readFileSync(new URL('../lib/local-dev.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../app/household-app.tsx', import.meta.url), 'utf8')
-  + readFileSync(new URL('../app/hr-panel.tsx', import.meta.url), 'utf8');
+  + readFileSync(new URL('../app/hr-panel.tsx', import.meta.url), 'utf8')
+  + readFileSync(new URL('../app/csil-panel.tsx', import.meta.url), 'utf8');
 
 // Standalone `action === 'x'` comparisons — excludes `item.action`/`request.action` property checks.
 const backendActions = new Set([

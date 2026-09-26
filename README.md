@@ -11,6 +11,7 @@ CareBoard is a private household chore tracker for coordinating care workers. A 
 - **Team shout-outs**: caregivers and the manager can recognize each other for great care; visible only to the care team.
 - **Two-week schedule**: shifts can repeat every week or alternate between week A and week B of a two-week cycle; the schedule view spans 14 days.
 - **Employer records**: manager-maintained employee records (job title, start date, date of birth, address), per-worker timesheet CSVs, a bookkeeper payroll CSV for any pay period, and household exports for CSIL/BC employment-standards record keeping. See [docs/csil-compliance.md](docs/csil-compliance.md) for the requirements matrix.
+- **CSIL accountability**: manager-only agreement and health-authority details, dedicated-account confirmation, monthly funding/client-contribution reconciliation, categorized expense and receipt register, filing status, readiness checks, forecasts, and a portable monthly CSV package.
 - **Security-first roles**: workers cannot see other workers' profiles, tasks, reports, or audit data. Disabled workers are blocked on every request, so an existing session cannot retain access.
 - **Privacy by default**: profile photos and task proof photos are retained for a fixed 90-day period, served only through authenticated ownership-checked routes, and never exposed as static files.
 - **Progressive Web App**: installable manifest and service worker support for offline shell pages.

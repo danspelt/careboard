@@ -25,6 +25,7 @@ import { normalizeOperatingHours, parseOperatingWeekdays, serializeOperatingWeek
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMessage, emptyCareProfile, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem, visibleKudos, type Appointment, type CareProfile, type Kudos, type Medication, type MedicationLog, type SupplyItem } from '@/lib/care-plan';
 import type { HireChecklistItem, HrDocument, HrDocumentAck, LeaveBalance, LeaveRequest, PayPeriod, PayRun, PayRunLine } from '@/lib/hr';
 import { applyHrMutation, ensureOpenPayPeriod, filterHrForWorker, loadHrState, seedHireChecklistForMember, seedLeaveBalancesForMember } from '@/lib/hr-data';
+import { CSIL_EXPENSE_CATEGORIES, csilMonthSummary, type CsilEligibilityStatus, type CsilExpense, type CsilMonthlyReport, type CsilReportStatus } from '@/lib/csil';
 
 export type Member = {
   id: string;
@@ -101,6 +102,14 @@ export type HouseholdSettings = {
   retentionDays: number;
   fundedHoursMonthly: number;
   fundingHourlyRate: number;
+  csilHealthAuthority?: string;
+  csilAgreementStart?: string | null;
+  csilAgreementEnd?: string | null;
+  csilClientContribution?: number;
+  csilReportDueDays?: number;
+  csilAccountLastFour?: string;
+  csilContactName?: string;
+  csilContactEmail?: string;
   bookkeeperEmail?: string;
   payrollLastSent?: string;
   defaultVacationHours?: number;
@@ -149,6 +158,8 @@ export type HouseholdState = {
   payPeriods?: PayPeriod[];
   payRuns?: PayRun[];
   payRunLines?: PayRunLine[];
+  csilExpenses?: CsilExpense[];
+  csilMonthlyReports?: CsilMonthlyReport[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -230,7 +241,7 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, default_vacation_hours AS defaultVacationHours, pay_period_days AS payPeriodDays, pay_period_anchor AS payPeriodAnchor, operating_hours_start AS operatingHoursStart, operating_hours_end AS operatingHoursEnd, operating_weekdays AS operatingWeekdays, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, csil_health_authority AS csilHealthAuthority, csil_agreement_start AS csilAgreementStart, csil_agreement_end AS csilAgreementEnd, csil_client_contribution AS csilClientContribution, csil_report_due_days AS csilReportDueDays, csil_account_last_four AS csilAccountLastFour, csil_contact_name AS csilContactName, csil_contact_email AS csilContactEmail, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, default_vacation_hours AS defaultVacationHours, pay_period_days AS payPeriodDays, pay_period_anchor AS payPeriodAnchor, operating_hours_start AS operatingHoursStart, operating_hours_end AS operatingHoursEnd, operating_weekdays AS operatingWeekdays, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
@@ -238,6 +249,8 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
     recurrenceHorizonDays: 30,
     fundedHoursMonthly: 0,
     fundingHourlyRate: 0,
+    csilHealthAuthority: '', csilAgreementStart: null, csilAgreementEnd: null, csilClientContribution: 0,
+    csilReportDueDays: 45, csilAccountLastFour: '', csilContactName: '', csilContactEmail: '',
     reminderDefaultLeadDays: 1,
     retentionDays: 90,
     bookkeeperEmail: '',
@@ -325,6 +338,8 @@ async function rawState() {
     .all<ProofPhoto>();
   const notes = await db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, kind, body, created_at AS createdAt FROM task_notes ORDER BY created_at`).all<TaskNote>();
   const audit = await db.prepare(`SELECT id, chore_id AS choreId, actor_id AS actorId, action, detail, created_at AS createdAt FROM audit_log ORDER BY created_at DESC LIMIT 200`).all<AuditEntry>();
+  const csilExpenses = await db.prepare(`SELECT id, expense_date AS expenseDate, vendor, category, description, amount, eligibility_status AS eligibilityStatus, receipt_reference AS receiptReference, created_by AS createdBy, created_at AS createdAt, updated_at AS updatedAt FROM csil_expenses WHERE household_id='default' ORDER BY expense_date DESC, created_at DESC LIMIT 1000`).all<CsilExpense>();
+  const csilMonthlyReports = await db.prepare(`SELECT id, report_month AS reportMonth, status, submitted_at AS submittedAt, notes, created_by AS createdBy, created_at AS createdAt, updated_at AS updatedAt FROM csil_monthly_reports WHERE household_id='default' ORDER BY report_month DESC LIMIT 60`).all<CsilMonthlyReport>();
   const carePlan = await loadCarePlan(db);
   let hr = { leaveBalances: [] as LeaveBalance[], leaveRequests: [] as LeaveRequest[], hrDocuments: [] as HrDocument[], hrDocumentAcks: [] as HrDocumentAck[], hireChecklistItems: [] as HireChecklistItem[], payPeriods: [] as PayPeriod[], payRuns: [] as PayRun[], payRunLines: [] as PayRunLine[] };
   try {
@@ -342,7 +357,7 @@ async function rawState() {
     try { stored = dashboardLayoutJson ? JSON.parse(dashboardLayoutJson) : null; } catch { stored = null; }
     return { ...member, dashboardLayout: stored === null ? null : normalizeLayout(member.role as DashboardRole, stored) };
   });
-  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results, ...carePlan, ...hr };
+  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results, csilExpenses: csilExpenses.results, csilMonthlyReports: csilMonthlyReports.results, ...carePlan, ...hr };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -500,6 +515,30 @@ export async function payrollCsvFor(from: string, to: string): Promise<string> {
   return `\uFEFF${toCsv(payrollRows(data, from, to))}\r\n`;
 }
 
+export async function csilReportCsvFor(month: string): Promise<string> {
+  const db = getD1();
+  const settings = await getHouseholdSettings();
+  const workers = await db.prepare(`SELECT id, hourly_rate AS hourlyRate FROM members WHERE role='worker' ORDER BY name`).all<{ id: string; hourlyRate: number | null }>();
+  const entries = await db.prepare(`SELECT member_id AS memberId, started_at AS startedAt, ended_at AS endedAt FROM time_entries WHERE started_at >= ? AND started_at < ? ORDER BY started_at`).bind(`${month}-01T00:00:00.000Z`, `${month}-32T00:00:00.000Z`).all<TimeEntry>();
+  const expenses = await db.prepare(`SELECT id, expense_date AS expenseDate, vendor, category, description, amount, eligibility_status AS eligibilityStatus, receipt_reference AS receiptReference, created_by AS createdBy, created_at AS createdAt, updated_at AS updatedAt FROM csil_expenses WHERE household_id='default' AND expense_date LIKE ? ORDER BY expense_date, created_at`).bind(`${month}-%`).all<CsilExpense>();
+  const summary = csilMonthSummary({
+    month, entries: entries.results, workers: workers.results, expenses: expenses.results,
+    fundedHoursMonthly: settings.fundedHoursMonthly, fundingHourlyRate: settings.fundingHourlyRate,
+    clientContribution: settings.csilClientContribution, dueDays: settings.csilReportDueDays,
+  });
+  const rows: unknown[][] = [
+    ['CareBoard CSIL monthly accountability report'],
+    ['Month', month], ['Health authority', settings.csilHealthAuthority ?? ''], ['Report due', summary.dueDate],
+    ['Health authority funding', summary.fundedValue.toFixed(2)], ['Client contribution', (settings.csilClientContribution ?? 0).toFixed(2)],
+    ['Tracked payroll cost', summary.laborCost.toFixed(2)], ['Confirmed other expenses', summary.confirmedExpenses.toFixed(2)],
+    ['Pending-review expenses', summary.pendingExpenses.toFixed(2)], ['Ineligible expenses', summary.ineligibleExpenses.toFixed(2)],
+    ['Accountable balance', summary.balance.toFixed(2)], ['Missing receipt references', summary.missingReceipts], [],
+    ['Expense date', 'Vendor', 'Category', 'Description', 'Amount', 'Eligibility', 'Receipt/reference'],
+    ...summary.monthExpenses.map((expense) => [expense.expenseDate, expense.vendor, expense.category, expense.description, expense.amount.toFixed(2), expense.eligibilityStatus, expense.receiptReference]),
+  ];
+  return `\uFEFF${toCsv(rows)}\r\n`;
+}
+
 async function maybeSendPayrollReport() {
   try {
     const settings = await getHouseholdSettings();
@@ -640,6 +679,9 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'closePayRun',
     'startPayPeriodReview',
     'reopenPayPeriod',
+    'saveCsilExpense',
+    'deleteCsilExpense',
+    'saveCsilMonthlyReport',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
@@ -1237,6 +1279,17 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const retentionDays = 90;
     const fundedHoursMonthly = clampNumber(input.fundedHoursMonthly, 0, 10000, 0);
     const fundingHourlyRate = clampNumber(input.fundingHourlyRate, 0, 1000, 0);
+    const csilHealthAuthority = optionalString(input.csilHealthAuthority, 120);
+    const csilAgreementStart = optionalNullableDate(input.csilAgreementStart);
+    const csilAgreementEnd = optionalNullableDate(input.csilAgreementEnd);
+    if (csilAgreementStart && csilAgreementEnd && csilAgreementEnd < csilAgreementStart) throw new Error('The CSIL agreement end must be after its start.');
+    const csilClientContribution = clampNumber(input.csilClientContribution, 0, 100000, 0);
+    const csilReportDueDays = clampInteger(input.csilReportDueDays, 1, 90, 45);
+    const csilAccountLastFour = optionalString(input.csilAccountLastFour, 4);
+    if (csilAccountLastFour && !/^\d{4}$/.test(csilAccountLastFour)) throw new Error('Enter only the last four digits of the CSIL account.');
+    const csilContactName = optionalString(input.csilContactName, 120);
+    const csilContactEmail = optionalString(input.csilContactEmail, 200);
+    if (csilContactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(csilContactEmail)) throw new Error('Enter a valid CSIL contact email.');
     const bookkeeperEmail = optionalString(input.bookkeeperEmail, 200);
     if (bookkeeperEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookkeeperEmail)) throw new Error('Enter a valid bookkeeper email.');
     const defaultVacationHours = clampNumber(input.defaultVacationHours, 0, 2000, 80);
@@ -1255,11 +1308,36 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const operatingWeekdays = serializeOperatingWeekdays(parseOperatingWeekdays(weekdayList.join(',')));
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, default_vacation_hours=?, pay_period_days=?, pay_period_anchor=?, operating_hours_start=?, operating_hours_end=?, operating_weekdays=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, csil_health_authority=?, csil_agreement_start=?, csil_agreement_end=?, csil_client_contribution=?, csil_report_due_days=?, csil_account_last_four=?, csil_contact_name=?, csil_contact_email=?, bookkeeper_email=?, default_vacation_hours=?, pay_period_days=?, pay_period_anchor=?, operating_hours_start=?, operating_hours_end=?, operating_weekdays=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, defaultVacationHours, payPeriodDays, payPeriodAnchor, hours.start, hours.end, operatingWeekdays, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, csilHealthAuthority, csilAgreementStart, csilAgreementEnd, csilClientContribution, csilReportDueDays, csilAccountLastFour, csilContactName, csilContactEmail, bookkeeperEmail, defaultVacationHours, payPeriodDays, payPeriodAnchor, hours.start, hours.end, operatingWeekdays, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
+  } else if (action === 'saveCsilExpense') {
+    const id = optionalString(input.id, 100) || crypto.randomUUID();
+    const expenseDate = optionalNullableDate(input.expenseDate);
+    if (!expenseDate) throw new Error('Expense date is required.');
+    const vendor = requiredString(input.vendor, 'Vendor').slice(0, 160);
+    const category = optionalString(input.category, 40);
+    if (!CSIL_EXPENSE_CATEGORIES.includes(category as (typeof CSIL_EXPENSE_CATEGORIES)[number])) throw new Error('Choose a valid expense category.');
+    const amount = clampNumber(input.amount, 0.01, 1000000, 0);
+    if (amount <= 0) throw new Error('Expense amount must be greater than zero.');
+    const eligibilityStatus = optionalString(input.eligibilityStatus, 20) as CsilEligibilityStatus;
+    if (!['confirmed', 'pending', 'ineligible'].includes(eligibilityStatus)) throw new Error('Choose a valid eligibility status.');
+    await db.prepare(`INSERT INTO csil_expenses(id,household_id,expense_date,vendor,category,description,amount,eligibility_status,receipt_reference,created_by,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET expense_date=excluded.expense_date,vendor=excluded.vendor,category=excluded.category,description=excluded.description,amount=excluded.amount,eligibility_status=excluded.eligibility_status,receipt_reference=excluded.receipt_reference,updated_at=excluded.updated_at`).bind(id, expenseDate, vendor, category, optionalString(input.description, 500), amount, eligibilityStatus, optionalString(input.receiptReference, 240), actorId, now, now).run();
+    await activity(null, actorId, 'csil_expense_saved', `recorded ${category} expense for $${amount.toFixed(2)}`, now).run();
+  } else if (action === 'deleteCsilExpense') {
+    const expenseId = requiredString(input.expenseId, 'Expense');
+    await db.prepare(`DELETE FROM csil_expenses WHERE id=? AND household_id='default'`).bind(expenseId).run();
+    await activity(null, actorId, 'csil_expense_deleted', 'removed a CSIL expense record', now).run();
+  } else if (action === 'saveCsilMonthlyReport') {
+    const reportMonth = requiredString(input.reportMonth, 'Report month');
+    if (!/^\d{4}-\d{2}$/.test(reportMonth)) throw new Error('Enter a valid report month.');
+    const status = optionalString(input.status, 20) as CsilReportStatus;
+    if (!['draft', 'submitted', 'accepted', 'returned'].includes(status)) throw new Error('Choose a valid report status.');
+    const submittedAt = status === 'draft' ? null : now;
+    await db.prepare(`INSERT INTO csil_monthly_reports(id,household_id,report_month,status,submitted_at,notes,created_by,created_at,updated_at) VALUES(?,'default',?,?,?,?,?,?,?) ON CONFLICT(household_id,report_month) DO UPDATE SET status=excluded.status,submitted_at=CASE WHEN excluded.status='draft' THEN NULL ELSE COALESCE(csil_monthly_reports.submitted_at,excluded.submitted_at) END,notes=excluded.notes,updated_at=excluded.updated_at`).bind(crypto.randomUUID(), reportMonth, status, submittedAt, optionalString(input.notes, 1000), actorId, now, now).run();
+    await activity(null, actorId, 'csil_report_updated', `marked ${reportMonth} CSIL report ${status}`, now).run();
   } else if (action === 'sendPayrollReport') {
     const settings = await getHouseholdSettings();
     const recipient = settings.bookkeeperEmail?.trim();

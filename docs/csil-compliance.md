@@ -4,6 +4,9 @@ This document maps the obligations of a **Choice in Supports for Independent Liv
 
 ## Sources
 
+- [Province of BC — Choice in Supports for Independent Living](https://www2.gov.bc.ca/gov/content/health/accessing-health-care/home-community-care/care-options-and-cost/choice-in-supports-for-independent-living) (eligibility, employer role, assessed hours, funding rate and client contribution)
+- [BC Ministry of Health — Home and Community Care Policy Manual, Chapter 4, section 4.C](https://www2.gov.bc.ca/assets/gov/health-safety/home-community-care/accountability/hcc-policy-manual/4_hcc_policy_manual_chapter_4.pdf) (CSIL agreements, dedicated account, backup/respite planning, financial accountability and health-authority reporting)
+- [Fraser Health — Choices in Supports for Independent Living](https://www.fraserhealth.ca/Service-Directory/Services/home-and-community-care/choices-in-supports-for-independent-living) (employer staffing duties and monthly reporting to CRA, WorkSafeBC and the health authority)
 - [SCI BC — CSIL Online Workbook, Module 3: Starting Your Business](https://sci-bc.ca/wp-content/uploads/2023/03/csil-module3-2023-update.pdf)
 - [SCI BC — CSIL Online Workbook, Module 4: How to Be a Lawful CSIL Employer](https://sci-bc.ca/wp-content/uploads/2021/12/csil-module4-2021update.pdf)
 - [Province of BC — Payroll records (ESA Part 3, s.28 interpretation)](https://www2.gov.bc.ca/gov/content/employment-business/employment-standards-advice/employment-standards/forms-resources/igm/esa-part-3-section-28)
@@ -43,12 +46,12 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | Workplace safety / hazard reporting | Supported | Safety incident and near-miss reporting with manager triage and follow-up |
 | Manageable workloads | Supported | Workload signals (long shift runs, short turnarounds, high task load, overdue work) |
 | Monthly funding use tracking (hours × CSIL rate) | Supported | `fundedHoursMonthly` × `fundingHourlyRate` with projected-vs-funded usage on the manager dashboard |
-| Dedicated CSIL bank account and spending reconciliation | Outside scope | Banking |
+| Dedicated CSIL bank account and spending reconciliation | Supported | Manager records only the account's last four digits; monthly funding, client contribution, payroll cost, confirmed expenses and balance are reconciled without storing banking credentials |
 | Statutory deductions, CRA remittances, CPP/EI, T4s | Outside scope | Payroll software / accountant |
 | WorkSafeBC registration and coverage | Outside scope | Employer duty |
 | Bullying and harassment policy | Partial | HR documents with required acknowledgment; incident reporting supports evidence |
 | Employment contract / terms and conditions | Partial | HR documents (contract category) with acknowledgment; not a substitute for legal review |
-| Monthly/quarterly reporting to the health authority | Partial | Household report CSV (`/api/export`), per-worker timesheets, payroll CSV, and closed pay-run summaries |
+| Monthly reporting to the health authority | Supported | Configurable due-day window, filing status and notes, receipt-gap warning, and manager-only `/api/csil-report` CSV. The health authority's own form remains authoritative. |
 | Predictable pay-period scheduling | Supported | Configurable pay periods (default 14 days) with close-run snapshots; two-week rotating shift schedule |
 
 ## Privacy posture for employee records
@@ -65,6 +68,24 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 3. **WCB / WorkSafeBC** — registration, premiums, and coverage are employer obligations.
 4. **Retention review** — confirm the deployment's backup/retention setup keeps payroll-relevant records (time entries, member records, exports, pay runs) for the full 4-year ESA requirement before relying on them.
 5. **Legal review of employment agreements and policies** — in-app documents support distribution and acknowledgment; have counsel review the actual text.
+
+## Comprehensive feature coverage and remaining gaps
+
+| Requested capability | CareBoard coverage |
+|---|---|
+| Eligibility/onboarding and agreement | Agreement dates, health authority/contact, readiness checklist; formal assessment and approval stay with the health authority. |
+| Funding, forecasts and reconciliation | Assessed hours × rate, client contribution, actual payroll and expenses, month-end balance, pace projection. Direct bank feeds and statement matching are not implemented. |
+| Allowed expenses and reimbursements | Categorized register with `confirmed`, `pending`, and `ineligible` status so CareBoard never substitutes a generic rule for the employer's agreement. Reimbursements can be recorded as expenses; approval routing is a follow-up. |
+| Receipts/scanning and secure documents | Receipt/reference tracking, missing-evidence alerts, authenticated HR document storage and existing OCR-assisted client-note capture. A dedicated encrypted receipt upload/OCR flow is not yet implemented; keep originals outside CareBoard. |
+| Health-authority templates | Portable CSV plus configurable due window. Exact authority-specific PDF/XLS forms vary and require sample templates before safe field mapping. |
+| Worker setup, credentials and training | Employee records, onboarding checklists, policy/document acknowledgement, certifications and expiry alerts. |
+| Scheduling, time, payroll and approvals | Two-week scheduling, availability, clock records, manager-reviewed tasks, leave approvals, pay-run review/close/reopen, wage statements and payroll CSV. Statutory deductions/remittances remain external. |
+| Reporting, audit and year-end package | Monthly CSIL CSV, household/payroll/timesheet/wage exports and append-only audit log. A single ZIP/PDF year-end bundle is a follow-up; current exports are portable individually. |
+| Privacy and consent | Manager-only finances/settings, role-filtered worker/family views, authenticated uploads, SMS opt-in, fixed photo retention, and no banking credentials. Granular consent forms and financial-record retention controls remain follow-up work. |
+| Backup/emergency care | Availability, persistent coverage requests, email/SMS alerts and shift handoffs. The agreement's narrative respite/backup plan is not yet a dedicated structured document. |
+| Accessibility, mobile and offline | Responsive/touch-friendly dashboard, labelled controls, reduced-motion styling, PWA manifest and offline shell. Authenticated records and mutations intentionally require a connection and are not cached offline. |
+
+The remaining gaps are deliberately explicit: bank feeds, encrypted receipt OCR, authority-specific templates, structured reimbursement approval, consent/retention administration, a dedicated emergency-plan editor, and one-click year-end packaging need separate threat-model, sample-document, and workflow work. They must not be represented as complete merely because adjacent CareBoard features exist.
 
 ## Suggested next product steps
 
