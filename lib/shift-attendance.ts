@@ -3,10 +3,10 @@ import { shiftsForDay } from '@/lib/shifts';
 import type { TimeEntry } from '@/lib/time-tracking';
 import { openEntryFor } from '@/lib/time-tracking';
 
-export type AttendanceStatus = 'on_duty' | 'late' | 'upcoming' | 'finished' | 'off_today' | 'unscheduled_on_duty';
+export type AttendanceStatus = 'on_duty' | 'late' | 'upcoming' | 'finished' | 'off_today' | 'unscheduled_on_duty' | 'on_leave';
 export type AttendanceRow = { workerId: string; shift: Shift | null; openEntry: TimeEntry | null; status: AttendanceStatus; minutesLate: number };
 
-const statusOrder: AttendanceStatus[] = ['late', 'unscheduled_on_duty', 'on_duty', 'upcoming', 'finished', 'off_today'];
+const statusOrder: AttendanceStatus[] = ['late', 'unscheduled_on_duty', 'on_duty', 'upcoming', 'finished', 'on_leave', 'off_today'];
 
 function minutesOf(time: string) {
   const [hours, minutes] = time.split(':').map(Number);
@@ -21,8 +21,10 @@ export function buildAttendance(options: {
   nowTime: string;
   now: string;
   lateAfterMinutes?: number;
+  onLeaveIds?: string[];
 }): AttendanceRow[] {
-  const { workers, shifts, entries, date, nowTime, lateAfterMinutes = 15 } = options;
+  const { workers, shifts, entries, date, nowTime, lateAfterMinutes = 15, onLeaveIds = [] } = options;
+  const leaveSet = new Set(onLeaveIds);
   const dayShifts = shiftsForDay(shifts, date);
   const rows = workers.map((worker, index) => {
     const shift = dayShifts.find((item) => item.memberId === worker.id) ?? null;
@@ -30,7 +32,9 @@ export function buildAttendance(options: {
     const workedToday = entries.some((entry) => entry.memberId === worker.id && entry.startedAt.slice(0, 10) === date);
     let status: AttendanceStatus;
     let minutesLate = 0;
-    if (openEntry) {
+    if (leaveSet.has(worker.id) && !openEntry) {
+      status = 'on_leave';
+    } else if (openEntry) {
       status = shift ? 'on_duty' : 'unscheduled_on_duty';
     } else if (!shift) {
       status = 'off_today';
@@ -58,6 +62,7 @@ export function attendanceLabel(row: AttendanceRow): string {
     case 'unscheduled_on_duty': return 'On duty (no shift scheduled)';
     case 'upcoming': return `Starts ${row.shift?.startTime ?? ''}`;
     case 'finished': return row.shift ? `Shift ${row.shift.startTime}–${row.shift.endTime} finished` : 'Shift finished';
+    case 'on_leave': return 'On approved leave';
     case 'off_today': return 'Not scheduled today';
   }
 }

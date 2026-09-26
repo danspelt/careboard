@@ -32,6 +32,8 @@ export const WIDGETS: WidgetDef[] = [
   { id: 'activity', title: 'Recent activity', description: 'Latest household actions across tasks, team, and settings.', category: 'Activity', roles: ['manager'], defaultSize: 'half' },
   { id: 'quickactions', title: 'Quick actions', description: 'Jump straight to common manager tasks.', category: 'At a glance', roles: ['manager'], defaultSize: 'half' },
   { id: 'payroll', title: 'Payroll & bookkeeper', description: 'Download the payroll CSV or jump to report settings.', category: 'Time & pay', roles: ['manager'], defaultSize: 'half' },
+  { id: 'hralerts', title: 'HR alerts', description: 'Leave, documents, hire checklists, certs, and pay periods needing attention.', category: 'Team', roles: ['manager'], defaultSize: 'full' },
+  { id: 'hrexpanding', title: 'Open HR', description: 'Jump to the HR people, time off, documents, and payroll hub.', category: 'Team', roles: ['manager'], defaultSize: 'half' },
   { id: 'team', title: 'Care team', description: 'Roster status at a glance — open a profile to manage.', category: 'Team', roles: ['manager'], defaultSize: 'half' },
   { id: 'inboxpreview', title: 'Latest inbox items', description: 'Newest care-team messages and note updates.', category: 'Activity', roles: ['manager'], defaultSize: 'half' },
   { id: 'schedulepreview', title: 'Next few days', description: 'Who is scheduled today, tomorrow, and the day after.', category: 'Team', roles: ['manager'], defaultSize: 'half' },

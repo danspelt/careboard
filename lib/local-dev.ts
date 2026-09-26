@@ -10,6 +10,8 @@ import type { Certification } from '@/lib/certifications';
 import { workerCan, type Role } from '@/lib/access-policy';
 import { normalizeLayout, randomThemeId, themeById } from '@/lib/dashboard-widgets';
 import { KUDOS_BADGES, canCompleteAppointment, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem } from '@/lib/care-plan';
+import { DEFAULT_HIRE_CHECKLIST } from '@/lib/hr';
+import { aggregateWorkerHours, grossFor, nextPeriod, periodContaining } from '@/lib/hr-payroll';
 
 const now = new Date().toISOString();
 const today = now.slice(0, 10);
@@ -147,7 +149,25 @@ const mockState: RawLocalState = {
   ],
   activity: [],
   audit: [],
-  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', updatedAt: now },
+  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', defaultVacationHours: 80, payPeriodDays: 14, payPeriodAnchor: '2025-01-06', updatedAt: now },
+  leaveBalances: [
+    { memberId: worker.id, kind: 'vacation', hoursEntitled: 80, hoursUsed: 0 },
+    { memberId: worker.id, kind: 'sick', hoursEntitled: 0, hoursUsed: 0 },
+    { memberId: worker2.id, kind: 'vacation', hoursEntitled: 80, hoursUsed: 8 },
+    { memberId: worker2.id, kind: 'sick', hoursEntitled: 24, hoursUsed: 0 },
+  ],
+  leaveRequests: [],
+  hrDocuments: [
+    { id: 'hr-doc-1', title: 'Workplace respectful conduct policy', category: 'policy', body: 'Everyone deserves a safe, respectful workplace. Report bullying or harassment to the household manager promptly.', required: true, createdBy: manager.id, createdAt: now, archivedAt: null },
+  ],
+  hrDocumentAcks: [],
+  hireChecklistItems: [
+    ...DEFAULT_HIRE_CHECKLIST.map((title, sortOrder) => ({ id: `hire-alex-${sortOrder}`, memberId: worker.id, title, done: sortOrder < 4, doneAt: sortOrder < 4 ? now : null, doneBy: sortOrder < 4 ? manager.id : null, sortOrder })),
+    ...DEFAULT_HIRE_CHECKLIST.map((title, sortOrder) => ({ id: `hire-maya-${sortOrder}`, memberId: worker2.id, title, done: true, doneAt: now, doneBy: manager.id, sortOrder })),
+  ],
+  payPeriods: [{ id: 'pay-period-open', startOn: periodContaining(today, '2025-01-06', 14).startOn, endOn: periodContaining(today, '2025-01-06', 14).endOn, status: 'open' as const, createdAt: now }],
+  payRuns: [],
+  payRunLines: [],
   shifts: [
     { id: 'shift-1', memberId: worker.id, weekday: new Date().getDay(), startTime: '08:00', endTime: '16:00', cycleWeek: 0, createdAt: now },
     { id: 'shift-2', memberId: worker2.id, weekday: (new Date().getDay() + 1) % 7, startTime: '09:00', endTime: '17:00', cycleWeek: 0, createdAt: now },
@@ -283,10 +303,121 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
     'deleteCertification', 'reviewClientNote', 'acknowledgeSafetyAlert', 'triageSafetyIncident',
     'sendPayrollReport', 'saveMedication', 'archiveMedication', 'saveCareProfile',
     'saveAppointment', 'cancelAppointment',
+    'decideLeaveRequest', 'setLeaveBalance', 'saveHrDocument', 'archiveHrDocument',
+    'seedHireChecklist', 'toggleHireChecklistItem', 'addHireChecklistItem', 'ensurePayPeriods', 'closePayRun',
   ]);
   if (managerOnly.has(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
   switch (action) {
+    case 'requestLeave': {
+      const memberId = actor.role === 'manager' && typeof input.memberId === 'string' && input.memberId ? input.memberId : actorId;
+      if (actor.role === 'worker' && memberId !== actorId) throw new Error('You can only request leave for yourself.');
+      const kind = ['vacation', 'sick', 'other'].includes(String(input.kind)) ? String(input.kind) as 'vacation' | 'sick' | 'other' : 'vacation';
+      const startOn = requiredString(input.startOn, 'Start date');
+      const endOn = requiredString(input.endOn, 'End date');
+      const hours = Math.max(0.25, Number(input.hours) || 8);
+      mockState.leaveRequests = [{ id: crypto.randomUUID(), memberId, kind, startOn, endOn, hours, note: optionalString(input.note, 1000), status: 'pending', decidedBy: null, decidedAt: null, createdAt: now2 }, ...(mockState.leaveRequests ?? [])];
+      break;
+    }
+    case 'cancelLeaveRequest': {
+      const request = (mockState.leaveRequests ?? []).find((item) => item.id === input.requestId);
+      if (!request || request.status !== 'pending') throw new Error('Only pending leave requests can be cancelled.');
+      if (actor.role !== 'manager' && request.memberId !== actorId) throw new Error('You can only cancel your own leave request.');
+      request.status = 'cancelled'; request.decidedBy = actorId; request.decidedAt = now2;
+      break;
+    }
+    case 'decideLeaveRequest': {
+      const request = (mockState.leaveRequests ?? []).find((item) => item.id === input.requestId);
+      if (!request || request.status !== 'pending') throw new Error('That leave request is no longer pending.');
+      const decision = input.decision === 'denied' ? 'denied' : 'approved';
+      request.status = decision; request.decidedBy = actorId; request.decidedAt = now2;
+      if (decision === 'approved') {
+        const balance = (mockState.leaveBalances ?? []).find((row) => row.memberId === request.memberId && row.kind === request.kind);
+        if (balance) balance.hoursUsed += request.hours;
+        else mockState.leaveBalances = [...(mockState.leaveBalances ?? []), { memberId: request.memberId, kind: request.kind, hoursEntitled: 0, hoursUsed: request.hours }];
+      }
+      break;
+    }
+    case 'setLeaveBalance': {
+      const memberId = requiredString(input.memberId, 'Care worker');
+      const kind = ['vacation', 'sick', 'other'].includes(String(input.kind)) ? String(input.kind) as 'vacation' | 'sick' | 'other' : 'vacation';
+      const hoursEntitled = Math.max(0, Number(input.hoursEntitled) || 0);
+      const hoursUsed = Math.max(0, Number(input.hoursUsed) || 0);
+      const existing = (mockState.leaveBalances ?? []).find((row) => row.memberId === memberId && row.kind === kind);
+      if (existing) { existing.hoursEntitled = hoursEntitled; existing.hoursUsed = hoursUsed; }
+      else mockState.leaveBalances = [...(mockState.leaveBalances ?? []), { memberId, kind, hoursEntitled, hoursUsed }];
+      break;
+    }
+    case 'saveHrDocument': {
+      const title = requiredString(input.title, 'Document title');
+      const category = ['policy', 'contract', 'handbook', 'other'].includes(String(input.category)) ? String(input.category) as 'policy' | 'contract' | 'handbook' | 'other' : 'policy';
+      const body = optionalString(input.body, 20_000);
+      const required = input.required === true || input.required === 'true' || input.required === 'on' || input.required === '1';
+      const id = typeof input.id === 'string' && input.id ? input.id : crypto.randomUUID();
+      const existing = (mockState.hrDocuments ?? []).find((doc) => doc.id === id);
+      if (existing) { existing.title = title; existing.category = category; existing.body = body; existing.required = Boolean(required); }
+      else mockState.hrDocuments = [{ id, title, category, body, required: Boolean(required), createdBy: actorId, createdAt: now2, archivedAt: null }, ...(mockState.hrDocuments ?? [])];
+      break;
+    }
+    case 'archiveHrDocument': {
+      const doc = (mockState.hrDocuments ?? []).find((item) => item.id === input.documentId);
+      if (doc) doc.archivedAt = now2;
+      break;
+    }
+    case 'acknowledgeHrDocument': {
+      const documentId = requiredString(input.documentId, 'Document');
+      if (!(mockState.hrDocuments ?? []).some((doc) => doc.id === documentId && !doc.archivedAt)) throw new Error('That document is no longer available.');
+      mockState.hrDocumentAcks = [{ documentId, memberId: actorId, acknowledgedAt: now2 }, ...(mockState.hrDocumentAcks ?? []).filter((ack) => !(ack.documentId === documentId && ack.memberId === actorId))];
+      break;
+    }
+    case 'seedHireChecklist': {
+      const memberId = requiredString(input.memberId, 'Care worker');
+      if ((mockState.hireChecklistItems ?? []).some((item) => item.memberId === memberId)) break;
+      mockState.hireChecklistItems = [
+        ...(mockState.hireChecklistItems ?? []),
+        ...DEFAULT_HIRE_CHECKLIST.map((title, sortOrder) => ({ id: crypto.randomUUID(), memberId, title, done: false, doneAt: null, doneBy: null, sortOrder })),
+      ];
+      break;
+    }
+    case 'toggleHireChecklistItem': {
+      const item = (mockState.hireChecklistItems ?? []).find((row) => row.id === input.itemId);
+      if (!item) throw new Error('Checklist item not found.');
+      item.done = !item.done;
+      item.doneAt = item.done ? now2 : null;
+      item.doneBy = item.done ? actorId : null;
+      break;
+    }
+    case 'addHireChecklistItem': {
+      const memberId = requiredString(input.memberId, 'Care worker');
+      const title = requiredString(input.title, 'Checklist item');
+      const sortOrder = (mockState.hireChecklistItems ?? []).filter((item) => item.memberId === memberId).length;
+      mockState.hireChecklistItems = [...(mockState.hireChecklistItems ?? []), { id: crypto.randomUUID(), memberId, title, done: false, doneAt: null, doneBy: null, sortOrder }];
+      break;
+    }
+    case 'ensurePayPeriods': {
+      if (!(mockState.payPeriods ?? []).some((period) => period.status === 'open' || period.status === 'review')) {
+        const bounds = periodContaining(today, mockState.settings?.payPeriodAnchor || '2025-01-06', mockState.settings?.payPeriodDays ?? 14);
+        mockState.payPeriods = [{ id: crypto.randomUUID(), startOn: bounds.startOn, endOn: bounds.endOn, status: 'open', createdAt: now2 }, ...(mockState.payPeriods ?? [])];
+      }
+      break;
+    }
+    case 'closePayRun': {
+      const period = (mockState.payPeriods ?? []).find((item) => item.status === 'open' || item.status === 'review');
+      if (!period) throw new Error('No open pay period.');
+      const runId = crypto.randomUUID();
+      mockState.payRuns = [{ id: runId, periodId: period.id, closedAt: now2, closedBy: actorId, notes: optionalString(input.notes, 1000) }, ...(mockState.payRuns ?? [])];
+      const lines = mockState.members.filter((member) => member.role === 'worker' && member.status === 'active').map((member) => {
+        const entries = (mockState.timeEntries ?? []).filter((entry) => entry.memberId === member.id);
+        const { hours, entryIds } = aggregateWorkerHours(entries, period.startOn, period.endOn, now2);
+        return { id: crypto.randomUUID(), runId, memberId: member.id, hours, hourlyRate: member.hourlyRate ?? null, grossAmount: grossFor(hours, member.hourlyRate ?? null), entryIds };
+      });
+      mockState.payRunLines = [...lines, ...(mockState.payRunLines ?? [])];
+      period.status = 'closed';
+      const next = nextPeriod({ startOn: period.startOn, endOn: period.endOn }, mockState.settings?.payPeriodDays ?? 14);
+      mockState.payPeriods = [{ id: crypto.randomUUID(), startOn: next.startOn, endOn: next.endOn, status: 'open', createdAt: now2 }, ...(mockState.payPeriods ?? [])];
+      pushActivity('pay_run_closed', `closed pay period ${period.startOn} to ${period.endOn}`);
+      break;
+    }
     case 'createChore': {
       const title = requiredString(input.title, 'Chore name');
       const area = requiredString(input.area, 'Area');
@@ -436,6 +567,9 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.fundedHoursMonthly === 'string' || typeof input.fundedHoursMonthly === 'number') settings.fundedHoursMonthly = Math.max(0, Number(input.fundedHoursMonthly));
       if (typeof input.fundingHourlyRate === 'string' || typeof input.fundingHourlyRate === 'number') settings.fundingHourlyRate = Math.max(0, Number(input.fundingHourlyRate));
       if (typeof input.bookkeeperEmail === 'string') settings.bookkeeperEmail = input.bookkeeperEmail;
+      if (typeof input.defaultVacationHours === 'string' || typeof input.defaultVacationHours === 'number') settings.defaultVacationHours = Math.max(0, Number(input.defaultVacationHours));
+      if (typeof input.payPeriodDays === 'string' || typeof input.payPeriodDays === 'number') settings.payPeriodDays = Math.max(1, Math.min(62, Number(input.payPeriodDays)));
+      if (typeof input.payPeriodAnchor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.payPeriodAnchor)) settings.payPeriodAnchor = input.payPeriodAnchor;
       settings.updatedAt = now2;
       pushAudit('update_settings', 'Updated household settings');
       break;
@@ -500,6 +634,18 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
         guideSeenAt: null,
       };
       mockState.members.push(newMember);
+      if (role === 'worker') {
+        const id = newMember.id;
+        mockState.leaveBalances = [
+          ...(mockState.leaveBalances ?? []),
+          { memberId: id, kind: 'vacation', hoursEntitled: mockState.settings?.defaultVacationHours ?? 80, hoursUsed: 0 },
+          { memberId: id, kind: 'sick', hoursEntitled: 0, hoursUsed: 0 },
+        ];
+        mockState.hireChecklistItems = [
+          ...(mockState.hireChecklistItems ?? []),
+          ...DEFAULT_HIRE_CHECKLIST.map((title, sortOrder) => ({ id: crypto.randomUUID(), memberId: id, title, done: false, doneAt: null, doneBy: null, sortOrder })),
+        ];
+      }
       pushActivity('added_member', `added ${name}`);
       if (action === 'inviteMember') (input as Record<string, unknown>).inviteToken = crypto.randomUUID();
       break;

@@ -13,7 +13,7 @@ This document maps the obligations of a **Choice in Supports for Independent Liv
 
 Status key: **Supported** · **Partial** · **Not supported** · **Outside scope** (operational/legal duty the app cannot perform).
 
-### Employer records (BC ESA s.28 — payroll records must be kept in English for 4 years)
+## Employer records (BC ESA s.28 — payroll records must be kept in English for 4 years)
 
 | Requirement | Status | Where |
 |---|---|---|
@@ -25,10 +25,10 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | Employment start date | Supported | `members.employment_started_on` |
 | Wage rate | Supported | `members.hourly_rate` |
 | Hours worked each day | Supported | `time_entries` clock in/out; per-worker timesheet CSV (`/api/timesheets`); all-worker payroll CSV (`/api/payroll`) |
-| Wage statement per payday (hours, rate, gross/net, deductions) | Partial | Timesheet and payroll CSVs provide daily hours, rate, and gross amount; deductions and net pay are payroll-software scope |
+| Wage statement per payday (hours, rate, gross/net, deductions) | Partial | Locked pay runs store hours, rate, and gross; `/api/wage-statements` exports a gross statement. Deductions and net pay remain payroll-software scope |
 | Benefits paid | Outside scope | Payroll |
 | Statutory holiday records | Not supported | — |
-| Vacation dates/pay/days owed | Not supported | — |
+| Vacation dates/pay/days owed | Partial | `leave_balances` / `leave_requests` track vacation and sick hours with manager approval; pay-out of vacation pay still outside scope |
 | Time-bank (banked overtime) records | Not supported | — |
 | 4-year retention | Partial | Member records and time entries persist indefinitely (no deletion job); proof photos expire per the configured retention window |
 
@@ -46,27 +46,28 @@ Status key: **Supported** · **Partial** · **Not supported** · **Outside scope
 | Dedicated CSIL bank account and spending reconciliation | Outside scope | Banking |
 | Statutory deductions, CRA remittances, CPP/EI, T4s | Outside scope | Payroll software / accountant |
 | WorkSafeBC registration and coverage | Outside scope | Employer duty |
-| Bullying and harassment policy | Outside scope | Policy document; incident reporting supports evidence |
-| Employment contract / terms and conditions | Outside scope | Legal document |
-| Monthly/quarterly reporting to the health authority | Partial | Household report CSV (`/api/export`), per-worker timesheets, and the bookkeeper payroll CSV (`/api/payroll`, any date range) provide the underlying records |
-| Predictable pay-period scheduling | Supported | Two-week rotating shift schedule (Week A / Week B) with a 14-day calendar view |
+| Bullying and harassment policy | Partial | HR documents with required acknowledgment; incident reporting supports evidence |
+| Employment contract / terms and conditions | Partial | HR documents (contract category) with acknowledgment; not a substitute for legal review |
+| Monthly/quarterly reporting to the health authority | Partial | Household report CSV (`/api/export`), per-worker timesheets, payroll CSV, and closed pay-run summaries |
+| Predictable pay-period scheduling | Supported | Configurable pay periods (default 14 days) with close-run snapshots; two-week rotating shift schedule |
 
 ## Privacy posture for employee records
 
 - Date of birth, address, job title, employment start date, pay rate, phone, emergency contact, skills notes, and certifications are **manager-only fields** — workers never see other workers' records.
 - Workers can see (and a manager edits) their own record; self-editing is restricted to phone, availability, and languages.
+- Leave balances, wage statements, and hire checklists are scoped to the signed-in worker for care workers; managers see the full household.
 - All member data is included in the manager CSV export for record-keeping.
 
 ## What still needs an employer process, not software
 
-1. **Payroll** — deductions, net pay, remittances, T4s, and formal wage statements require payroll software or an accountant. CareBoard's timesheet CSV supplies the hours/rate inputs.
-2. **Statutory holiday, vacation, and overtime/time-bank tracking** — not yet modeled; track in payroll software or extend the app.
+1. **Payroll** — deductions, net pay, remittances, T4s, and formal net wage statements require payroll software or an accountant. CareBoard's pay runs and CSV supply the hours/rate/gross inputs.
+2. **Statutory holiday and overtime/time-bank tracking** — not yet modeled; track in payroll software or extend the app.
 3. **WCB / WorkSafeBC** — registration, premiums, and coverage are employer obligations.
-4. **Retention review** — confirm the deployment's backup/retention setup keeps payroll-relevant records (time entries, member records, exports) for the full 4-year ESA requirement before relying on them.
-5. **Employment agreements and policies** — contracts, bullying/harassment policy, and job descriptions remain documents the employer maintains.
+4. **Retention review** — confirm the deployment's backup/retention setup keeps payroll-relevant records (time entries, member records, exports, pay runs) for the full 4-year ESA requirement before relying on them.
+5. **Legal review of employment agreements and policies** — in-app documents support distribution and acknowledgment; have counsel review the actual text.
 
 ## Suggested next product steps
 
-- Statutory holiday and vacation tracking on member records.
-- Pay-period summary export (gross wages by period) to pair with payroll.
+- Statutory holiday calendar on member records.
+- Vacation pay calculation alongside leave balances.
 - A retention/export checklist covering the full ESA record set.

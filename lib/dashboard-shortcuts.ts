@@ -15,6 +15,7 @@ export const DASHBOARD_SHORTCUTS: DashboardShortcut[] = [
   { id: 'nav-6', keys: '6', label: 'Go to sixth sidebar item', roles: ['manager', 'worker'] },
   { id: 'nav-7', keys: '7', label: 'Go to seventh sidebar item', roles: ['manager', 'worker'] },
   { id: 'nav-8', keys: '8', label: 'Go to eighth sidebar item', roles: ['manager', 'worker'] },
+  { id: 'nav-9', keys: '9', label: 'Go to ninth sidebar item', roles: ['manager'] },
   { id: 'notifications', keys: 'b', label: 'Open notifications', roles: ['manager', 'worker', 'viewer'] },
   { id: 'new-task', keys: 'n', label: 'Add a task', roles: ['manager'] },
   { id: 'add-worker', keys: 'w', label: 'Add a care worker', roles: ['manager'] },

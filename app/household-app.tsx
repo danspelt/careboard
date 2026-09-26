@@ -31,7 +31,7 @@ function writeLocalStorage(key: string, value: string) {
 function useLocalStorageValue(key: string, serverValue = '') {
   return useSyncExternalStore(subscribeLocalStorage, () => readLocalStorage(key) ?? serverValue, () => serverValue);
 }
-import { AlertTriangle, Award, Bath, BedDouble, Bell, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HandHeart, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Pill, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, ShoppingCart, Sofa, Sparkles, Sprout, Stethoscope, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Award, Bath, BedDouble, Bell, Briefcase, CalendarDays, Camera, Check, CheckCircle2, ChevronRight, CircleDollarSign, CircleDot, ClipboardList, Clock, Copy, FileDown, FileText, HandHeart, HeartHandshake, History, Home, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Megaphone, MessageSquareText, MoreHorizontal, Pencil, Pill, Play, Plus, RefreshCw, ScanLine, Send, Settings, Shield, ShieldAlert, ShoppingCart, Sofa, Sparkles, Sprout, Stethoscope, Trash2, Undo2, Upload, User, UserCheck, Users, UserX, Utensils, WashingMachine, WifiOff, X, XCircle } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,6 +46,9 @@ import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding, firstLoginGuide, type FirstLoginGuideStep } from '@/lib/onboarding';
 import { assistantPayrollSuggestions, payrollAskQuestions, payrollAskStorageKey, payrollFaq, type PayrollAskStep, type PayrollFaqItem, type PayrollHelpRole } from '@/lib/payroll-help';
+import { buildHrAlerts, incompleteHireWorkerCount, memberOnApprovedLeave, unsignedRequiredDocCount } from '@/lib/hr';
+import { payPeriodReadyToClose } from '@/lib/hr-payroll';
+import { ManagerHrView, WorkerHrCards } from '@/app/hr-panel';
 import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
@@ -62,7 +65,7 @@ const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outs
 const areaIcons = new Map<string, typeof Home>([['Kitchen', Utensils], ['Bathroom', Bath], ['Bedroom', BedDouble], ['Living room', Sofa], ['Laundry', WashingMachine], ['Outside', Sprout], ['Other', Home]]);
 const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const weekdayFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-type ManagerSection = 'home' | 'assistant' | 'tasks' | 'client' | 'schedule' | 'team' | 'messages' | 'more';
+type ManagerSection = 'home' | 'assistant' | 'tasks' | 'client' | 'schedule' | 'team' | 'hr' | 'messages' | 'more';
 type WorkerSection = 'today' | 'assistant' | 'tasks' | 'client' | 'schedule' | 'messages' | 'profile' | 'more';
 type Section = ManagerSection | WorkerSection;
 
@@ -119,7 +122,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
   useEffect(() => {
     if (!member) return;
     const navIds = (manager
-      ? ['home', 'assistant', 'tasks', 'client', 'schedule', 'team', 'messages', 'more']
+      ? ['home', 'assistant', 'tasks', 'client', 'schedule', 'team', 'hr', 'messages', 'more']
       : viewer
         ? ['today', 'client', 'tasks', 'schedule']
         : ['today', 'assistant', 'tasks', 'client', 'schedule', 'messages', 'profile', 'more']) as Section[];
@@ -317,7 +320,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     saveTheme: (themeId: string | null) => { void mutate({ action: 'saveDashboard', theme: themeId }, 'Colour scheme updated.').catch(() => {}); },
   };
   const nav = manager
-    ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
+    ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['hr', 'HR', Briefcase], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
     : viewer
       ? [['today', 'Overview', LayoutDashboard], ['client', 'Care plan', HandHeart], ['tasks', 'Tasks', ClipboardList], ['schedule', 'Schedule', CalendarDays]] as const
       : [['today', 'Today', Home], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['messages', 'Inbox', Inbox], ['profile', 'Profile', User], ['more', 'More', MoreHorizontal]] as const;
@@ -837,6 +840,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   const [taskQuery, setTaskQuery] = useState('');
   const [taskStatus, setTaskStatus] = useState<'all' | 'open' | 'in_progress' | 'complete'>('all');
   if (section === 'assistant') return <AssistantView state={state} setSection={setSection} />;
+  if (section === 'hr') return <ManagerHrView state={state} setProfile={setProfile} mutate={mutate} busy={busy} />;
   if (section === 'tasks') {
     const query = taskQuery.trim().toLowerCase();
     const filtered = state.chores.filter((task: Chore) => {
@@ -944,7 +948,15 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   const homeNow = new Date();
   const nowTime = homeNow.toTimeString().slice(0, 5);
   const nowStamp = homeNow.toISOString();
-  const attendance = buildAttendance({ workers: command.activeWorkers, shifts: state.shifts ?? [], entries: state.timeEntries ?? [], date: today(), nowTime, now: nowStamp });
+  const attendance = buildAttendance({
+    workers: command.activeWorkers,
+    shifts: state.shifts ?? [],
+    entries: state.timeEntries ?? [],
+    date: today(),
+    nowTime,
+    now: nowStamp,
+    onLeaveIds: command.activeWorkers.filter((worker: { id: string }) => memberOnApprovedLeave(state.leaveRequests ?? [], worker.id, today())).map((worker: { id: string }) => worker.id),
+  });
   const onDutyCount = attendance.filter((row) => row.status === 'on_duty' || row.status === 'unscheduled_on_duty').length;
   const lateCount = attendance.filter((row) => row.status === 'late').length;
   const homeFunding = fundingSummary({
@@ -971,6 +983,15 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
     .slice(0, 8);
   const decisionCount = safetyCount + clientNoteCount + command.awaitingReview.length + scheduleRequests.filter((item: any) => item.status === 'open').length + openIncidents + workloadWarningCount;
   const certAlerts = certificationAlerts(state.certifications ?? [], state.members, today());
+  const openPayPeriod = (state.payPeriods ?? []).find((period: { status: string }) => period.status === 'open' || period.status === 'review');
+  const hrAlerts = buildHrAlerts({
+    pendingLeave: (state.leaveRequests ?? []).filter((request: { status: string }) => request.status === 'pending').length,
+    unsignedRequiredDocs: unsignedRequiredDocCount(state.hrDocuments ?? [], state.hrDocumentAcks ?? [], workers.filter((worker: Member) => worker.status === 'active').map((worker: Member) => worker.id)),
+    incompleteHireChecklists: incompleteHireWorkerCount(state.hireChecklistItems ?? [], workers, today()),
+    certAlerts: certAlerts.length,
+    payPeriodReady: payPeriodReadyToClose(openPayPeriod, today()),
+    payPeriodLabel: openPayPeriod ? `${openPayPeriod.startOn} to ${openPayPeriod.endOn}` : undefined,
+  });
   const cells: Record<string, React.ReactNode> = {
     hero: (
       <section className="manager-hero overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
@@ -1182,11 +1203,35 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
     payroll: (
       <Card data-guide="payroll">
         <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Payroll &amp; bookkeeper</h2>
-        <p className="mt-1 text-sm leading-6 text-[#687873]">Two-week payroll CSV with who worked, when, hours, rates, and totals.</p>
+        <p className="mt-1 text-sm leading-6 text-[#687873]">Close pay periods in HR, or download an ad-hoc CSV for your bookkeeper.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <a href="/api/payroll" download className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#287b6f] px-4 text-sm font-semibold text-white transition hover:bg-[#216b61]"><FileDown className="size-4" aria-hidden="true" />Download CSV</a>
-          <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setSection('more')}><Settings className="size-4" aria-hidden="true" />Report settings</Button>
+          <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => setSection('hr')}><Briefcase className="size-4" aria-hidden="true" />Open HR payroll</Button>
         </div>
+      </Card>
+    ),
+    hralerts: hrAlerts.length ? (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Briefcase className="size-5 text-[#287b6f]" aria-hidden="true" />HR alerts</h2>
+        <p className="text-sm text-[#687873]">Leave, documents, hire checklists, certifications, and pay periods</p>
+        <div className="mt-4 space-y-2">
+          {hrAlerts.map((alert) => (
+            <button key={alert.id} type="button" onClick={() => setSection('hr')} className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3 text-left transition hover:border-[#aac3b3]">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">{alert.title}</span>
+                <span className="block text-xs text-[#687873]">{alert.detail}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-[#687873]" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </Card>
+    ) : null,
+    hrexpanding: (
+      <Card>
+        <h2 className="flex items-center gap-2 text-lg font-bold"><Briefcase className="size-5 text-[#287b6f]" aria-hidden="true" />HR hub</h2>
+        <p className="mt-1 text-sm text-[#687873]">People, time off, policies, hire checklists, and payroll in one place.</p>
+        <Button type="button" className="mt-4 min-h-11 bg-[#287b6f]" onClick={() => setSection('hr')}><Briefcase className="size-4" aria-hidden="true" />Open HR</Button>
       </Card>
     ),
     team: (
@@ -1297,6 +1342,10 @@ function MoreManager({ state, mutate, busy }: any) {
             <Field label="CSIL funded hours per month" name="fundedHoursMonthly" type="number" step="any" defaultValue={settings?.fundedHoursMonthly ?? 0} />
             <Field label="CSIL funding rate ($ per hour)" name="fundingHourlyRate" type="number" step="any" defaultValue={settings?.fundingHourlyRate ?? 0} />
             <Field label="Bookkeeper email — receives the payroll report every two weeks" name="bookkeeperEmail" type="email" defaultValue={settings?.bookkeeperEmail ?? ''} />
+            <Field label="Default vacation hours for new care workers" name="defaultVacationHours" type="number" step="any" defaultValue={settings?.defaultVacationHours ?? 80} />
+            <Field label="Pay period length (days)" name="payPeriodDays" type="number" defaultValue={settings?.payPeriodDays ?? 14} />
+            <Field label="Pay period anchor date" name="payPeriodAnchor" type="date" defaultValue={settings?.payPeriodAnchor ?? '2025-01-06'} />
+            <p className="text-sm text-[#687873]">Close pay runs and download wage statements from the HR → Payroll tab. Settings keep the bookkeeper email and period defaults.</p>
             <Button type="submit" disabled={busy} className="min-h-11 bg-[#287b6f]"><Check className="size-4" />Save settings</Button>
           </form>
         </Card>
@@ -1896,6 +1945,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
         </Card>
       </div>
       <div className="mt-6"><PayrollFaqPanel helpRole="worker" /></div>
+      <WorkerHrCards state={state} member={member} mutate={mutate} busy={busy} />
     </>
     );
   }

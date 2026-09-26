@@ -62,6 +62,8 @@ export const WIDGET_ICONS: Record<string, LucideIcon> = {
   activity: History,
   quickactions: Sparkles,
   payroll: FileDown,
+  hralerts: ClipboardList,
+  hrexpanding: Users,
   team: Users,
   inboxpreview: Inbox,
   schedulepreview: CalendarDays,

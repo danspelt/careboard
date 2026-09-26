@@ -22,6 +22,8 @@ import { cycleWeekOf } from '@/lib/shifts';
 import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
 import { normalizeLayout, randomThemeId, themeById, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMessage, emptyCareProfile, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem, visibleKudos, type Appointment, type CareProfile, type Kudos, type Medication, type MedicationLog, type SupplyItem } from '@/lib/care-plan';
+import type { HireChecklistItem, HrDocument, HrDocumentAck, LeaveBalance, LeaveRequest, PayPeriod, PayRun, PayRunLine } from '@/lib/hr';
+import { applyHrMutation, ensureOpenPayPeriod, filterHrForWorker, loadHrState, seedHireChecklistForMember, seedLeaveBalancesForMember } from '@/lib/hr-data';
 
 export type Member = {
   id: string;
@@ -100,6 +102,9 @@ export type HouseholdSettings = {
   fundingHourlyRate: number;
   bookkeeperEmail?: string;
   payrollLastSent?: string;
+  defaultVacationHours?: number;
+  payPeriodDays?: number;
+  payPeriodAnchor?: string;
   updatedAt: string;
 };
 export type HouseholdState = {
@@ -132,6 +137,14 @@ export type HouseholdState = {
   appointments?: Appointment[];
   kudos?: Kudos[];
   supplies?: SupplyItem[];
+  leaveBalances?: LeaveBalance[];
+  leaveRequests?: LeaveRequest[];
+  hrDocuments?: HrDocument[];
+  hrDocumentAcks?: HrDocumentAck[];
+  hireChecklistItems?: HireChecklistItem[];
+  payPeriods?: PayPeriod[];
+  payRuns?: PayRun[];
+  payRunLines?: PayRunLine[];
 };
 
 const palette = ['#287b6f', '#d36f4e', '#5b72b8', '#986ca5', '#b57e1c'];
@@ -213,7 +226,7 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, default_vacation_hours AS defaultVacationHours, pay_period_days AS payPeriodDays, pay_period_anchor AS payPeriodAnchor, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
@@ -225,6 +238,9 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
     retentionDays: 90,
     bookkeeperEmail: '',
     payrollLastSent: '',
+    defaultVacationHours: 80,
+    payPeriodDays: 14,
+    payPeriodAnchor: '2025-01-06',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -303,6 +319,13 @@ async function rawState() {
   const notes = await db.prepare(`SELECT id, chore_id AS choreId, member_id AS memberId, kind, body, created_at AS createdAt FROM task_notes ORDER BY created_at`).all<TaskNote>();
   const audit = await db.prepare(`SELECT id, chore_id AS choreId, actor_id AS actorId, action, detail, created_at AS createdAt FROM audit_log ORDER BY created_at DESC LIMIT 200`).all<AuditEntry>();
   const carePlan = await loadCarePlan(db);
+  let hr = { leaveBalances: [] as LeaveBalance[], leaveRequests: [] as LeaveRequest[], hrDocuments: [] as HrDocument[], hrDocumentAcks: [] as HrDocumentAck[], hireChecklistItems: [] as HireChecklistItem[], payPeriods: [] as PayPeriod[], payRuns: [] as PayRun[], payRunLines: [] as PayRunLine[] };
+  try {
+    await ensureOpenPayPeriod(settings);
+    hr = await loadHrState();
+  } catch (error) {
+    console.error('HR state load failed.', error instanceof Error ? error.message : error);
+  }
   for (const chore of chores.results) {
     chore.photos = photos.results.filter((photo) => photo.choreId === chore.id);
     chore.notes = notes.results.filter((note) => note.choreId === chore.id);
@@ -312,7 +335,7 @@ async function rawState() {
     try { stored = dashboardLayoutJson ? JSON.parse(dashboardLayoutJson) : null; } catch { stored = null; }
     return { ...member, dashboardLayout: stored === null ? null : normalizeLayout(member.role as DashboardRole, stored) };
   });
-  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results, ...carePlan };
+  return { members: parsedMembers, chores: chores.results, activity: activity.results, audit: audit.results, settings, shifts: shifts.results, availability: availability.results, timeEntries: timeEntries.results, certifications: certifications.results, messages: messages.results, clientNoteSubmissions: clientNoteSubmissions.results, inboxItems: inboxItems.results, scheduleRequests: scheduleRequests.results, shiftHandoffs: shiftHandoffs.results.map(({ checklistJson, ...item }) => ({ ...item, checklist: JSON.parse(checklistJson) as string[] })), safetyIncidents: safetyIncidents.results, ...carePlan, ...hr };
 }
 
 type RawState = Awaited<ReturnType<typeof rawState>>;
@@ -329,6 +352,17 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
   const carePlan = {
     medications: state.medications ?? [], medicationLogs: state.medicationLogs ?? [], careProfile: state.careProfile ?? emptyCareProfile(),
     appointments: state.appointments ?? [], supplies: state.supplies ?? [], kudos: visibleKudos(viewer.role, state.kudos ?? []),
+  };
+  const emptyHr = { leaveBalances: [], leaveRequests: [], hrDocuments: [], hrDocumentAcks: [], hireChecklistItems: [], payPeriods: [], payRuns: [], payRunLines: [] };
+  const hrSlice = {
+    leaveBalances: state.leaveBalances ?? [],
+    leaveRequests: state.leaveRequests ?? [],
+    hrDocuments: state.hrDocuments ?? [],
+    hrDocumentAcks: state.hrDocumentAcks ?? [],
+    hireChecklistItems: state.hireChecklistItems ?? [],
+    payPeriods: state.payPeriods ?? [],
+    payRuns: state.payRuns ?? [],
+    payRunLines: state.payRunLines ?? [],
   };
   const remindersFor = (chores: Chore[]) =>
     chores.filter((chore) => {
@@ -349,6 +383,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
     workloadWarnings: buildWorkloadWarnings(state.members.filter((item) => item.role === 'worker' && item.status === 'active').map((item) => item.id), state.shifts, state.chores, today, workloadThresholds()),
     metrics: metrics(state.chores, today), reminders: remindersFor(state.chores),
     ...carePlan,
+    ...hrSlice,
   };
   if (viewer.role === 'viewer') {
     // Family viewers see the care plan and schedule, but not care workers' private details, audit data, or settings.
@@ -366,6 +401,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       reminders: remindersFor(state.chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5),
       shifts: state.shifts, metrics: metrics(state.chores, today),
       ...carePlan,
+      ...emptyHr,
     };
   }
   const chores = visibleTasks(viewer, state.chores);
@@ -389,7 +425,7 @@ function buildHouseholdState(state: RawState, memberId: string): HouseholdState 
       dateOfBirth: null, address: '', jobTitle: '', employmentStartedOn: null, theme: null, dashboardLayout: null, guideSeenAt: null,
     }));
   const inbox = visibleInbox(viewer.role, viewer.id, state.inboxItems).map(({ safetyCategory: _category, safetyReason: _reason, safetyReviewedAt: _reviewedAt, safetyReviewedBy: _reviewedBy, ...item }) => item);
-  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()), ...carePlan };
+  return { viewer: { id: viewer.id, role: viewer.role }, members: [self, ...roster], chores, activity: [], taskGroups: workerTaskGroups(viewer, chores), reminders: remindersFor(chores), announcements: state.activity.filter((item) => item.action === 'announcement').slice(0, 5), shifts: state.shifts.filter((shift) => shift.memberId === viewer.id), availability: state.availability.filter((shift) => shift.memberId === viewer.id), timeEntries: state.timeEntries.filter((entry) => entry.memberId === viewer.id), certifications: state.certifications.filter((cert) => cert.memberId === viewer.id), messages: state.messages, clientNotes, inbox, scheduleRequests: (state.scheduleRequests ?? []).filter((request) => request.status === 'open' || request.requesterId === viewer.id || request.acceptedBy === viewer.id), shiftHandoffs: visibleShiftHandoffs(viewer.role, viewer.id, state.shiftHandoffs ?? [], state.scheduleRequests ?? []), safetyIncidents: visibleSafetyIncidents(viewer.role, viewer.id, state.safetyIncidents ?? []), workloadWarnings: buildWorkloadWarnings([viewer.id], state.shifts, chores, today, workloadThresholds()), ...carePlan, ...filterHrForWorker(hrSlice, viewer.id) };
 }
 
 export async function getHouseholdState(memberId: string): Promise<HouseholdState> {
@@ -586,9 +622,29 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     'saveCareProfile',
     'saveAppointment',
     'cancelAppointment',
+    'decideLeaveRequest',
+    'setLeaveBalance',
+    'saveHrDocument',
+    'archiveHrDocument',
+    'seedHireChecklist',
+    'toggleHireChecklistItem',
+    'addHireChecklistItem',
+    'ensurePayPeriods',
+    'closePayRun',
   ];
   if (managerOnly.includes(action) && actor.role !== 'manager') throw new Error('Only the household manager can do that.');
 
+  const hrHandled = await applyHrMutation({
+    action,
+    actorId,
+    actorRole: actor.role,
+    now,
+    payload: input,
+    settings: await getHouseholdSettings(),
+  });
+  if (hrHandled) {
+    return { ...(await getHouseholdState(actorId)), ...extras };
+  }
   if (action === 'createChore') {
     const title = requiredString(input.title, 'Chore name');
     const area = requiredString(input.area, 'Area');
@@ -1040,6 +1096,11 @@ export async function mutateHousehold(input: Record<string, unknown>) {
       db.prepare('INSERT INTO worker_invites(id,member_id,token_hash,expires_at,created_at) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), id, await inviteTokenHash(token), expires, now),
       activity(null, actorId, 'invited_member', `invited ${role === 'viewer' ? 'family viewer' : 'care worker'} ${name}`, now),
     ]);
+    if (role === 'worker') {
+      const settings = await getHouseholdSettings();
+      await seedLeaveBalancesForMember(id, settings.defaultVacationHours ?? 80);
+      await seedHireChecklistForMember(id);
+    }
     extras.inviteEmail = await trySendInviteEmail(email, name, role, token);
   } else if (action === 'reinviteMember') {
     const memberId = requiredString(input.memberId, 'Member');
@@ -1169,11 +1230,14 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const fundingHourlyRate = clampNumber(input.fundingHourlyRate, 0, 1000, 0);
     const bookkeeperEmail = optionalString(input.bookkeeperEmail, 200);
     if (bookkeeperEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bookkeeperEmail)) throw new Error('Enter a valid bookkeeper email.');
+    const defaultVacationHours = clampNumber(input.defaultVacationHours, 0, 2000, 80);
+    const payPeriodDays = clampInteger(input.payPeriodDays, 1, 62, 14);
+    const payPeriodAnchor = typeof input.payPeriodAnchor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.payPeriodAnchor) ? input.payPeriodAnchor : '2025-01-06';
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, default_vacation_hours=?, pay_period_days=?, pay_period_anchor=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, defaultVacationHours, payPeriodDays, payPeriodAnchor, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
   } else if (action === 'sendPayrollReport') {

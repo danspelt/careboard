@@ -4,11 +4,16 @@ import { test } from 'node:test';
 import { widgetsForRole } from '../lib/dashboard-widgets.ts';
 
 const household = readFileSync(new URL('../lib/household-data.ts', import.meta.url), 'utf8');
+const hrData = readFileSync(new URL('../lib/hr-data.ts', import.meta.url), 'utf8');
 const localDev = readFileSync(new URL('../lib/local-dev.ts', import.meta.url), 'utf8');
-const app = readFileSync(new URL('../app/household-app.tsx', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../app/household-app.tsx', import.meta.url), 'utf8')
+  + readFileSync(new URL('../app/hr-panel.tsx', import.meta.url), 'utf8');
 
 // Standalone `action === 'x'` comparisons — excludes `item.action`/`request.action` property checks.
-const backendActions = new Set([...household.matchAll(/(?<![.\w])action === '([a-zA-Z]+)'/g)].map((m) => m[1]));
+const backendActions = new Set([
+  ...household.matchAll(/(?<![.\w])action === '([a-zA-Z]+)'/g),
+  ...hrData.matchAll(/(?<![.\w])action === '([a-zA-Z]+)'/g),
+].map((m) => m[1]));
 // Grouped handlers like `['disableMember', 'reactivateMember'].includes(action)`.
 for (const group of household.matchAll(/\[([^\]]+)\]\.includes\(action\)/g)) {
   for (const item of group[1].matchAll(/'([a-zA-Z]+)'/g)) backendActions.add(item[1]);
@@ -29,6 +34,7 @@ const workerReachable = [
   'requestScheduleChange', 'saveDashboard', 'sendInboxMessage', 'setAvailability', 'start',
   'submitShiftHandoff', 'takeover', 'unclaim', 'updateProfile', 'updateTask',
   'logMedicationDose', 'completeAppointment', 'sendKudos', 'addSupplyItem', 'markSupplyPurchased',
+  'requestLeave', 'cancelLeaveRequest', 'acknowledgeHrDocument',
 ];
 
 test('every mutation action is categorized: manager-only, worker-guarded, or backend-only', () => {
