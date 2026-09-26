@@ -1464,13 +1464,13 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
       <Card>
         <h2 className="flex items-center gap-2 text-lg font-bold"><Sparkles className="size-5 text-[#287b6f]" aria-hidden="true" />Quick actions</h2>
         <p className="text-sm text-[#687873]">Common manager jobs, one tap away</p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setCreateOpen(true)}><Plus className="size-4" />Add task</Button>
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button>
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('schedule')}><CalendarDays className="size-4" />Two-week schedule</Button>
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('team')}><Users className="size-4" />Team directory</Button>
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('messages')}><Inbox className="size-4" />Team inbox</Button>
-          <Button variant="outline" className="min-h-12 justify-start" onClick={() => setSection('more')}><FileDown className="size-4" />Reports &amp; payroll</Button>
+        <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setCreateOpen(true)}><Plus className="size-4" />Add task</Button>
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button>
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setSection('schedule')}><CalendarDays className="size-4" />Two-week schedule</Button>
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setSection('team')}><Users className="size-4" />Team directory</Button>
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setSection('messages')}><Inbox className="size-4" />Team inbox</Button>
+          <Button variant="outline" className="h-auto min-h-12 justify-start gap-2 whitespace-normal px-3 py-2 text-left" onClick={() => setSection('more')}><FileDown className="size-4" />Reports &amp; payroll</Button>
         </div>
       </Card>
     ),
@@ -2997,17 +2997,18 @@ function SuppliesCard({ state, mutate, busy, readOnly = false }: any) {
     <Card>
       <CardHeading icon={ShoppingCart} title="Supplies list" text={list.needed.length ? `${list.needed.length} item${list.needed.length === 1 ? '' : 's'} needed` : 'Nothing needed right now'} />
       {!readOnly && (
-        <form className="mt-4 grid gap-2 sm:grid-cols-[1fr_7rem_8.5rem_auto]" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'addSupplyItem', ...Object.fromEntries(new FormData(form)) }, 'Added to the supplies list.').then(() => form.reset()).catch(() => {}); }}>
-          <Input name="name" required maxLength={120} placeholder="What’s running low?" aria-label="Item" className="min-h-10 bg-white" />
-          <Input name="quantity" maxLength={60} placeholder="Qty" aria-label="Quantity" className="min-h-10 bg-white" />
-          <select name="urgency" defaultValue="soon" aria-label="How urgent" className="field-control min-h-10 rounded-xl border border-[#d7dfd7] bg-white px-2 text-sm">{Object.entries(supplyUrgencyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          <Button type="submit" disabled={busy} className="min-h-10 bg-[#287b6f]"><Plus className="size-4" aria-hidden="true" />Add</Button>
-        </form>
+        <div className="@container">
+          <form className="mt-4 grid grid-cols-[4.5rem_minmax(0,1fr)_auto] gap-2 @xl:grid-cols-[minmax(0,1fr)_7rem_8.5rem_auto]" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; mutate({ action: 'addSupplyItem', ...Object.fromEntries(new FormData(form)) }, 'Added to the supplies list.').then(() => form.reset()).catch(() => {}); }}>
+            <Input name="name" required maxLength={120} placeholder="What’s running low?" aria-label="Item" className="col-span-3 min-h-10 bg-white @xl:col-span-1" />
+            <Input name="quantity" maxLength={60} placeholder="Qty" aria-label="Quantity" className="min-h-10 bg-white" />
+            <select name="urgency" defaultValue="soon" aria-label="How urgent" className="field-control min-h-10 min-w-0 rounded-xl border border-[#d7dfd7] bg-white px-2 text-sm">{Object.entries(supplyUrgencyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <Button type="submit" disabled={busy} className="min-h-10 bg-[#287b6f]"><Plus className="size-4" aria-hidden="true" />Add</Button>
+          </form>
+        </div>
       )}
       {list.needed.length ? <ul className="mt-4 space-y-2">{list.needed.map((item: any) => (
-        <li key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
-          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${urgencyClass[item.urgency]}`}>{supplyUrgencyLabels[item.urgency as keyof typeof supplyUrgencyLabels]}</span>
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.name}{item.quantity ? <span className="font-normal text-[#687873]"> · {item.quantity}</span> : null}</p><p className="text-xs text-[#687873]">Added by {nameFor(item.addedBy)}</p></div>
+        <li key={item.id} className="flex items-center gap-3 rounded-xl border border-[#e2e8e1] bg-white p-3">
+          <div className="min-w-0 flex-1"><span className={`mb-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${urgencyClass[item.urgency]}`}>{supplyUrgencyLabels[item.urgency as keyof typeof supplyUrgencyLabels]}</span><p className="break-words text-sm font-semibold">{item.name}{item.quantity ? <span className="font-normal text-[#687873]"> · {item.quantity}</span> : null}</p><p className="text-xs text-[#687873]">Added by {nameFor(item.addedBy)}</p></div>
           {!readOnly && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => mutate({ action: 'markSupplyPurchased', itemId: item.id }, `${item.name} marked as bought.`).catch(() => {})}><Check className="size-4" aria-hidden="true" />Bought</Button>}
         </li>
       ))}</ul> : <EmptyHandoff icon={ShoppingCart} title="All stocked up" text={readOnly ? 'The care team adds items here when supplies run low.' : 'Add gloves, wipes, groceries, or anything else that is running low.'} compact />}
