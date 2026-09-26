@@ -59,6 +59,7 @@ import { addDaysISO } from '@/lib/operations';
 import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
 import { DashboardGrid } from '@/app/dashboard-grid';
 import { layoutFor, appearanceFor, serializeAppearance, type AppearancePrefs, type WidgetItem } from '@/lib/dashboard-widgets';
+import { WEEKDAY_LABELS, formatOperatingHoursSummary, parseOperatingWeekdays } from '@/lib/hours-of-operation';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, careProfileCompleteness, doseOutcomeLabels, kudosCounts, medicationRound, supplyList, supplyUrgencyLabels, upcomingAppointments } from '@/lib/care-plan';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
@@ -810,9 +811,9 @@ function FirstLoginGuideTour({
       const panel = panelRef.current;
       const veil = veilRef.current;
       if (!highlight || !panel || !veil) return;
-      const panelWidth = Math.min(380, window.innerWidth - 24);
+      const panelWidth = Math.min(360, window.innerWidth - 24);
       panel.style.width = `${panelWidth}px`;
-      panel.style.maxHeight = `${Math.min(window.innerHeight - 24, 420)}px`;
+      panel.style.maxHeight = `${Math.min(window.innerHeight - 24, 440)}px`;
       if (!rect) {
         highlight.hidden = true;
         veil.hidden = false;
@@ -832,15 +833,27 @@ function FirstLoginGuideTour({
       highlight.style.width = `${width}px`;
       highlight.style.height = `${height}px`;
       const panelHeight = Math.min(panel.offsetHeight || 320, window.innerHeight - 24);
+      const gap = 16;
+      const spaceRight = window.innerWidth - (left + width);
+      const spaceLeft = left;
       const spaceBelow = window.innerHeight - (top + height);
       const spaceAbove = top;
-      const preferBelow = spaceBelow >= Math.min(panelHeight + 16, 220) || spaceBelow >= spaceAbove;
-      const panelTop = preferBelow
-        ? Math.min(window.innerHeight - panelHeight - 12, top + height + 14)
-        : Math.max(12, top - panelHeight - 14);
-      let panelLeft = left;
-      if (panelLeft + panelWidth > window.innerWidth - 12) panelLeft = window.innerWidth - panelWidth - 12;
-      if (panelLeft < 12) panelLeft = 12;
+      let panelTop = 12;
+      let panelLeft = 12;
+      // Prefer sitting beside the component so the user can read while looking at it.
+      if (spaceRight >= panelWidth + gap && window.innerWidth >= 720) {
+        panelLeft = Math.min(window.innerWidth - panelWidth - 12, left + width + gap);
+        panelTop = Math.min(window.innerHeight - panelHeight - 12, Math.max(12, top));
+      } else if (spaceLeft >= panelWidth + gap && window.innerWidth >= 720) {
+        panelLeft = Math.max(12, left - panelWidth - gap);
+        panelTop = Math.min(window.innerHeight - panelHeight - 12, Math.max(12, top));
+      } else if (spaceBelow >= Math.min(panelHeight + gap, 200) || spaceBelow >= spaceAbove) {
+        panelTop = Math.min(window.innerHeight - panelHeight - 12, top + height + gap);
+        panelLeft = Math.min(window.innerWidth - panelWidth - 12, Math.max(12, left));
+      } else {
+        panelTop = Math.max(12, top - panelHeight - gap);
+        panelLeft = Math.min(window.innerWidth - panelWidth - 12, Math.max(12, left));
+      }
       panel.style.top = `${panelTop}px`;
       panel.style.left = `${panelLeft}px`;
     };
@@ -887,11 +900,12 @@ function FirstLoginGuideTour({
         <div className="flex items-start justify-between gap-3 border-b border-[#e5eae4] px-4 pb-3 pt-4">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[.14em] text-[#4d6b5e]">
-              {mode === 'refresher' ? 'Refresher' : 'Welcome tour'} · Looking at {step.topic} · {stepIndex + 1}/{steps.length}
+              {mode === 'refresher' ? 'Refresher' : 'Welcome tour'} · This component · {stepIndex + 1}/{steps.length}
             </p>
             <h2 id="first-login-guide-title" className="mt-1 text-lg font-bold leading-snug text-[#20312d]">{step.title}</h2>
             <p className="mt-1.5 text-sm font-semibold leading-5 text-[#287b6f]">{step.summary}</p>
             {!targetFound && <p className="mt-2 text-xs text-[#8b4e2c]">Opening that screen…</p>}
+            {targetFound && <p className="mt-2 text-[11px] font-medium text-[#4d6b5e]">Read here — the highlighted area is what this step is about.</p>}
           </div>
           <button type="button" onClick={onDismiss} aria-label="Close guide" className="grid size-10 shrink-0 place-items-center rounded-xl text-[#687873] transition hover:bg-[#f1f5f1] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#287b6f]"><X className="size-4" aria-hidden="true" /></button>
         </div>
@@ -927,7 +941,7 @@ function FirstLoginGuideTour({
               )}
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-[#687873]">Continue moves the highlight to the next component · ← → / Enter · Esc</p>
+          <p className="mt-2 text-[11px] text-[#687873]">Continue moves beside the next component · ← → / Enter · Esc</p>
         </div>
       </div>
     </dialog>,
@@ -1143,6 +1157,14 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
             <p className="text-xs font-semibold uppercase tracking-[.16em] text-[var(--role-primary)]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
             <h2 className="mt-2 font-semibold tracking-tight" style={{ fontSize: 'var(--dash-title)' }}>Household at a glance</h2>
             <p className="mt-2 max-w-xl leading-6 text-[#52645f]" style={{ fontSize: 'var(--dash-body)' }}>{workers.length} care worker{workers.length === 1 ? '' : 's'} · {state.chores.length} household task{state.chores.length === 1 ? '' : 's'} · {command.attention.length} operational priorit{command.attention.length === 1 ? 'y' : 'ies'}</p>
+            <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-[var(--role-primary)]">
+              <Clock className="size-3.5" aria-hidden="true" />
+              Hours · {formatOperatingHoursSummary({
+                start: state.settings?.operatingHoursStart ?? '08:00',
+                end: state.settings?.operatingHoursEnd ?? '14:00',
+                weekdays: state.settings?.operatingWeekdays ?? '1,2,3,4,5',
+              })}
+            </p>
           </div>
           <span className="grid size-12 shrink-0 place-items-center rounded-[var(--dash-radius)] bg-[var(--role-primary)] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
         </div>
@@ -1492,7 +1514,29 @@ function MoreManager({ state, mutate, busy, onOpenLearn }: any) {
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Settings className="size-5 text-[#287b6f]" aria-hidden="true" />Settings</h2>
           <p className="text-sm text-[#687873]">Tune automation without changing privacy policy.</p>
-          <form className="mt-4 grid gap-4" onSubmit={(e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); mutate({ action: 'updateHouseholdSettings', ...data, retentionDays: 90 }, 'Settings saved.'); }}>
+          <form className="mt-4 grid gap-4" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; const data = Object.fromEntries(new FormData(form)); const days = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="operatingWeekdays"]:checked')).map((input) => input.value); mutate({ action: 'updateHouseholdSettings', ...data, operatingWeekdays: days, retentionDays: 90 }, 'Settings saved.'); }}>
+            <div className="rounded-2xl border border-[#bcd4c9] bg-[#f2f7f1] p-4">
+              <h3 className="flex items-center gap-2 font-bold text-[#20312d]"><Clock className="size-4 text-[#287b6f]" aria-hidden="true" />Hours of operation</h3>
+              <p className="mt-1 text-sm leading-6 text-[#52645f]">Your regular week for this home — for example weekdays 8:00 AM to 2:00 PM. Shown on Overview so the team knows when care usually runs.</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="Opens" name="operatingHoursStart" type="time" defaultValue={settings?.operatingHoursStart ?? '08:00'} />
+                <Field label="Closes" name="operatingHoursEnd" type="time" defaultValue={settings?.operatingHoursEnd ?? '14:00'} />
+              </div>
+              <fieldset className="mt-3">
+                <legend className="text-sm font-semibold text-[#20312d]">Regular weekdays</legend>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {WEEKDAY_LABELS.map((label, day) => {
+                    const selected = parseOperatingWeekdays(settings?.operatingWeekdays).includes(day);
+                    return (
+                      <label key={label} className={`inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-sm font-semibold ${selected ? 'border-[#287b6f] bg-white text-[#287b6f]' : 'border-[#d7dfd7] bg-white text-[#52645f]'}`}>
+                        <input type="checkbox" name="operatingWeekdays" value={String(day)} defaultChecked={selected} className="size-4 accent-[#287b6f]" />
+                        {label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            </div>
             <Field label="Recurrence horizon (days)" name="recurrenceHorizonDays" type="number" defaultValue={settings?.recurrenceHorizonDays ?? 30} />
             <Field label="Default reminder lead (days)" name="reminderDefaultLeadDays" type="number" defaultValue={settings?.reminderDefaultLeadDays ?? 1} />
             <Field label="Photo retention (days, fixed privacy policy)" name="retentionDays" type="number" defaultValue={90} readOnly />

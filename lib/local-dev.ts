@@ -9,6 +9,7 @@ import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import { workerCan, type Role } from '@/lib/access-policy';
 import { normalizeLayout, randomThemeId, isValidAppearanceToken } from '@/lib/dashboard-widgets';
+import { normalizeOperatingHours, parseOperatingWeekdays, serializeOperatingWeekdays } from '@/lib/hours-of-operation';
 import { KUDOS_BADGES, canCompleteAppointment, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem } from '@/lib/care-plan';
 import { DEFAULT_HIRE_CHECKLIST } from '@/lib/hr';
 import { aggregateWorkerHours, grossFor, nextPeriod, periodContaining } from '@/lib/hr-payroll';
@@ -149,7 +150,7 @@ const mockState: RawLocalState = {
   ],
   activity: [],
   audit: [],
-  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', defaultVacationHours: 80, payPeriodDays: 14, payPeriodAnchor: '2025-01-06', updatedAt: now },
+  settings: { householdId: 'default', recurrenceHorizonDays: 30, reminderDefaultLeadDays: 1, retentionDays: 90, fundedHoursMonthly: 120, fundingHourlyRate: 25, bookkeeperEmail: '', payrollLastSent: '', defaultVacationHours: 80, payPeriodDays: 14, payPeriodAnchor: '2025-01-06', operatingHoursStart: '08:00', operatingHoursEnd: '14:00', operatingWeekdays: '1,2,3,4,5', updatedAt: now },
   leaveBalances: [
     { memberId: worker.id, kind: 'vacation', hoursEntitled: 80, hoursUsed: 0 },
     { memberId: worker.id, kind: 'sick', hoursEntitled: 0, hoursUsed: 0 },
@@ -599,6 +600,15 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       if (typeof input.defaultVacationHours === 'string' || typeof input.defaultVacationHours === 'number') settings.defaultVacationHours = Math.max(0, Number(input.defaultVacationHours));
       if (typeof input.payPeriodDays === 'string' || typeof input.payPeriodDays === 'number') settings.payPeriodDays = Math.max(1, Math.min(62, Number(input.payPeriodDays)));
       if (typeof input.payPeriodAnchor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.payPeriodAnchor)) settings.payPeriodAnchor = input.payPeriodAnchor;
+      const hours = normalizeOperatingHours(
+        typeof input.operatingHoursStart === 'string' ? input.operatingHoursStart : (settings.operatingHoursStart ?? '08:00'),
+        typeof input.operatingHoursEnd === 'string' ? input.operatingHoursEnd : (settings.operatingHoursEnd ?? '14:00'),
+      );
+      settings.operatingHoursStart = hours.start;
+      settings.operatingHoursEnd = hours.end;
+      const weekdayRaw = input.operatingWeekdays;
+      const weekdayList = Array.isArray(weekdayRaw) ? weekdayRaw.map(String) : typeof weekdayRaw === 'string' ? weekdayRaw.split(',') : String(settings.operatingWeekdays ?? '1,2,3,4,5').split(',');
+      settings.operatingWeekdays = serializeOperatingWeekdays(parseOperatingWeekdays(weekdayList.join(',')));
       settings.updatedAt = now2;
       pushAudit('update_settings', 'Updated household settings');
       break;

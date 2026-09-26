@@ -21,6 +21,7 @@ import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, vis
 import { cycleWeekOf } from '@/lib/shifts';
 import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
 import { normalizeLayout, randomThemeId, isValidAppearanceToken, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
+import { normalizeOperatingHours, parseOperatingWeekdays, serializeOperatingWeekdays } from '@/lib/hours-of-operation';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMessage, emptyCareProfile, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem, visibleKudos, type Appointment, type CareProfile, type Kudos, type Medication, type MedicationLog, type SupplyItem } from '@/lib/care-plan';
 import type { HireChecklistItem, HrDocument, HrDocumentAck, LeaveBalance, LeaveRequest, PayPeriod, PayRun, PayRunLine } from '@/lib/hr';
 import { applyHrMutation, ensureOpenPayPeriod, filterHrForWorker, loadHrState, seedHireChecklistForMember, seedLeaveBalancesForMember } from '@/lib/hr-data';
@@ -105,6 +106,9 @@ export type HouseholdSettings = {
   defaultVacationHours?: number;
   payPeriodDays?: number;
   payPeriodAnchor?: string;
+  operatingHoursStart?: string;
+  operatingHoursEnd?: string;
+  operatingWeekdays?: string;
   updatedAt: string;
 };
 export type HouseholdState = {
@@ -226,7 +230,7 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
   await db.prepare("INSERT INTO household_settings (household_id) VALUES ('default') ON CONFLICT (household_id) DO NOTHING").run();
   const row = await db
     .prepare(
-      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, default_vacation_hours AS defaultVacationHours, pay_period_days AS payPeriodDays, pay_period_anchor AS payPeriodAnchor, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
+      "SELECT household_id AS householdId, recurrence_horizon_days AS recurrenceHorizonDays, reminder_default_lead_days AS reminderDefaultLeadDays, retention_days AS retentionDays, funded_hours_monthly AS fundedHoursMonthly, funding_hourly_rate AS fundingHourlyRate, bookkeeper_email AS bookkeeperEmail, payroll_last_sent AS payrollLastSent, default_vacation_hours AS defaultVacationHours, pay_period_days AS payPeriodDays, pay_period_anchor AS payPeriodAnchor, operating_hours_start AS operatingHoursStart, operating_hours_end AS operatingHoursEnd, operating_weekdays AS operatingWeekdays, updated_at AS updatedAt FROM household_settings WHERE household_id='default'",
     )
     .first<HouseholdSettings>();
   return row ?? {
@@ -241,6 +245,9 @@ export async function getHouseholdSettings(): Promise<HouseholdSettings> {
     defaultVacationHours: 80,
     payPeriodDays: 14,
     payPeriodAnchor: '2025-01-06',
+    operatingHoursStart: '08:00',
+    operatingHoursEnd: '14:00',
+    operatingWeekdays: '1,2,3,4,5',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -1235,11 +1242,22 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const defaultVacationHours = clampNumber(input.defaultVacationHours, 0, 2000, 80);
     const payPeriodDays = clampInteger(input.payPeriodDays, 1, 62, 14);
     const payPeriodAnchor = typeof input.payPeriodAnchor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.payPeriodAnchor) ? input.payPeriodAnchor : '2025-01-06';
+    const hours = normalizeOperatingHours(
+      typeof input.operatingHoursStart === 'string' ? input.operatingHoursStart : '08:00',
+      typeof input.operatingHoursEnd === 'string' ? input.operatingHoursEnd : '14:00',
+    );
+    const weekdayRaw = input.operatingWeekdays;
+    const weekdayList = Array.isArray(weekdayRaw)
+      ? weekdayRaw.map(String)
+      : typeof weekdayRaw === 'string'
+        ? weekdayRaw.split(',')
+        : ['1', '2', '3', '4', '5'];
+    const operatingWeekdays = serializeOperatingWeekdays(parseOperatingWeekdays(weekdayList.join(',')));
     await db
       .prepare(
-        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, default_vacation_hours=?, pay_period_days=?, pay_period_anchor=?, updated_at=? WHERE household_id='default'`,
+        `UPDATE household_settings SET recurrence_horizon_days=?, reminder_default_lead_days=?, retention_days=?, funded_hours_monthly=?, funding_hourly_rate=?, bookkeeper_email=?, default_vacation_hours=?, pay_period_days=?, pay_period_anchor=?, operating_hours_start=?, operating_hours_end=?, operating_weekdays=?, updated_at=? WHERE household_id='default'`,
       )
-      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, defaultVacationHours, payPeriodDays, payPeriodAnchor, now)
+      .bind(recurrenceHorizonDays, reminderDefaultLeadDays, retentionDays, fundedHoursMonthly, fundingHourlyRate, bookkeeperEmail, defaultVacationHours, payPeriodDays, payPeriodAnchor, hours.start, hours.end, operatingWeekdays, now)
       .run();
     await activity(null, actorId, 'updated_settings', 'updated household settings', now).run();
   } else if (action === 'sendPayrollReport') {

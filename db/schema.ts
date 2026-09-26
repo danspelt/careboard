@@ -43,6 +43,9 @@ export const householdSettings = sqliteTable('household_settings', {
   retentionDays: integer('retention_days').notNull().default(90),
   fundedHoursMonthly: real('funded_hours_monthly').notNull().default(0),
   fundingHourlyRate: real('funding_hourly_rate').notNull().default(0),
+  operatingHoursStart: text('operating_hours_start').notNull().default('08:00'),
+  operatingHoursEnd: text('operating_hours_end').notNull().default('14:00'),
+  operatingWeekdays: text('operating_weekdays').notNull().default('1,2,3,4,5'),
   updatedAt: text('updated_at').notNull(),
 });
 
