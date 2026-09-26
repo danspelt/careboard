@@ -20,7 +20,7 @@ import { buildWorkloadWarnings, workloadThresholds, type WorkloadWarning } from 
 import { triageSafetyIncident, validateSafetyIncident, validateShiftHandoff, visibleSafetyIncidents, visibleShiftHandoffs } from '@/lib/care-safety';
 import { cycleWeekOf } from '@/lib/shifts';
 import { lastCompletePeriod, payrollRows, type PayrollWorker } from '@/lib/payroll-report';
-import { normalizeLayout, randomThemeId, themeById, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
+import { normalizeLayout, randomThemeId, isValidAppearanceToken, type DashboardRole, type WidgetItem } from '@/lib/dashboard-widgets';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMessage, emptyCareProfile, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem, visibleKudos, type Appointment, type CareProfile, type Kudos, type Medication, type MedicationLog, type SupplyItem } from '@/lib/care-plan';
 import type { HireChecklistItem, HrDocument, HrDocumentAck, LeaveBalance, LeaveRequest, PayPeriod, PayRun, PayRunLine } from '@/lib/hr';
 import { applyHrMutation, ensureOpenPayPeriod, filterHrForWorker, loadHrState, seedHireChecklistForMember, seedLeaveBalancesForMember } from '@/lib/hr-data';
@@ -1210,7 +1210,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     const values: unknown[] = [];
     if (input.theme !== undefined) {
       const theme = input.theme === null || input.theme === '' ? null : requiredString(input.theme, 'Theme');
-      if (theme && !themeById(theme)) throw new Error('Choose a theme from the gallery.');
+      if (theme && !isValidAppearanceToken(theme)) throw new Error('Choose a colour and sizing from the gallery.');
       sets.push('theme=?');
       values.push(theme);
     }

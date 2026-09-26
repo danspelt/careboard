@@ -58,7 +58,7 @@ import { certDaysLeft, certStatus, certificationAlerts, type Certification } fro
 import { addDaysISO } from '@/lib/operations';
 import { attendanceLabel, buildAttendance } from '@/lib/shift-attendance';
 import { DashboardGrid } from '@/app/dashboard-grid';
-import { layoutFor, themeFor, type WidgetItem } from '@/lib/dashboard-widgets';
+import { layoutFor, appearanceFor, serializeAppearance, type AppearancePrefs, type WidgetItem } from '@/lib/dashboard-widgets';
 import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, careProfileCompleteness, doseOutcomeLabels, kudosCounts, medicationRound, supplyList, supplyUrgencyLabels, upcomingAppointments } from '@/lib/care-plan';
 
 const areas = ['Kitchen', 'Bathroom', 'Bedroom', 'Living room', 'Laundry', 'Outside', 'Other'];
@@ -337,12 +337,12 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
     const step = guideSteps[next];
     if (step?.section) setSection(step.section as Section);
   }
-  const theme = themeFor(member.id, member.theme ?? null);
+  const appearance = appearanceFor(member.id, member.theme ?? null);
   const dashboard = {
     layout: layoutFor(role, member.dashboardLayout ?? null),
-    themeId: theme.id,
+    appearance,
     saveLayout: (layout: WidgetItem[]) => { void mutate({ action: 'saveDashboard', layout }, 'Dashboard updated.').catch(() => {}); },
-    saveTheme: (themeId: string | null) => { void mutate({ action: 'saveDashboard', theme: themeId }, 'Colour scheme updated.').catch(() => {}); },
+    saveAppearance: (prefs: AppearancePrefs) => { void mutate({ action: 'saveDashboard', theme: serializeAppearance(prefs) }, 'Look updated.').catch(() => {}); },
   };
   const nav = manager
     ? [['home', 'Overview', LayoutDashboard], ['assistant', 'Assistant', Sparkles], ['tasks', 'Tasks', ClipboardList], ['client', 'Care plan', HandHeart], ['schedule', 'Schedule', CalendarDays], ['team', 'Team', Users], ['hr', 'HR', Briefcase], ['messages', 'Inbox', Inbox], ['more', 'Settings', Settings]] as const
@@ -352,7 +352,7 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
 
   return (
     <RoleContext.Provider value={role}>
-    <div className="careboard min-h-screen bg-[#f7f6f1] text-[#20312d]" data-role={role} style={theme.vars as React.CSSProperties}>
+    <div className="careboard min-h-screen text-[#20312d]" data-role={role} data-density={appearance.density} data-radius={appearance.radius} style={{ ...appearance.vars, background: 'var(--role-surface)' } as React.CSSProperties}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-[#287b6f] focus:px-4 focus:py-2 focus:text-white">
         Skip to dashboard content
       </a>
@@ -1137,14 +1137,14 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   });
   const cells: Record<string, React.ReactNode> = {
     hero: (
-      <section className="manager-hero overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+      <section className="manager-hero overflow-hidden shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Household at a glance</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">{workers.length} care worker{workers.length === 1 ? '' : 's'} · {state.chores.length} household task{state.chores.length === 1 ? '' : 's'} · {command.attention.length} operational priorit{command.attention.length === 1 ? 'y' : 'ies'}</p>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[var(--role-primary)]">Today · {new Date(`${today()}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 font-semibold tracking-tight" style={{ fontSize: 'var(--dash-title)' }}>Household at a glance</h2>
+            <p className="mt-2 max-w-xl leading-6 text-[#52645f]" style={{ fontSize: 'var(--dash-body)' }}>{workers.length} care worker{workers.length === 1 ? '' : 's'} · {state.chores.length} household task{state.chores.length === 1 ? '' : 's'} · {command.attention.length} operational priorit{command.attention.length === 1 ? 'y' : 'ies'}</p>
           </div>
-          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
+          <span className="grid size-12 shrink-0 place-items-center rounded-[var(--dash-radius)] bg-[var(--role-primary)] text-white shadow-sm"><LayoutDashboard className="size-6" aria-hidden="true" /></span>
         </div>
       </section>
     ),
@@ -1447,7 +1447,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   return (
     <div data-guide="panel-home">
       <Title title="Manager command center" text="Coverage, exceptions, and recent handoffs for today’s household work." action={<div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setAddOpen(true)}><UserCheck className="size-4" />Add care worker</Button><Button onClick={() => setCreateOpen(true)} className="bg-[#287b6f]"><Plus className="size-4" />Add task</Button></div>} />
-      <DashboardGrid audience="manager" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />
+      <DashboardGrid audience="manager" items={dashboard.layout} appearance={dashboard.appearance} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveAppearance={dashboard.saveAppearance} busy={busy} />
     </div>
   );
 }
@@ -2012,7 +2012,7 @@ function ViewerView({ section, state, setTask, setSection, dashboard }: any) {
   return (
     <>
       <Title title="Household overview" text="A read-only look at today’s care plan." />
-      <DashboardGrid audience="viewer" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={false} />
+      <DashboardGrid audience="viewer" items={dashboard.layout} appearance={dashboard.appearance} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveAppearance={dashboard.saveAppearance} busy={false} />
     </>
   );
 }
@@ -2277,14 +2277,14 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
   };
   const cells: Record<string, React.ReactNode> = {
     hero: (
-      <section className="worker-hero overflow-hidden rounded-3xl p-5 shadow-sm sm:p-6">
+      <section className="worker-hero overflow-hidden shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#287b6f]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-[#52645f]">Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
+            <p className="text-xs font-semibold uppercase tracking-[.16em] text-[var(--role-primary)]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <h2 className="mt-2 font-semibold tracking-tight" style={{ fontSize: 'var(--dash-title)' }}>Ready for your shift, {member.name.split(/\s+/)[0]}</h2>
+            <p className="mt-2 max-w-xl leading-6 text-[#52645f]" style={{ fontSize: 'var(--dash-body)' }}>Clock in, check your priorities, and record handoff notes so the next caregiver can pick up where you left off.</p>
           </div>
-          <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#287b6f] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
+          <span className="grid size-12 shrink-0 place-items-center rounded-[var(--dash-radius)] bg-[var(--role-primary)] text-white shadow-sm"><Home className="size-6" aria-hidden="true" /></span>
         </div>
       </section>
     ),
@@ -2293,10 +2293,10 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
     timeclock: <TimeClock member={member} entries={state.timeEntries ?? []} shifts={state.shifts ?? []} mutate={mutate} busy={busy} />,
     shiftbrief: (
       <>
-      <section aria-labelledby="shift-summary" className="overflow-hidden rounded-3xl bg-[#203f36] p-5 text-white shadow-lg sm:p-6">
+      <section aria-labelledby="shift-summary" className="overflow-hidden rounded-[var(--dash-radius-lg)] bg-[var(--role-primary-dark)] p-5 text-white shadow-lg sm:p-6" style={{ padding: 'var(--dash-hero-pad)' }}>
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#bcd9ca]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 id="shift-summary" className="mt-2 text-2xl font-semibold">{handoff.attention.length ? `${handoff.attention.length} ${handoff.attention.length === 1 ? 'item needs' : 'items need'} attention` : 'You’re ready for the shift'}</h2><p className="mt-2 max-w-xl text-sm leading-6 text-[#d8e7df]">{handoff.attention.length ? 'Prioritized from due dates, task priority, and open issues already recorded by your care team.' : outstanding.length ? 'No urgent or overdue work. Continue with today’s plan.' : 'No assigned work is due today. Available work remains in Tasks.'}</p></div>
-          <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-2xl bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[#bcd9ca]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-[#d8e7df]">completed today</p></div>
+          <div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[var(--role-primary-soft)]">Today · {new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 id="shift-summary" className="mt-2 font-semibold" style={{ fontSize: 'var(--dash-title)' }}>{handoff.attention.length ? `${handoff.attention.length} ${handoff.attention.length === 1 ? 'item needs' : 'items need'} attention` : 'You’re ready for the shift'}</h2><p className="mt-2 max-w-xl leading-6 text-white/80" style={{ fontSize: 'var(--dash-body)' }}>{handoff.attention.length ? 'Prioritized from due dates, task priority, and open issues already recorded by your care team.' : outstanding.length ? 'No urgent or overdue work. Continue with today’s plan.' : 'No assigned work is due today. Available work remains in Tasks.'}</p></div>
+          <div aria-label={`${handoff.completed.length} of ${handoff.assigned.length + handoff.completed.length} shift tasks completed`} className="min-w-40 rounded-[var(--dash-radius)] bg-white/10 p-4"><p className="text-3xl font-semibold tabular-nums">{handoff.completed.length}<span className="text-base text-[var(--role-primary-soft)]"> / {handoff.assigned.length + handoff.completed.length}</span></p><p className="mt-1 text-xs text-white/75">completed today</p></div>
         </div>
       </section>
       <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -2415,7 +2415,7 @@ function WorkerDashboard({ state, member, setSection, setTask, setAvailWorker, m
   };
   return (
     <div data-guide="panel-today">
-      <DashboardGrid audience="worker" items={dashboard.layout} themeId={dashboard.themeId} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveTheme={dashboard.saveTheme} busy={busy} />
+      <DashboardGrid audience="worker" items={dashboard.layout} appearance={dashboard.appearance} renderWidget={(id) => cells[id] ?? null} onSaveLayout={dashboard.saveLayout} onSaveAppearance={dashboard.saveAppearance} busy={busy} />
     </div>
   );
 }

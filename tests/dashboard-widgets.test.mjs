@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import {
   DASHBOARD_THEMES,
   addWidget,
+  appearanceFor,
   defaultLayout,
+  isValidAppearanceToken,
   layoutFor,
   moveWidget,
   normalizeLayout,
+  parseAppearance,
   randomThemeId,
   removeWidget,
+  serializeAppearance,
   setWidgetSize,
   themeFor,
   widgetDef,
@@ -16,13 +20,17 @@ import {
 } from '../lib/dashboard-widgets.ts';
 import { WIDGET_ICONS } from '../lib/widget-icons.ts';
 
-test('every role has a non-empty default layout drawn from the catalog', () => {
+test('default layouts are curated and shorter than the full catalog', () => {
   for (const role of ['manager', 'worker', 'viewer']) {
     const layout = defaultLayout(role);
+    const catalog = widgetsForRole(role);
     assert.ok(layout.length >= 4, `${role} should have several widgets`);
-    const catalogIds = new Set(widgetsForRole(role).map((widget) => widget.id));
+    assert.ok(layout.length < catalog.length, `${role} default should leave widgets in the library`);
+    const catalogIds = new Set(catalog.map((widget) => widget.id));
     for (const item of layout) assert.ok(catalogIds.has(item.id), `${item.id} must be available to ${role}`);
   }
+  assert.equal(defaultLayout('manager')[0].id, 'hero');
+  assert.equal(defaultLayout('worker')[0].id, 'hero');
 });
 
 test('widget ids are unique and catalog entries are well formed', () => {
@@ -122,6 +130,22 @@ test('themeFor returns saved theme, else a stable per-member pick', () => {
   assert.ok(DASHBOARD_THEMES.some((theme) => theme.id === auto.id));
   assert.equal(themeFor('member-abc', null).id, auto.id, 'stable across calls');
   assert.equal(themeFor('member-abc', 'bogus').id, auto.id, 'unknown saved value falls back');
+  assert.equal(themeFor('member-1', 'plum:compact:sharp').id, 'plum');
+});
+
+test('appearance tokens pack colour, density, and corner sizing', () => {
+  assert.deepEqual(parseAppearance('ocean:spacious:round'), { colorId: 'ocean', density: 'spacious', radius: 'round' });
+  assert.equal(serializeAppearance({ colorId: 'teal', density: 'comfortable', radius: 'soft' }), 'teal');
+  assert.equal(serializeAppearance({ colorId: 'slate', density: 'compact', radius: 'sharp' }), 'slate:compact:sharp');
+  assert.equal(isValidAppearanceToken('honey:comfortable:soft'), true);
+  assert.equal(isValidAppearanceToken('not-a-theme'), false);
+  const look = appearanceFor('member-xyz', 'forest:spacious:round');
+  assert.equal(look.colorId, 'forest');
+  assert.equal(look.density, 'spacious');
+  assert.equal(look.radius, 'round');
+  assert.ok(look.vars['--dash-gap']);
+  assert.ok(look.vars['--dash-radius']);
+  assert.equal(look.vars['--role-primary'], themeFor('x', 'forest').vars['--role-primary']);
 });
 
 test('randomThemeId always returns a real theme and respects the RNG', () => {

@@ -750,18 +750,25 @@ body[data-role='viewer'] .careboard button:focus-visible {
   color: var(--role-primary);
 }
 
-/* Manager command center hero card. */
-.manager-hero {
-  background:
-    radial-gradient(circle at 90% 10%, rgb(197 224 220 / 45%), transparent 22rem),
-    linear-gradient(135deg, #eef5f4 0%, #e5efed 100%);
-  border: 1px solid #c5d8d6;
-}
-
-/* Caregiver shift hero card. */
+/* Dashboard heroes follow the selected colour scheme + density/radius tokens. */
+.manager-hero,
 .worker-hero {
+  padding: var(--dash-hero-pad, 1.35rem);
+  border-radius: var(--dash-radius-lg, 1.5rem);
+  border: 1px solid var(--role-primary-soft);
   background:
-    radial-gradient(circle at 90% 10%, rgb(232 205 162 / 38%), transparent 22rem),
-    linear-gradient(135deg, #fdf8f0 0%, #f5efe3 100%);
-  border: 1px solid #e6d8c0;
+    radial-gradient(circle at 90% 10%, color-mix(in srgb, var(--role-primary-soft) 55%, transparent), transparent 22rem),
+    linear-gradient(135deg, var(--role-primary-light) 0%, var(--role-warm) 100%);
+}
+.careboard {
+  --dash-gap: 1.15rem;
+  --dash-pad: 1.25rem;
+  --dash-title: 1.25rem;
+  --dash-body: 0.9375rem;
+  --dash-hero-pad: 1.35rem;
+  --dash-radius: 1rem;
+  --dash-radius-lg: 1.5rem;
+}
+.careboard .dashboard-grid > * {
+  min-width: 0;
 }

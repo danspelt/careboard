@@ -80,8 +80,62 @@ export function widgetDef(id: string): WidgetDef | undefined {
   return WIDGETS.find((widget) => widget.id === id);
 }
 
+/** Curated first-paint layouts — enough to run a shift, not every widget at once. */
+const DEFAULT_LAYOUTS: Record<DashboardRole, Array<[string, WidgetSize]>> = {
+  manager: [
+    ['hero', 'full'],
+    ['metrics', 'full'],
+    ['decisions', 'full'],
+    ['hralerts', 'full'],
+    ['priorities', 'half'],
+    ['attendance', 'half'],
+    ['medsround', 'full'],
+    ['appointments', 'half'],
+    ['supplies', 'half'],
+    ['kudos', 'half'],
+    ['schedulepreview', 'half'],
+    ['inboxpreview', 'half'],
+    ['payroll', 'half'],
+    ['quickactions', 'half'],
+  ],
+  worker: [
+    ['hero', 'full'],
+    ['announcements', 'full'],
+    ['timeclock', 'full'],
+    ['coverage', 'full'],
+    ['shiftbrief', 'full'],
+    ['priorities', 'half'],
+    ['mytasks', 'half'],
+    ['notes', 'half'],
+    ['snapshot', 'half'],
+    ['handoffform', 'half'],
+    ['safetyform', 'half'],
+    ['aboutme', 'half'],
+    ['medsround', 'full'],
+    ['appointments', 'half'],
+    ['supplies', 'half'],
+    ['kudos', 'half'],
+    ['quicklinks', 'half'],
+  ],
+  viewer: [
+    ['metrics', 'full'],
+    ['onshift', 'half'],
+    ['duetoday', 'half'],
+    ['aboutme', 'half'],
+    ['appointments', 'half'],
+    ['supplies', 'half'],
+    ['medsround', 'full'],
+  ],
+};
+
 export function defaultLayout(role: DashboardRole): WidgetItem[] {
-  return widgetsForRole(role).map((widget) => ({ id: widget.id, size: widget.defaultSize }));
+  const allowed = new Map(widgetsForRole(role).map((widget) => [widget.id, widget]));
+  return DEFAULT_LAYOUTS[role]
+    .map(([id, size]) => {
+      const def = allowed.get(id);
+      return def ? { id: def.id, size } : null;
+    })
+    .filter((item): item is WidgetItem => item !== null);
 }
 
 /** Validate a stored layout: drop unknown/forbidden ids, dedupe, coerce sizes. Returns the cleaned list (possibly empty — empty means "user removed everything"). */
@@ -128,7 +182,7 @@ export function addWidget(items: WidgetItem[], role: DashboardRole, id: string):
   return [...items, { id, size: def.defaultSize }];
 }
 
-// ---- Themes ----
+// ---- Themes & appearance (color + density + corner sizing) ----
 
 export type DashboardTheme = {
   id: string;
@@ -137,7 +191,58 @@ export type DashboardTheme = {
   vars: Record<string, string>;
 };
 
+export type DashboardDensity = 'compact' | 'comfortable' | 'spacious';
+export type DashboardRadius = 'sharp' | 'soft' | 'round';
+
+export type AppearancePrefs = {
+  colorId: string;
+  density: DashboardDensity;
+  radius: DashboardRadius;
+};
+
+export const DASHBOARD_DENSITIES: Array<{ id: DashboardDensity; label: string; hint: string }> = [
+  { id: 'compact', label: 'Compact', hint: 'Tighter gaps — more on screen' },
+  { id: 'comfortable', label: 'Comfortable', hint: 'Balanced spacing (default)' },
+  { id: 'spacious', label: 'Spacious', hint: 'Larger type and breathing room' },
+];
+
+export const DASHBOARD_RADII: Array<{ id: DashboardRadius; label: string; hint: string }> = [
+  { id: 'sharp', label: 'Sharp', hint: 'Squared corners' },
+  { id: 'soft', label: 'Soft', hint: 'Gentle rounding (default)' },
+  { id: 'round', label: 'Round', hint: 'Pillowy cards' },
+];
+
 const SHARED_WARNINGS = { '--role-amber': '#8a6a31', '--role-amber-bg': '#faf3e5' };
+
+const DENSITY_VARS: Record<DashboardDensity, Record<string, string>> = {
+  compact: {
+    '--dash-gap': '0.75rem',
+    '--dash-pad': '0.9rem',
+    '--dash-title': '1.125rem',
+    '--dash-body': '0.875rem',
+    '--dash-hero-pad': '1rem',
+  },
+  comfortable: {
+    '--dash-gap': '1.15rem',
+    '--dash-pad': '1.25rem',
+    '--dash-title': '1.25rem',
+    '--dash-body': '0.9375rem',
+    '--dash-hero-pad': '1.35rem',
+  },
+  spacious: {
+    '--dash-gap': '1.5rem',
+    '--dash-pad': '1.6rem',
+    '--dash-title': '1.5rem',
+    '--dash-body': '1.0625rem',
+    '--dash-hero-pad': '1.75rem',
+  },
+};
+
+const RADIUS_VARS: Record<DashboardRadius, Record<string, string>> = {
+  sharp: { '--dash-radius': '0.45rem', '--dash-radius-lg': '0.65rem' },
+  soft: { '--dash-radius': '1rem', '--dash-radius-lg': '1.5rem' },
+  round: { '--dash-radius': '1.35rem', '--dash-radius-lg': '2rem' },
+};
 
 function makeTheme(id: string, name: string, primary: string, hover: string, dark: string, light: string, soft: string, surface: string, warm: string): DashboardTheme {
   return {
@@ -174,15 +279,74 @@ export function themeById(id: string | null | undefined): DashboardTheme | undef
   return DASHBOARD_THEMES.find((theme) => theme.id === id);
 }
 
-/** A member's theme: their saved choice, or a stable pseudo-random pick so every new user gets a distinct scheme. */
-export function themeFor(memberId: string, saved: string | null | undefined): DashboardTheme {
-  const chosen = themeById(saved);
-  if (chosen) return chosen;
+function isDensity(value: string): value is DashboardDensity {
+  return value === 'compact' || value === 'comfortable' || value === 'spacious';
+}
+
+function isRadius(value: string): value is DashboardRadius {
+  return value === 'sharp' || value === 'soft' || value === 'round';
+}
+
+/** Saved theme tokens: `teal` or `teal:comfortable:soft` (color:density:radius). */
+export function parseAppearance(saved: string | null | undefined): AppearancePrefs | null {
+  if (!saved || typeof saved !== 'string') return null;
+  const [colorRaw, densityRaw, radiusRaw] = saved.split(':');
+  const color = themeById(colorRaw);
+  if (!color) return null;
+  return {
+    colorId: color.id,
+    density: densityRaw && isDensity(densityRaw) ? densityRaw : 'comfortable',
+    radius: radiusRaw && isRadius(radiusRaw) ? radiusRaw : 'soft',
+  };
+}
+
+export function serializeAppearance(prefs: AppearancePrefs): string {
+  const color = themeById(prefs.colorId)?.id ?? 'teal';
+  const density = isDensity(prefs.density) ? prefs.density : 'comfortable';
+  const radius = isRadius(prefs.radius) ? prefs.radius : 'soft';
+  if (density === 'comfortable' && radius === 'soft') return color;
+  return `${color}:${density}:${radius}`;
+}
+
+/** True when a saveDashboard theme value is an allowed color or appearance token. */
+export function isValidAppearanceToken(token: string | null | undefined): boolean {
+  if (token === null || token === undefined || token === '') return true;
+  return parseAppearance(token) !== null;
+}
+
+function stableThemePick(memberId: string): DashboardTheme {
   let hash = 0;
   for (const char of memberId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return DASHBOARD_THEMES[hash % DASHBOARD_THEMES.length];
+  return DASHBOARD_THEMES[hash % DASHBOARD_THEMES.length]!;
+}
+
+/** A member's theme: their saved choice, or a stable pseudo-random pick so every new user gets a distinct scheme. */
+export function themeFor(memberId: string, saved: string | null | undefined): DashboardTheme {
+  const parsed = parseAppearance(saved);
+  if (parsed) return themeById(parsed.colorId) ?? stableThemePick(memberId);
+  const legacy = themeById(saved);
+  if (legacy) return legacy;
+  return stableThemePick(memberId);
+}
+
+export function appearanceFor(memberId: string, saved: string | null | undefined): AppearancePrefs & { theme: DashboardTheme; vars: Record<string, string> } {
+  const parsed = parseAppearance(saved);
+  const theme = themeFor(memberId, saved);
+  const density = parsed?.density ?? 'comfortable';
+  const radius = parsed?.radius ?? 'soft';
+  return {
+    colorId: theme.id,
+    density,
+    radius,
+    theme,
+    vars: {
+      ...theme.vars,
+      ...DENSITY_VARS[density],
+      ...RADIUS_VARS[radius],
+    },
+  };
 }
 
 export function randomThemeId(random: () => number = Math.random): string {
-  return DASHBOARD_THEMES[Math.floor(random() * DASHBOARD_THEMES.length) % DASHBOARD_THEMES.length].id;
+  return DASHBOARD_THEMES[Math.floor(random() * DASHBOARD_THEMES.length) % DASHBOARD_THEMES.length]!.id;
 }

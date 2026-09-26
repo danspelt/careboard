@@ -8,7 +8,7 @@ import { coverageAcceptedMessage, coverageAskMessage, scheduleChangeRequest } fr
 import { cycleWeekOf } from '@/lib/shifts';
 import type { Certification } from '@/lib/certifications';
 import { workerCan, type Role } from '@/lib/access-policy';
-import { normalizeLayout, randomThemeId, themeById } from '@/lib/dashboard-widgets';
+import { normalizeLayout, randomThemeId, isValidAppearanceToken } from '@/lib/dashboard-widgets';
 import { KUDOS_BADGES, canCompleteAppointment, validateAppointment, validateCareProfile, validateDoseLog, validateKudos, validateMedication, validateSupplyItem } from '@/lib/care-plan';
 import { DEFAULT_HIRE_CHECKLIST } from '@/lib/hr';
 import { aggregateWorkerHours, grossFor, nextPeriod, periodContaining } from '@/lib/hr-payroll';
@@ -625,7 +625,7 @@ export function mutateLocalDevState(input: Record<string, unknown>): RawLocalSta
       const member = findMember(actorId);
       if (input.theme !== undefined) {
         const theme = input.theme === null || input.theme === '' ? null : requiredString(input.theme, 'Theme');
-        if (theme && !themeById(theme)) throw new Error('Choose a theme from the gallery.');
+        if (theme && !isValidAppearanceToken(theme)) throw new Error('Choose a colour and sizing from the gallery.');
         member.theme = theme;
       }
       if (input.layout !== undefined) member.dashboardLayout = normalizeLayout(member.role as 'manager' | 'worker' | 'viewer', input.layout);
