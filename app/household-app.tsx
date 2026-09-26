@@ -45,6 +45,7 @@ import { buildWeekSchedule, nextTaskAction, workerDayPlan } from '@/lib/schedule
 import { buildNotifications } from '@/lib/notifications';
 import { buildProgressReport } from '@/lib/progress-report';
 import { buildOnboarding, firstLoginGuide, type FirstLoginGuideStep } from '@/lib/onboarding';
+import { assistantPayrollSuggestions, payrollAskQuestions, payrollAskStorageKey, payrollFaq, type PayrollAskStep, type PayrollFaqItem, type PayrollHelpRole } from '@/lib/payroll-help';
 import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
 import { suggestAssignments } from '@/lib/auto-assign';
 import { cycleWeekOf, formatShift, shiftsForDay, weekdayOf, type Shift } from '@/lib/shifts';
@@ -426,6 +427,15 @@ export function HouseholdApp({ initialState, authenticatedId, localDev = false }
         onStepIndex={goGuideStep}
         onDismiss={dismissGuide}
       />
+      {!viewer && section === 'more' && !guideOpen && (
+        <PayrollAskQuestionnaire
+          helpRole={manager ? 'manager' : 'worker'}
+          memberId={member.id}
+          settings={state.settings}
+          mutate={mutate}
+          busy={busy}
+        />
+      )}
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl bg-[#fffefa] sm:max-w-lg">
           <DialogHeader>
@@ -544,6 +554,106 @@ function LocalDevRoleSwitcher({ currentMember }: { currentMember: string }) {
     </div>
   );
 }
+function PayrollFaqPanel({ helpRole }: { helpRole: PayrollHelpRole }) {
+  const items = payrollFaq(helpRole);
+  return (
+    <Card>
+      <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Payroll questions</h2>
+      <p className="mt-1 text-sm text-[#687873]">{helpRole === 'manager' ? 'How hours become a bookkeeper-ready CSV.' : 'How clock-in, rates, and pay estimates work for you.'}</p>
+      <div className="mt-4 divide-y divide-[#e5eae4] rounded-xl border border-[#e2e8e1] bg-white">
+        {items.map((item: PayrollFaqItem) => (
+          <details key={item.id} className="group px-4 py-3">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-[#20312d] marker:content-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-start justify-between gap-3">
+                <span>{item.question}</span>
+                <ChevronRight className="mt-0.5 size-4 shrink-0 text-[#687873] transition group-open:rotate-90" aria-hidden="true" />
+              </span>
+            </summary>
+            <p className="mt-2 text-sm leading-6 text-[#687873]">{item.answer}</p>
+          </details>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function PayrollAskQuestionnaire({
+  helpRole,
+  memberId,
+  settings,
+  mutate,
+  busy,
+}: {
+  helpRole: PayrollHelpRole;
+  memberId: string;
+  settings: HouseholdState['settings'];
+  mutate: (payload: Record<string, unknown>, message?: string) => Promise<unknown>;
+  busy: boolean;
+}) {
+  const storageKey = payrollAskStorageKey(memberId);
+  const dismissed = useLocalStorageValue(storageKey) === '1';
+  const steps = payrollAskQuestions(helpRole);
+  const [index, setIndex] = useState(0);
+  const bookkeeperEmail = settings?.bookkeeperEmail ?? '';
+  const [email, setEmail] = useState(bookkeeperEmail);
+  const open = !dismissed && steps.length > 0;
+  const step: PayrollAskStep | undefined = steps[index];
+
+  function finish() {
+    writeLocalStorage(storageKey, '1');
+  }
+
+  async function goNext() {
+    if (step?.field === 'bookkeeperEmail' && email.trim() && email.trim() !== bookkeeperEmail) {
+      try {
+        await mutate({
+          action: 'updateHouseholdSettings',
+          recurrenceHorizonDays: settings?.recurrenceHorizonDays ?? 30,
+          reminderDefaultLeadDays: settings?.reminderDefaultLeadDays ?? 1,
+          fundedHoursMonthly: settings?.fundedHoursMonthly ?? 0,
+          fundingHourlyRate: settings?.fundingHourlyRate ?? 0,
+          bookkeeperEmail: email.trim(),
+        }, 'Bookkeeper email saved.');
+      } catch { /* notice shown */ }
+    }
+    if (index >= steps.length - 1) finish();
+    else setIndex((value) => value + 1);
+  }
+
+  if (!open || !step) return null;
+  return (
+    <Dialog open onOpenChange={(value) => { if (!value) finish(); }}>
+      <DialogContent className="rounded-3xl bg-[#fffefa] sm:max-w-md" aria-describedby="payroll-ask-detail">
+        <DialogHeader>
+          <DialogTitle>{helpRole === 'manager' ? 'Payroll setup questions' : 'Your pay — quick questions'}</DialogTitle>
+          <DialogDescription id="payroll-ask-detail">
+            Step {index + 1} of {steps.length}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <h3 className="text-base font-bold text-[#20312d]">{step.question}</h3>
+          <p className="text-sm leading-6 text-[#687873]">{step.detail}</p>
+          {step.field === 'bookkeeperEmail' && (
+            <label htmlFor="payroll-ask-bookkeeper" className="grid gap-1 text-sm font-semibold">
+              Bookkeeper email
+              <Input id="payroll-ask-bookkeeper" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="bookkeeper@example.com" className="min-h-11" autoComplete="email" />
+            </label>
+          )}
+        </div>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button type="button" variant="outline" className="min-h-11" onClick={finish}>Skip</Button>
+          <div className="flex flex-wrap gap-2">
+            {index > 0 && <Button type="button" variant="outline" className="min-h-11" onClick={() => setIndex((value) => value - 1)}>Back</Button>}
+            <Button type="button" disabled={busy} className="min-h-11 bg-[#287b6f]" onClick={() => void goNext()}>
+              {index >= steps.length - 1 ? 'Done' : 'Next'}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OnboardingCard({ steps, onDone }: any) {
   const done = steps.filter((step: any) => step.done).length;
   return (
@@ -1070,7 +1180,7 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
       </Card>
     ),
     payroll: (
-      <Card>
+      <Card data-guide="payroll">
         <h2 className="flex items-center gap-2 text-lg font-bold"><CircleDollarSign className="size-5 text-[#287b6f]" aria-hidden="true" />Payroll &amp; bookkeeper</h2>
         <p className="mt-1 text-sm leading-6 text-[#687873]">Two-week payroll CSV with who worked, when, hours, rates, and totals.</p>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -1328,7 +1438,7 @@ function MoreManager({ state, mutate, busy }: any) {
           </div>
         )}
       </Card>
-      <Card className="mt-6">
+      <Card className="mt-6" data-guide="payroll-bookkeeper">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 text-lg font-bold"><FileDown className="size-5 text-[#287b6f]" aria-hidden="true" />Bookkeeper payroll report</h2>
@@ -1345,6 +1455,7 @@ function MoreManager({ state, mutate, busy }: any) {
           <button type="button" onClick={() => { const end = today(); setPayTo(end); setPayFrom(new Date(Date.now() - 13 * 864e5).toISOString().slice(0, 10)); }} className="min-h-11 rounded-xl border border-[#d7dfd7] px-3 text-xs font-semibold text-[#52645f] transition hover:bg-[#f1f5f1]">Last 14 days</button>
         </div>
       </Card>
+      <div className="mt-6"><PayrollFaqPanel helpRole="manager" /></div>
       <Card className="mt-6">
         <h2 className="flex items-center gap-2 text-lg font-bold"><History className="size-5 text-[#287b6f]" aria-hidden="true" />Audit history</h2>
         <p className="mt-1 text-sm text-[#687873]">Append-only operational history; entries cannot be edited or deleted.</p>
@@ -1570,7 +1681,13 @@ function AssistantView({ state, setSection }: { state: HouseholdState; setSectio
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const suggestions = ['What tasks should I focus on today?', 'Which days do I have off?', 'How can I coordinate schedule coverage?'];
+  const role = state.viewer.role;
+  const suggestions = [
+    'What tasks should I focus on today?',
+    'Which days do I have off?',
+    'How can I coordinate schedule coverage?',
+    ...assistantPayrollSuggestions(role),
+  ];
 
   async function ask(question: string) {
     const content = question.trim();
@@ -1746,7 +1863,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
     <>
       <Title title="More" text="Account, pay, and privacy." />
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
+        <Card data-guide="your-pay">
           <div className="flex items-center gap-3">
             <span className="grid size-10 place-items-center rounded-xl bg-[#e8f1ec] text-[#287b6f]"><CircleDollarSign className="size-5" aria-hidden="true" /></span>
             <h2 className="font-bold">Your pay</h2>
@@ -1778,6 +1895,7 @@ function WorkerView({ section, state, member, setSection, setTask, setProfile, s
           </div>
         </Card>
       </div>
+      <div className="mt-6"><PayrollFaqPanel helpRole="worker" /></div>
     </>
     );
   }

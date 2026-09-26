@@ -29,9 +29,11 @@ test('worker onboarding tracks profile, assignment, start, note, and completion'
 test('first login guide differs for manager and worker, and viewers get none', () => {
   const manager = firstLoginGuide('manager');
   const worker = firstLoginGuide('worker');
-  assert.deepEqual(manager.map((step) => step.id), ['overview', 'team', 'tasks', 'inbox', 'checklist']);
-  assert.deepEqual(worker.map((step) => step.id), ['today', 'tasks', 'handoffs-safety', 'schedule-profile', 'checklist']);
+  assert.deepEqual(manager.map((step) => step.id), ['overview', 'team', 'tasks', 'inbox', 'payroll', 'checklist']);
+  assert.deepEqual(worker.map((step) => step.id), ['today', 'tasks', 'handoffs-safety', 'schedule-profile', 'payroll', 'checklist']);
   assert.deepEqual(firstLoginGuide('viewer'), []);
+  assert.equal(manager.find((step) => step.id === 'payroll')?.section, 'more');
+  assert.equal(worker.find((step) => step.id === 'payroll')?.target, 'your-pay');
   for (const step of [...manager, ...worker]) {
     assert.ok(step.title.trim());
     assert.ok(step.body.trim());

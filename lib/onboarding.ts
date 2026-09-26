@@ -79,6 +79,13 @@ export function firstLoginGuide(role: FirstLoginGuideRole): FirstLoginGuideStep[
         section: 'messages',
       },
       {
+        id: 'payroll',
+        title: 'Payroll for your bookkeeper',
+        body: 'Set each worker’s hourly rate on Team, save a bookkeeper email in Settings, then download or email the two-week CSV. CareBoard tracks hours — it does not issue paychecks.',
+        target: 'payroll-bookkeeper',
+        section: 'more',
+      },
+      {
         id: 'checklist',
         title: 'Getting started checklist',
         body: 'The checklist underneath checks off as the household gets moving, and you can dismiss it on its own.',
@@ -115,6 +122,13 @@ export function firstLoginGuide(role: FirstLoginGuideRole): FirstLoginGuideStep[
       body: 'Your shifts are on Schedule. A phone number on Profile lets the household reach you.',
       target: 'nav-schedule',
       section: 'schedule',
+    },
+    {
+      id: 'payroll',
+      title: 'Hours and pay estimate',
+      body: 'Clock in on Today. More → Your pay shows your rate (set by your manager), hours this month, and an estimate — not a paycheck. Other workers never see your pay.',
+      target: 'your-pay',
+      section: 'more',
     },
     {
       id: 'checklist',

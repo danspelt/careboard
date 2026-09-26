@@ -52,6 +52,8 @@ test('manager context includes operational names but strips contact, pay, report
   assert.match(assistantInstructions(context), /two-week cycle/);
   assert.match(assistantInstructions(context), /in-app Inbox/);
   assert.match(assistantInstructions(context), /never suggest sharing or reveal personal phone numbers/);
+  assert.match(assistantInstructions(context), /payroll CSV/);
+  assert.match(assistantInstructions(context), /does not issue paychecks/);
 });
 
 test('assistant errors do not expose upstream details', () => {
@@ -71,12 +73,20 @@ test('assistant route enforces authentication, role, origin, and server-only key
 
 test('dashboard exposes a distinct assistant surface for managers and workers', () => {
   const dashboard = readFileSync(new URL('../app/household-app.tsx', import.meta.url), 'utf8');
+  const payrollHelp = readFileSync(new URL('../lib/payroll-help.ts', import.meta.url), 'utf8');
   assert.match(dashboard, /\['assistant', 'Assistant', Sparkles\]/);
   assert.match(dashboard, /Separate from the team inbox/);
   assert.match(dashboard, /fetch\('\/api\/assistant'/);
   assert.match(dashboard, /maxLength=\{2000\}/);
   assert.match(dashboard, /AI can make mistakes/);
   assert.match(dashboard, /Which days do I have off\?/);
+  assert.match(dashboard, /assistantPayrollSuggestions\(role\)/);
+  assert.match(dashboard, /PayrollAskQuestionnaire/);
+  assert.match(dashboard, /PayrollFaqPanel/);
+  assert.match(dashboard, /data-guide="payroll-bookkeeper"/);
+  assert.match(dashboard, /data-guide="your-pay"/);
+  assert.match(payrollHelp, /How do I send a payroll report to my bookkeeper\?/);
+  assert.match(payrollHelp, /Where can I see my hours and pay estimate\?/);
   assert.match(dashboard, /action: 'requestScheduleChange'/);
   assert.match(dashboard, /Your schedule will not change automatically/);
   assert.match(dashboard, /Reported not coming \/ day off requested/);
