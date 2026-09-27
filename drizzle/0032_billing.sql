@@ -1,0 +1,1 @@
+CREATE TABLE household_subscriptions (household_id TEXT PRIMARY KEY NOT NULL DEFAULT 'default', stripe_customer_id TEXT, stripe_subscription_id TEXT, price_id TEXT, plan_tier TEXT NOT NULL DEFAULT 'free', status TEXT NOT NULL DEFAULT 'none', current_period_end TEXT, cancel_at_period_end INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);

@@ -250,3 +250,15 @@ export const workerInboxItems = sqliteTable(
     index('idx_worker_inbox_items_sender').on(table.householdId, table.createdBy, table.createdAt),
   ],
 );
+
+export const householdSubscriptions = sqliteTable('household_subscriptions', {
+  householdId: text('household_id').primaryKey().default('default'),
+  stripeCustomerId: text('stripe_customer_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  priceId: text('price_id'),
+  planTier: text('plan_tier').notNull().default('free'),
+  status: text('status').notNull().default('none'),
+  currentPeriodEnd: text('current_period_end'),
+  cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' }).notNull().default(false),
+  updatedAt: text('updated_at').notNull(),
+});

@@ -26,6 +26,7 @@ import { CARE_PROFILE_FIELDS, KUDOS_BADGES, canCompleteAppointment, doseAlertMes
 import type { HireChecklistItem, HrDocument, HrDocumentAck, LeaveBalance, LeaveRequest, PayPeriod, PayRun, PayRunLine } from '@/lib/hr';
 import { applyHrMutation, ensureOpenPayPeriod, filterHrForWorker, loadHrState, seedHireChecklistForMember, seedLeaveBalancesForMember } from '@/lib/hr-data';
 import { CSIL_EXPENSE_CATEGORIES, csilMonthSummary, type CsilEligibilityStatus, type CsilExpense, type CsilMonthlyReport, type CsilReportStatus } from '@/lib/csil';
+import { assertWorkerCapacity } from '@/lib/billing';
 
 export type Member = {
   id: string;
@@ -1118,6 +1119,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (passwordProblem) throw new Error(passwordProblem);
     await ensureAccountTable();
     if (await db.prepare('SELECT email FROM google_accounts WHERE email=?').bind(email).first()) throw new Error('This email already has a profile.');
+    await assertWorkerCapacity();
     const id = crypto.randomUUID();
     const count = await db.prepare('SELECT COUNT(*) AS count FROM members').first<{ count: number }>();
     const passwordHash = await hashPassword(temporaryPassword as string);
@@ -1135,6 +1137,7 @@ export async function mutateHousehold(input: Record<string, unknown>) {
     if (!email || email === ownerEmail() || memberIdForEmail(email)) throw new Error('Enter an unused email address.');
     await ensureAccountTable();
     if (await db.prepare('SELECT email FROM google_accounts WHERE email=?').bind(email).first()) throw new Error('This email already has a profile.');
+    if (role === 'worker') await assertWorkerCapacity();
     const id = crypto.randomUUID();
     const count = await db.prepare('SELECT COUNT(*) AS count FROM members').first<{ count: number }>();
     const token = newInviteToken();

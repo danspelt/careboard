@@ -49,6 +49,7 @@ import { assistantPayrollSuggestions, payrollAskQuestions, payrollAskStorageKey,
 import { buildHrAlerts, incompleteHireWorkerCount, memberOnApprovedLeave, unsignedRequiredDocCount } from '@/lib/hr';
 import { payPeriodReadyToClose } from '@/lib/hr-payroll';
 import { ManagerHrView, WorkerHrCards } from '@/app/hr-panel';
+import { BillingPanel } from '@/app/billing-panel';
 import { CsilPanel } from '@/app/csil-panel';
 import { CsilOperationsPanel } from '@/app/csil-operations-panel';
 import { isEditableKeyboardTarget, shortcutsForRole } from '@/lib/dashboard-shortcuts';
@@ -1529,6 +1530,7 @@ function MoreManager({ state, mutate, busy, onOpenLearn, setSection }: any) {
           <Button type="button" className="bg-[#287b6f]" onClick={() => onOpenLearn?.()}><BookOpen className="size-4" aria-hidden="true" />Open Learn</Button>
         </div>
       </Card>
+      <BillingPanel />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <h2 className="flex items-center gap-2 text-lg font-bold"><Settings className="size-5 text-[#287b6f]" aria-hidden="true" />Settings</h2>
