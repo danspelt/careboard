@@ -432,6 +432,8 @@ function ManagerView({ section, setSection, state, workers, open, dueToday, setT
   if (section === 'messages') return <InboxView state={state} mutate={mutate} busy={busy} />;
   if (section === 'more') return <MoreManager state={state} mutate={mutate} busy={busy} />;
   const command = buildManagerCommandCenter<Chore>(state.chores, workers, today());
+  // Current time is the attendance clock; it is read on purpose during render.
+  // oxlint-disable-next-line react/purity
   const homeNow = new Date();
   const nowTime = homeNow.toTimeString().slice(0, 5);
   const nowStamp = homeNow.toISOString();
@@ -1017,6 +1019,8 @@ function WorkerView({ section, state, member, setTask, setProfile, setAvailWorke
   );
   if (section === 'more') {
     const todayStr = today();
+    // Open shifts are measured up to the current time.
+    // oxlint-disable-next-line react/purity
     const monthMinutes = minutesInRange(state.timeEntries ?? [], member.id, `${todayStr.slice(0, 7)}-01`, todayStr, new Date().toISOString());
     const estimatedPay = member.hourlyRate != null ? (monthMinutes / 60) * member.hourlyRate : null;
     return (
